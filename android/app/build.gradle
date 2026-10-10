@@ -1,0 +1,76 @@
+// Tag list — Android-приложение (WebView-оболочка над веб-версией из корня репозитория).
+// Без сторонних библиотек: только Android SDK.
+plugins {
+    id 'com.android.application'
+}
+
+def webRoot = rootProject.file('..')          // корень репозитория с index.html, css/, js/
+def ciBuildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+
+// Ключ подписи: из секретов GitHub (если заданы) или из файла keystore/ в репозитории.
+def ksFile = System.getenv('TAGLIST_KEYSTORE_FILE') ? file(System.getenv('TAGLIST_KEYSTORE_FILE')) : rootProject.file('keystore/taglist-release.jks')
+def ksPass = System.getenv('TAGLIST_KEYSTORE_PASSWORD') ?: 'taglist-kip-2026'
+def ksAlias = System.getenv('TAGLIST_KEY_ALIAS') ?: 'taglist'
+def ksKeyPass = System.getenv('TAGLIST_KEY_PASSWORD') ?: ksPass
+
+android {
+    namespace 'io.github.avtorhanov.taglist'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'io.github.avtorhanov.taglist'
+        minSdk 24
+        targetSdk 34
+        versionCode 81000 + ciBuildNumber
+        versionName "81.${ciBuildNumber}"
+    }
+
+    signingConfigs {
+        release {
+            storeFile ksFile
+            storePassword ksPass
+            keyAlias ksAlias
+            keyPassword ksKeyPass
+            enableV1Signing true
+            enableV2Signing true
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += [layout.buildDirectory.dir("generated/webassets").get().asFile]
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+// Копируем веб-приложение в APK при каждой сборке (папка assets/www).
+tasks.register('copyWebAssets', Sync) {
+    from(webRoot) {
+        include 'index.html', 'manifest.webmanifest', '*.png'
+        include 'css/**', 'js/**'
+        exclude '**/.gitkeep', 'icon-1024.png'
+    }
+    into layout.buildDirectory.dir("generated/webassets/www")
+}
+preBuild.dependsOn 'copyWebAssets'

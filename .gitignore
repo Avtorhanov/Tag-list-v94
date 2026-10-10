@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+venv/
+
+# Android build
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
