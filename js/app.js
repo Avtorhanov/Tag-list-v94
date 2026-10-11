@@ -106,16 +106,6 @@ function normalizeUniquePageNames(list){
   });
 }
 
-function encodeSharedState(state){
-  try{
-    const bytes=new TextEncoder().encode(JSON.stringify(state));
-    let binary="";
-    const chunk=0x8000;
-    for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
-    return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"" );
-  }catch(_){return "";}
-}
-
 function decodeSharedState(token){
   try{
     const normalized=String(token||"").replace(/-/g,"+").replace(/_/g,"/");
@@ -304,17 +294,6 @@ function editSelectedPage(){
   persistPages();exitPageManage();showToast("Название страницы сохранено");
 }
 
-function editPageById(id){
-  const page=pages.find(item=>item.id===id);
-  if(!page)return;
-  const name=prompt("Название страницы",page.name);
-  if(name===null)return;
-  const clean=name.replace(/\s+/g," ").trim();
-  if(!clean){showToast("Название не изменено");return;}
-  page.name=normalizePageName(clean,page.name);page.updatedAt=new Date().toISOString();
-  persistPages();closePageContextMenu();renderPages();showToast("Название страницы сохранено");
-}
-
 async function deleteSelectedPages(){
   const ids=[...selectedPageIds];
   resetTagSelection();
@@ -330,11 +309,6 @@ async function deleteSelectedPages(){
   if($("search"))$("search").value="";
   persistPages();pageManageMode=false;selectedPageIds.clear();closePageContextMenu();render();
   showToast(ids.length===1?"Страница удалена":"Страницы удалены");
-}
-
-function deletePageById(id){
-  selectedPageIds=new Set([id]);
-  deleteSelectedPages();
 }
 
 function closePageContextMenu(){
@@ -371,41 +345,6 @@ function createPage(){
   persistPages();render();showToast("Создана новая страница");
 }
 
-function renameActivePage(){
-  const page=getActivePage();if(!page)return;
-  const name=prompt("Название текущей страницы",page.name);
-  if(name===null)return;
-  const clean=name.replace(/\s+/g," ").trim();
-  if(!clean){showToast("Название не изменено");return;}
-  page.name=normalizePageName(clean,page.name);page.updatedAt=new Date().toISOString();persistPages();render();showToast("Название страницы сохранено");
-}
-
-async function deleteActivePage(){
-  resetTagSelection();
-  const page=getActivePage();
-  if(!page)return;
-  const isLast=pages.length===1;
-  const message=isLast
-    ? `Удалить страницу «${page.name}»? Это последняя страница. После удаления будет создана пустая новая страница.`
-    : `Удалить страницу «${page.name}»? Все приборы и задания на этой странице будут удалены.`;
-  if(!await askConfirm(message,"Удаление страницы","Удалить"))return;
-  const index=pages.findIndex(item=>item.id===page.id);
-  pages=pages.filter(item=>item.id!==page.id);
-  if(!pages.length){
-    const fresh={id:createPageId(),name:"Основная страница",data:[],updatedAt:new Date().toISOString()};
-    pages=[fresh];
-    activePageId=fresh.id;
-    data=fresh.data;
-  }else{
-    const next=pages[Math.min(index,pages.length-1)];
-    activePageId=next.id;
-    data=next.data;
-  }
-  filter="all";query="";
-  if($("search"))$("search").value="";
-  persistPages();render();showToast(isLast?"Страница удалена • создана новая пустая":"Страница удалена");
-}
-
 function save(){
   const page=getActivePage();
   if(page){
@@ -428,10 +367,6 @@ function flushSave(){
 }
 
 
-function uniqueUnits(){
-  return [...new Set(data.map(x => String(x.unit).trim()).filter(Boolean))];
-}
-
 function visibleData(){
   const q = query.trim().toLowerCase();
   return data.filter(x => {
@@ -444,16 +379,21 @@ function visibleData(){
 }
 
 function renderTabs(animate=true){
-  const counts = {
-    all:data.length,
-    task:data.filter(x=>!!String(x.task||"").trim()).length,
-    todo:data.filter(x=>!x.done).length,
-    done:data.filter(x=>x.done).length
-  };
+  // v95: все счётчики вкладок — за один проход по списку
+  // (раньше — отдельный проход по всем тегам на каждую вкладку и каждую установку).
+  const counts={all:data.length,task:0,todo:0,done:0};
+  const units=new Set(),unitCounts=new Map();
+  for(const x of data){
+    if(String(x.task||"").trim())counts.task++;
+    if(x.done)counts.done++;else counts.todo++;
+    const raw=String(x.unit),unit=raw.trim();
+    if(unit)units.add(unit);
+    unitCounts.set(raw,(unitCounts.get(raw)||0)+1);
+  }
   const defs = [["all","Все",counts.all]];
   if(counts.task) defs.push(["task","Задания",counts.task]);
   defs.push(["done","Выполненные",counts.done],["todo","Невыполненные",counts.todo]);
-  uniqueUnits().forEach(u => defs.push([u,u,data.filter(x=>String(x.unit)===u).length]));
+  units.forEach(u => defs.push([u,u,unitCounts.get(u)||0]));
   if(!defs.some(x=>x[0]===filter)) filter="all";
   const frag=document.createDocumentFragment();
   defs.forEach(([key,label,count])=>{
@@ -733,11 +673,12 @@ function updateSelectionFooter(){
   const btn=$("deleteAll"), count=selectedTagIds.size;
   const markBtn=$("markAllDone");
   const clearBtn=$("clearChecks");
-  const scope=getSelectionScope();
-  const scopedSelected=scope.filter(item=>selectedTagIds.has(item.id));
-  const allSelected=scope.length>0 && scopedSelected.length===scope.length;
-  const allDone=scopedSelected.length>0 && scopedSelected.every(item=>item.done);
   if(selectionMode){
+    // v95: выборка считается только в режиме выбора (раньше — при каждой отрисовке).
+    const scope=getSelectionScope();
+    const scopedSelected=scope.filter(item=>selectedTagIds.has(item.id));
+    const allSelected=scope.length>0 && scopedSelected.length===scope.length;
+    const allDone=scopedSelected.length>0 && scopedSelected.every(item=>item.done);
     btn.disabled=!count;
     btn.title=count?`Удалить выбранные теги: ${count}`:"Выбери теги для удаления";
     markBtn.disabled=!scope.length;
@@ -753,7 +694,6 @@ function updateSelectionFooter(){
     clearBtn.disabled=true;
   }
 }
-
 
 async function copyTags(ids){
   const wanted=new Set(ids);
@@ -875,99 +815,6 @@ function showToast(text){
   // v81: длинные сообщения показываются дольше, чтобы их успевали прочитать.
   const ms=Math.min(5200,Math.max(1600,String(text||"").length*55));
   clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>t.classList.remove("show"),ms);
-}
-
-function makeTimestamp(){
-  const d=new Date();
-  const pad=n=>String(n).padStart(2,"0");
-  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${String(d.getFullYear()).slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function makeFileTimestamp(){
-  const d=new Date();
-  const pad=n=>String(n).padStart(2,"0");
-  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${String(d.getFullYear()).slice(-2)}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
-}
-
-
-async function buildExportHtml(exportData=data, exportPages=pages){
-  const stamp=makeTimestamp();
-  const currentJson=JSON.stringify(exportData,null,2).replace(/</g,"\u003c");
-  const pagesJson=JSON.stringify(exportPages,null,2).replace(/</g,"\u003c");
-  const uniqueKey="kip-checklist-saved-"+Date.now();
-  const clone=document.documentElement.cloneNode(true);
-  ["overlay","saveOverlay","exportOverlay","fontOverlay","dryListOverlay","fullReportOverlay","confirmOverlay"].forEach(id=>{
-    const el=clone.querySelector("#"+id);
-    if(el){el.classList.remove("show");el.style.removeProperty("display");}
-  });
-  ["importList","fileImportList"].forEach(id=>{const el=clone.querySelector("#"+id);if(el)el.innerHTML="";});
-  ["importActions","fileImportActions"].forEach(id=>{const el=clone.querySelector("#"+id);if(el)el.style.display="none";});
-  const status=clone.querySelector("#fileImportStatus");if(status)status.textContent="";
-  const fp=clone.querySelector("#fileProgressWrap");if(fp)fp.style.display="none";
-  const toast=clone.querySelector("#toast");if(toast){toast.className="toast";toast.textContent="";}
-  const ocrStatus=clone.querySelector("#ocrStatus");if(ocrStatus)ocrStatus.textContent="";
-  const progress=clone.querySelector("#ocrProgressWrap");if(progress)progress.style.display="none";
-  const pageContext=clone.querySelector("#pageContextMenu");if(pageContext){pageContext.classList.remove("show");pageContext.style.display="none";}
-
-  // Export is deliberately self-contained: inline CSS and every JS module so the
-  // saved HTML keeps working without the original project directory.
-  const moduleNames=["storage.js","tags.js","export.js","ocr-utils.js","import.js","ui.js","app.js"];
-  const [cssText,...allJs]=await Promise.all([
-    fetch("./css/app.css").then(r=>{if(!r.ok)throw new Error("Не удалось прочитать CSS");return r.text();}),
-    ...moduleNames.map(name=>fetch(`./js/${name}`).then(r=>{if(!r.ok)throw new Error(`Не удалось прочитать ${name}`);return r.text();})),
-    fetch("./js/ocr.js").then(r=>{if(!r.ok)throw new Error("Не удалось прочитать ocr.js");return r.text();})
-  ]);
-  const moduleTexts=allJs.slice(0,moduleNames.length);
-  const ocrText=allJs[moduleNames.length];
-  const head=clone.querySelector("head");
-  clone.querySelectorAll('link[rel="stylesheet"]').forEach(el=>{
-    if(el.getAttribute("href")?.endsWith("app.css")){
-      const style=document.createElement("style");style.textContent=cssText;el.replaceWith(style);
-    }
-  });
-  const moduleTextsByName=new Map(moduleNames.map((name,index)=>[name,moduleTexts[index]]));
-  const moduleScripts=[...clone.querySelectorAll('script[src^="./js/"]')];
-  moduleScripts.forEach(el=>{
-    const name=(el.getAttribute("src")||"").split("/").pop();
-    const script=document.createElement("script");
-    script.textContent=moduleTextsByName.get(name)||"";
-    el.replaceWith(script);
-  });
-  // The source document does not load OCR initially; insert the OCR module immediately before app.js.
-  const ocrInline=document.createElement("script");
-  ocrInline.textContent=ocrText||"";
-  const scriptsNow=[...clone.querySelectorAll("script")];
-  const last=scriptsNow[scriptsNow.length-1];
-  if(last)last.before(ocrInline);
-
-  let exported="<!doctype html>\n"+clone.outerHTML;
-  const escapedTitle=JSON.stringify(docTitle).replace(/</g,"\u003c");
-  exported=exported.replace(/<title>.*?<\/title>/s,`<title>${docTitle.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</title>`);
-  exported=exported.replace(/const INITIAL_DATA = .*?;\s*const INITIAL_PAGES = .*?;\s*const DATA_KEY = ".*?";\s*const FONT_KEY = ".*?";\s*const FONT_FAMILY_KEY = ".*?";\s*const DOC_TITLE_KEY = ".*?";\s*const PAGES_KEY = ".*?";\s*const ACTIVE_PAGE_KEY = ".*?";\s*const THEME_KEY = ".*?";\s*const DEFAULT_TITLE = ".*?";/s,
-    `const INITIAL_DATA = ${currentJson};\nconst INITIAL_PAGES = ${pagesJson};\nconst DATA_KEY = "${uniqueKey}";\nconst FONT_KEY = "kip-checklist-font-v1";\nconst FONT_FAMILY_KEY = "kip-checklist-font-family-v1";\nconst DOC_TITLE_KEY = "kip-checklist-title-v1";\nconst PAGES_KEY = "${uniqueKey}-pages";\nconst ACTIVE_PAGE_KEY = "${uniqueKey}-active-page";\nconst THEME_KEY = "${uniqueKey}-theme";\nconst DEFAULT_TITLE = ${escapedTitle};`);
-  const selectedFamily=JSON.stringify(safeGetStorage(FONT_FAMILY_KEY,"system"));
-  exported=exported.replace(/const DEFAULT_TITLE = .*?;/s,match=>match+`\nconst EXPORTED_FONT_FAMILY = ${selectedFamily};`);
-  exported=exported.replace(/const savedFontFamily=localStorage.getItem\(FONT_FAMILY_KEY\)\|\|"system";/,'const savedFontFamily=typeof EXPORTED_FONT_FAMILY!=="undefined"?EXPORTED_FONT_FAMILY:(localStorage.getItem(FONT_FAMILY_KEY)||safeGetStorage(FONT_FAMILY_KEY,"system"));');
-  return {html:exported,stamp};
-}
-
-async function openBlankNewDocument(){
-  save();
-  const blankPages=pages.map(page=>({...page,data:[]}));
-  const {html:exported}=await buildExportHtml([],blankPages);
-  let tab=null;
-  try{tab=window.open("about:blank","_blank");}catch(_){}
-  if(!tab){showToast("Браузер не разрешил открыть новую вкладку");return;}
-  try{
-    tab.document.open();
-    tab.document.write(exported);
-    tab.document.close();
-    closeExportMenu();
-    showToast("Новый пустой файл открыт");
-  }catch(e){
-    try{tab.close();}catch(_){}
-    showToast("Не удалось открыть новый файл");
-  }
 }
 
 function safeFileBase(name){
@@ -1123,25 +970,61 @@ function downloadJsonFile(text,fileName){
   const bridge=window.AndroidApp;
   if(bridge && typeof bridge.saveFile==="function"){bridge.saveFile(fileName,"application/json",text);return;}
   const blob=new Blob([text],{type:"application/json;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
-  a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  a.href=url;a.download=fileName;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
+  // v95: Chrome на Android может начать загрузку уже после закрытия окна выбора папки;
+  // слишком ранний revoke давал пустой файл. Ссылку держим минуту.
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+// v95: системный выбор папки (File System Access) в Chrome на Android пишет через
+// content:// без атомарной записи — на части хранилищ файл остаётся пустым.
+// На Android сохраняем обычной загрузкой (папка «Загрузки» / выбор папки браузером).
+function isAndroidBrowser(){return /Android/i.test(navigator.userAgent||"") && !window.AndroidApp;}
+// Встроенные браузеры мессенджеров (Android WebView) не умеют скачивать blob-файлы.
+function isEmbeddedAndroidWebView(){return isAndroidBrowser() && /;\s*wv\)/.test(navigator.userAgent||"");}
+async function writeJsonWithPicker(text,fileName){
+  const handle=await window.showSaveFilePicker({
+    suggestedName:fileName,
+    types:[{description:"Tag list JSON",accept:{"application/json":[".json"]}}]
+  });
+  const writable=await handle.createWritable({keepExistingData:false});
+  await writable.write(new Blob([text],{type:"application/json;charset=utf-8"}));
+  await writable.close();
+  // Проверяем, что файл действительно получил данные.
+  try{
+    const saved=await handle.getFile();
+    if(text.length && saved.size===0)throw new Error("empty-write");
+  }catch(e){if(e?.message==="empty-write")throw e;}
 }
 async function saveCurrentStateJson(){
+  let text="",fileName="";
   try{
-    const text=stateJsonText(),fileName=jsonFileName();
+    text=stateJsonText();fileName=jsonFileName();
     if(window.AndroidApp && typeof window.AndroidApp.saveFile==="function"){
       window.AndroidApp.saveFile(fileName,"application/json",text);closeExportMenu();return;
     }
-    if(window.showSaveFilePicker){
-      const handle=await window.showSaveFilePicker({
-        suggestedName:fileName,
-        types:[{description:"Tag list JSON",accept:{"application/json":[".json"]}}]
-      });
-      const writable=await handle.createWritable();
-      await writable.write(new Blob([text],{type:"application/json;charset=utf-8"}));
-      await writable.close();
-      showToast("JSON сохранён");closeExportMenu();return;
+    if(isEmbeddedAndroidWebView()){
+      // Скачать файл отсюда нельзя — отдаём JSON через «Поделиться» или буфер обмена.
+      closeExportMenu();
+      const file=stateShareFile(text,fileName);
+      if(file && typeof navigator.share==="function"){
+        try{await navigator.share({title:`${docTitle} — состояние`,files:[file]});showToast("JSON передан");return;}
+        catch(err){if(err?.name==="AbortError")return;}
+      }
+      if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);showToast("Встроенный браузер не сохраняет файлы — JSON скопирован. Открой приложение в Chrome.");return;}
+      throw new Error("save-unavailable");
     }
-    downloadJsonFile(text,fileName);showToast("JSON сохранён в файлы/загрузки");closeExportMenu();
+    if(window.showSaveFilePicker && !isAndroidBrowser()){
+      try{
+        await writeJsonWithPicker(text,fileName);
+        showToast("JSON сохранён");closeExportMenu();return;
+      }catch(pickerError){
+        if(pickerError?.name==="AbortError")return;
+        // Запись через выбор файла не удалась — сохраняем обычной загрузкой.
+      }
+    }
+    downloadJsonFile(text,fileName);
+    showToast(isAndroidBrowser()?"JSON сохранён в «Загрузки»":"JSON сохранён в файлы/загрузки");
+    closeExportMenu();
   }catch(e){
     if(e?.name!=="AbortError")showToast("Не удалось сохранить JSON");
   }
@@ -1217,19 +1100,6 @@ async function shareCurrentStateJson(){
     catch(_){showToast("Не удалось отправить или сохранить JSON");}
   }
 }
-function buildShareStateUrl(){
-  const token=encodeSharedState(buildStateObject());
-  if(!token)throw new Error("state-encode-failed");
-  return `${location.origin}${location.pathname}#state=${token}`;
-}
-async function shareCurrentStateLink(){
-  try{
-    const url=buildShareStateUrl();closeExportMenu();
-    if(navigator.share){await navigator.share({title:`${docTitle} — текущее состояние`,text:`Открыть текущее состояние «${docTitle}»`,url});showToast("Ссылка на состояние передана");return;}
-    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(url);showToast("Ссылка скопирована");return;}
-    const a=document.createElement("a");a.href=url;a.textContent=url;document.body.appendChild(a);a.select?.();document.execCommand?.("copy");a.remove();showToast("Ссылка подготовлена");
-  }catch(_){showToast("Не удалось создать ссылку состояния");}
-}
 function validateImportedState(parsed){
   if(!parsed||typeof parsed!=="object")throw new Error("JSON не является объектом состояния Tag list.");
   const version=Number(parsed.schemaVersion||parsed.v||0);
@@ -1262,7 +1132,7 @@ function applyImportedState(parsed,createBackup=true){
   docTitle=next.title;filter=next.filter;query=next.query;
   if($("search"))$("search").value=query;
   safeSetStorage(DOC_TITLE_KEY,docTitle);safeSetStorage(PAGES_KEY,JSON.stringify(pages));safeSetStorage(ACTIVE_PAGE_KEY,activePageId);safeSetStorage(DATA_KEY,JSON.stringify(data));safeSetStorage(THEME_KEY,next.theme);
-  applyTheme(next.theme);resetTagSelection();render();return next;
+  applyTheme(next.theme);applyDocumentTitle();resetTagSelection();render();return next;
 }
 async function readTextFileCompat(file){
   if(typeof file.text==="function")return file.text();
@@ -1291,25 +1161,6 @@ async function sharePageReport(pageId){
   await shareTextPayload(`${pageTitleForReport(page)}`,buildPageTextReport(page,"all"));
 }
 
-async function shareCurrentDocument(){
-  const {html:exported,stamp}=await buildExportHtml(data);
-  const fileName=`${safeFileBase(docTitle)} — ${stamp}.html`;
-  const file=new File([exported],fileName,{type:"text/html"});
-  closeExportMenu();
-  try{
-    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-      await navigator.share({title:fileName,files:[file]});
-      showToast("Файл передан");return;
-    }
-    const url=URL.createObjectURL(file);
-    const a=document.createElement("a");a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1500);showToast("Файл подготовлен");
-  }catch(e){if(e.name!=="AbortError")showToast("Не удалось передать файл");}
-}
-
-function handleExportFile(){shareCurrentDocument();}
-
-
 function normalizeOcrText(text){
   return String(text||'').toUpperCase()
     .replace(/[–—−_]/g,"-")
@@ -1327,17 +1178,6 @@ function canonicalTag(s){
   if(n.length<3)n=n.padStart(3,"0");
   if(n.length>3)n=n.slice(-3);
   return `${m[1]}-${m[2]}-${n}${m[4]||""}`;
-}
-
-function extractTagsFromOCR(text){
-  const n=normalizeOcrText(text), found=new Set();
-  const loose=/(\d{4})\s*-?\s*([A-Z]{2,8})\s*-?\s*(\d{2,4})\s*([A-Z]?)\b/g;
-  let m;
-  while((m=loose.exec(n))){
-    const t=canonicalTag(`${m[1]}-${m[2]}-${m[3]}${m[4]}`);
-    if(t)found.add(t);
-  }
-  return [...found];
 }
 
 function knownTags(){ return data.map(x=>x.tag).filter(Boolean); }
@@ -1562,68 +1402,6 @@ function extractTagRecordsFromText(text){
   return [...map.values()].map(r=>({...r,task:cleanImportedTask(r.task)}));
 }
 
-async function imageToJpegBlob(file,maxWidth=2400,maxHeight=1900,quality=.88){
-  return new Promise((resolve,reject)=>{
-    const img=new Image(),url=URL.createObjectURL(file);
-    img.onload=async()=>{
-      try{
-        const scale=Math.min(1,maxWidth/img.naturalWidth,maxHeight/img.naturalHeight);
-        const c=document.createElement("canvas");
-        c.width=Math.max(1,Math.round(img.naturalWidth*scale));
-        c.height=Math.max(1,Math.round(img.naturalHeight*scale));
-        const ctx=c.getContext("2d",{alpha:false});
-        ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
-        ctx.drawImage(img,0,0,c.width,c.height);
-        const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",quality));
-        URL.revokeObjectURL(url);
-        if(!blob)throw new Error("Не удалось подготовить изображение");
-        resolve({blob,width:c.width,height:c.height});
-      }catch(e){URL.revokeObjectURL(url);reject(e)}
-    };
-    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Не удалось открыть изображение"))};
-    img.src=url;
-  });
-}
-
-async function makeVisionTiles(file){
-  const base=await imageToJpegBlob(file,2400,1900,.88);
-  const img=await new Promise((resolve,reject)=>{
-    const el=new Image(),url=URL.createObjectURL(base.blob);
-    el.onload=()=>{URL.revokeObjectURL(url);resolve(el)};
-    el.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Не удалось подготовить фрагменты фото"))};
-    el.src=url;
-  });
-  // Для длинных/широких таблиц анализируем перекрывающиеся фрагменты.
-  // Это повышает шанс увидеть мелкие отметки слева/справа от тега и не ломает
-  // обычные короткие фото: для них остаётся один запрос.
-  const W=base.width,H=base.height;
-  if(W<=1900 && H<=1500)return [base.blob];
-  const tileW=Math.min(1700,W),tileH=Math.min(1450,H),overlap=180;
-  const xs=W<=tileW?[0]:[0,Math.max(0,W-tileW)];
-  const ys=H<=tileH?[0]:[0,Math.max(0,H-tileH)];
-  const tiles=[];
-  for(const y of [...new Set(ys)]) for(const x of [...new Set(xs)]){
-    const w=Math.min(tileW,W-x),h=Math.min(tileH,H-y);
-    const c=document.createElement("canvas");c.width=w;c.height=h;
-    const ctx=c.getContext("2d",{alpha:false});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
-    ctx.drawImage(img,x,y,w,h,0,0,w,h);
-    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));
-    if(blob)tiles.push(blob);
-    if(tiles.length>=6)break;
-  }
-  return tiles.length?tiles:[base.blob];
-}
-
-async function blobToBase64(blob){
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=()=>{const v=String(reader.result||"");resolve(v.includes(",")?v.split(",")[1]:v)};
-    reader.onerror=()=>reject(new Error("Не удалось подготовить фото"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-
 function setAddMode(mode){
   addMode=mode;
   overlay.classList.toggle("import-mode",mode==="camera"||mode==="photo"||mode==="file");
@@ -1786,7 +1564,6 @@ function importFileCandidates(){
   closeModal();render();showToast(`Добавлено из файла/текста: ${additions.length}`);
 }
 
-
 function getFontOption(id){return FONT_OPTIONS.find(x=>x.id===id)||FONT_OPTIONS[0];}
 
 function applyFontFamily(id){
@@ -1898,7 +1675,6 @@ function showInstallFallback(){
     showToast("Установка через кнопку сейчас недоступна. Открой меню браузера и выбери «Установить приложение».");
   }
 }
-
 
 async function fileToJpeg(file,maxSide=1800,quality=.76,maxBytes=900*1024){
   return new Promise((resolve,reject)=>{
@@ -2085,7 +1861,6 @@ function importCandidates(){
   closeModal();render();showToast(`Добавлено распознанных: ${additions.length}`);
 }
 
-
 const INITIAL_DATA = [];
 const INITIAL_PAGES = null;
 const DATA_KEY = "kip-checklist-v56";
@@ -2168,43 +1943,6 @@ const tabs = $("tabs"), list = $("list");
 const overlay = $("overlay"), tagInput = $("tagInput");
 const statusInput = $("statusInput"), manualTaskInput = $("manualTaskInput"), modalTitle = $("modalTitle"), deleteBtn = $("deleteBtn");
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 document.querySelectorAll(".overlay").forEach(el=>modalObserver.observe(el,{attributes:true,attributeFilter:["class"]}));
 
 function scrollModalFieldIntoView(target){
@@ -2241,14 +1979,6 @@ document.addEventListener("focusin",e=>{
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushSave();});
 window.addEventListener("pagehide",flushSave);
 
-
-
-
-
-
-
-
-
 // Один набор обработчиков вместо обработчика на каждом теге. Это заметно снижает
 // количество объектов/замыканий на длинных списках и уменьшает нагрузку на iPhone/Android.
 tabs.addEventListener("click",e=>{
@@ -2262,15 +1992,6 @@ tabs.addEventListener("click",e=>{
   updateSelectionFooter();
   renderTabs();renderSummary();renderList();
 });
-
-
-
-
-
-
-
-
-
 
 list.addEventListener("click",e=>{
   const ref=rowItemFromTarget(e.target);
@@ -2361,22 +2082,6 @@ list.addEventListener("touchmove",e=>{if(e.target.closest(".row"))cancelLongPres
 list.addEventListener("touchend",cancelLongPress,{passive:true});
 list.addEventListener("touchcancel",cancelLongPress,{passive:true});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 let pullGuardStartY=0;
 document.addEventListener("touchstart",e=>{
   if(e.touches?.length!==1)return;
@@ -2390,87 +2095,13 @@ document.addEventListener("touchmove",e=>{
   }
 },{passive:false});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 let addMode="manual";
 let ocrCandidates=[];
 let ocrCandidateMeta=new Map();
 let ocrRunToken=0;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 let fileCandidates=[];
 let sheetJsPromise=null;
-
-
-
-
-
-
-
-
-
 
 const FONT_OPTIONS=[
   {id:"system",name:"Системный",family:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif',sample:"Aa КИП 123"},
@@ -2481,11 +2112,6 @@ const FONT_OPTIONS=[
   {id:"courier",name:"Courier New",family:'"Courier New",monospace',sample:"Aa КИП 123"}
 ];
 
-
-
-
-
-
 document.querySelectorAll("[data-dry-kind]").forEach(btn=>btn.addEventListener("click",()=>openDryReport(btn.dataset.dryKind)));
 $("dryListClose").onclick=()=>$("dryListOverlay").classList.remove("show");
 $("dryListOverlay").addEventListener("click",e=>{if(e.target===$("dryListOverlay"))$("dryListOverlay").classList.remove("show")});
@@ -2494,7 +2120,6 @@ $("fullReportOverlay").addEventListener("click",e=>{if(e.target===$("fullReportO
 
 let confirmResolver=null;
 
-
 $("confirmOk").onclick=()=>finishConfirm(true);
 $("confirmCancel").onclick=()=>finishConfirm(false);
 $("confirmClose").onclick=()=>finishConfirm(false);
@@ -2502,7 +2127,6 @@ $("confirmOverlay").addEventListener("click",e=>{if(e.target===$("confirmOverlay
 
 const THEME_ORDER=["light","dark","navy","green"];
 const THEME_ICON={light:"☼",dark:"●",navy:"☾",green:"◒"};
-
 
 $("docTitle").addEventListener("blur",()=>{
   if($("docTitle").getAttribute("contenteditable")==="true"){
@@ -2730,7 +2354,6 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeD
 tagInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();tagInput.blur();saveModal();}});
 manualTaskInput.addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();manualTaskInput.blur();saveModal();}});
 
-
 // v58: браузеры Android иногда оставляют старые размеры viewport после поворота.
 // Даём движку один кадр на перерасчёт, не меняя данные и не трогая активное поле ввода.
 let viewportRefreshTimer=0;
@@ -2771,10 +2394,6 @@ function ensureOcrLoaded(){
 let deferredInstallPrompt=null;
 const installAppBtn=$("installApp");
 
-
-
-
-
 if(installAppBtn && isStandaloneApp()){
   hideInstallButton();
 }
@@ -2812,7 +2431,6 @@ if(installAppBtn){
 
 window.addEventListener("appinstalled",hideInstallButton);
 
-
 const savedFont=parseFloat(safeGetStorage(FONT_KEY,null));
 if(savedFont) document.documentElement.style.setProperty("--fontScale",savedFont);
 const savedFontFamily=safeGetStorage(FONT_FAMILY_KEY,"system")||"system";
@@ -2822,6 +2440,85 @@ applyDocumentTitle();
 refreshAfterViewportChange();
 if($("search")) $("search").value=query;
 render();
+
+// v95: вкладка «Газоанализ». Шапка-название переключает раздел: Tag list ⇄ конвертор.
+// Модуль js/gas.js загружается по требованию (и заранее, когда устройство свободно).
+let gasLoadPromise=null,gasViewOpen=false,gasHistoryPushed=false;
+function ensureGasLoaded(){
+  if(window.TagListGas)return Promise.resolve(window.TagListGas);
+  if(gasLoadPromise)return gasLoadPromise;
+  gasLoadPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement("script");
+    script.src=new URL("./js/gas.js",document.baseURI).href;
+    script.async=true;
+    script.onload=()=>window.TagListGas?resolve(window.TagListGas):reject(new Error("Не удалось запустить конвертор газоанализа"));
+    script.onerror=()=>{script.remove();reject(new Error("Не удалось загрузить конвертор (js/gas.js). Проверь, что файл опубликован вместе с приложением."));};
+    document.head.appendChild(script);
+  }).catch(err=>{gasLoadPromise=null;throw err;});
+  return gasLoadPromise;
+}
+function updateAppSwitch(){
+  const btn=$("appSwitch");if(!btn)return;
+  const label=gasViewOpen?`Вернуться к списку «${docTitle}»`:"Открыть конвертор газоанализа";
+  btn.setAttribute("aria-expanded",String(gasViewOpen));
+  btn.setAttribute("aria-label",label);btn.title=label;
+  const badge=$("appSwitchBadgeText");
+  if(badge)badge.textContent=gasViewOpen?(docTitle||"Tag list"):"Газоанализ";
+}
+function popIn(el){
+  if(!el)return;
+  el.classList.remove("viewPop");void el.offsetWidth;el.classList.add("viewPop");
+}
+async function openGasView(){
+  if(gasViewOpen)return;
+  let api;
+  try{api=await ensureGasLoaded();}catch(e){showToast(e?.message||"Не удалось открыть конвертор");return;}
+  if(gasViewOpen)return;
+  if(selectionMode)setSelectionMode(false);
+  if(pageManageMode)exitPageManage();
+  cancelLongPress();cancelPageLongPress();
+  const active=document.activeElement;
+  if(active&&/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))active.blur();
+  flushSave();
+  const view=$("gasView");
+  api.mount(view);
+  gasViewOpen=true;
+  view.hidden=false;
+  document.body.classList.add("gas-mode");
+  updateAppSwitch();
+  popIn(view);
+  window.scrollTo(0,0);
+  try{
+    if(history.state?.tagListView!=="gas"){history.pushState({...(history.state||{}),tagListView:"gas"},"");gasHistoryPushed=true;}
+  }catch(_){gasHistoryPushed=false;}
+  api.onShow?.();
+}
+function closeGasView(fromHistory=false){
+  if(!gasViewOpen)return;
+  gasViewOpen=false;
+  const view=$("gasView");
+  const active=document.activeElement;
+  if(active&&view.contains(active))active.blur();
+  try{window.TagListGas?.onHide?.();}catch(_){}
+  view.hidden=true;
+  document.body.classList.remove("gas-mode");
+  updateAppSwitch();
+  popIn(document.querySelector(".summaryCard"));popIn($("list"));
+  window.scrollTo(0,0);
+  if(!fromHistory&&gasHistoryPushed&&history.state?.tagListView==="gas"){
+    gasHistoryPushed=false;
+    try{history.back();}catch(_){}
+  }else gasHistoryPushed=false;
+}
+$("appSwitch").addEventListener("click",()=>{gasViewOpen?closeGasView():openGasView();});
+window.addEventListener("popstate",()=>{if(gasViewOpen&&history.state?.tagListView!=="gas")closeGasView(true);});
+// Esc: сначала закрываются окна, затем — конвертор (обработчик в фазе захвата,
+// чтобы увидеть окна до того, как их закроет общий обработчик).
+window.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&gasViewOpen&&!document.querySelector(".overlay.show"))closeGasView();
+},true);
+// Прогрев модуля, пока пользователь ничего не делает: первое открытие — мгновенное.
+(window.requestIdleCallback||((fn)=>setTimeout(fn,2500)))(()=>{ensureGasLoaded().catch(()=>{});},{timeout:6000});
 
 // v81: интеграция с Android-приложением (APK). В браузере этот блок не выполняется.
 if(window.AndroidApp){
@@ -2891,6 +2588,7 @@ if(window.AndroidApp){
         if(still&&still===overlayOpen)still.classList.remove("show");
         return true;
       }
+      if(gasViewOpen){closeGasView();return true;}
       if(menuOpen&&typeof closePageContextMenu==="function"){closePageContextMenu();return true;}
       if(pageManageMode){exitPageManage();return true;}
       if(searchOpen){$("searchClose")?.click();return true;}

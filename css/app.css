@@ -1448,3 +1448,132 @@ body.task-editing .fab{opacity:0;pointer-events:none;transform:scale(.85)}
 .fab{transition:opacity .16s ease,transform .16s ease}
 /* Последняя карточка прокручивается выше кнопки «+» (раньше «+» закрывал карандаш). */
 .list{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+
+/* ===== v95 — шапка-вкладка «Tag list ⇄ Газоанализ» и конвертор газоанализа ===== */
+.appTitle{display:flex;align-items:center;min-width:0;flex:1}
+.appSwitch{display:inline-flex;align-items:center;gap:9px;max-width:100%;min-width:0;min-height:40px;margin:0;padding:0 2px 0 0;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;line-height:1.15;text-align:left;cursor:pointer}
+.appSwitchName{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appSwitchGas{display:none}
+body.gas-mode #docTitle{display:none}
+body.gas-mode .appSwitchGas{display:block;flex-shrink:0}
+body.gas-mode .appSwitchBadge{min-width:34px}
+.appSwitchBadge{flex:0 20 auto;display:inline-flex;align-items:center;gap:5px;min-width:72px;max-width:min(46vw,170px);overflow:hidden;height:30px;padding:0 11px 0 9px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--accent-strong);font-size:clamp(12px,calc(12.5px * var(--fontScale)),15px);font-weight:800;letter-spacing:0;white-space:nowrap;box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent),0 0 9px color-mix(in srgb,var(--accent) 12%,transparent);transition:border-color .2s var(--ui-ease),background-color .2s var(--ui-ease)}
+#appSwitchBadgeText{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.appSwitchIcon{width:15px;height:15px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.appSwitch:active .appSwitchBadge{background:var(--soft);border-color:var(--accent)}
+@media (hover:hover){.appSwitch:hover .appSwitchBadge{border-color:var(--accent)}}
+:root[data-theme]:not([data-theme="light"]) .appSwitchBadge{background:var(--control);border-color:var(--line)}
+
+/* Режим конвертора: список, панели страниц и «+» скрыты, шапка остаётся. */
+.gasSub{display:none}
+body.gas-mode .gasSub{display:block}
+body.gas-mode #lastSaved,body.gas-mode .searchPanel,body.gas-mode .utilityRow,body.gas-mode .pageBar,
+body.gas-mode .pageManageBar,body.gas-mode .tabs,body.gas-mode .summaryCard,body.gas-mode .list,
+body.gas-mode .fab,body.gas-mode .footer{display:none!important}
+.gasView[hidden]{display:none!important}
+.gasView{display:block;padding:9px 0 calc(28px + env(safe-area-inset-bottom))}
+.viewPop{animation:tabIn var(--ui-motion) var(--ui-ease) both}
+
+/* Телефон: одна колонка, результат сразу под вводом. Планшет/ПК: две колонки. */
+.gasGrid{display:grid;gap:10px;align-content:start;min-width:0}
+.gasCol{display:contents}
+.gasO1{order:1}.gasO2{order:2}.gasO3{order:3}.gasO4{order:4}.gasO5{order:5}.gasO6{order:6}
+@media (min-width:700px){
+  .gasGrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  .gasCol{display:grid;gap:10px;align-content:start;min-width:0}
+}
+.gasCard{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 12px 12px;box-shadow:var(--shadow);color:var(--text)}
+:root[data-theme="dark"] .gasCard{background:#121212}
+.gasCardHead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px;margin:0 0 8px}
+.gasCardHead h2{margin:0;color:var(--field-label);font-size:calc(12.5px * var(--fontScale));font-weight:800;letter-spacing:.01em}
+.gasHeadNote{min-width:0;color:var(--muted);font-size:calc(11.5px * var(--fontScale));text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gasLink{flex:0 0 auto;min-height:32px;padding:5px 11px;border:1px solid var(--line);border-radius:9px;background:var(--control,#f7f9fc);color:var(--accent-strong);font-size:calc(12px * var(--fontScale));font-weight:800;cursor:pointer}
+.gasLink.active{background:var(--soft);border-color:var(--accent)}
+.gasLink[hidden]{display:none}
+.gasSr{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important}
+.gasField{margin-bottom:8px}
+.gasCard .field{margin-bottom:0;min-width:0}
+.gasCard .field input,.gasCard .field select{color:var(--text)}
+.gasCard sub,.tab sub{font-size:.72em;line-height:0}
+
+.gasChips{display:flex;flex-wrap:wrap;gap:6px;margin:0 -2px;padding:2px}
+.gasChips .tab{min-height:36px;padding:7px 11px}
+.gasInfo{margin-top:7px}
+.gasInfoLine{display:flex;flex-wrap:wrap;gap:3px 12px;font-size:calc(13px * var(--fontScale));line-height:1.35}
+.gasInfoLine span{white-space:nowrap}
+.gasInfoNote{margin-top:4px;line-height:1.35}
+.gasParams{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.gasParams[hidden]{display:none}
+.gasParams>.field{margin-bottom:8px}
+.gasParams>.field[hidden]{display:none}
+.gasParamGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.gasParamFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px}
+.gasParamFoot .mini{line-height:1.35}
+.gasParamFoot .secondary{flex:0 0 auto;min-height:36px}
+.gasParamFoot .secondary[hidden]{display:none}
+.gasParamFoot .secondary:disabled{opacity:.45;cursor:default}
+
+.gasValueRow{display:flex;align-items:center;gap:8px;min-width:0;padding:3px 5px 3px 12px;border:1px solid var(--input-border);border-radius:12px;background:var(--input-bg);transition:border-color .2s var(--ui-ease),box-shadow .2s var(--ui-ease)}
+.gasValueRow:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+.gasValueInput{flex:1 1 auto;width:100%;min-width:0;padding:6px 0;border:0;outline:none;background:transparent;color:var(--text);font-size:max(20px,calc(27px * var(--fontScale)));font-weight:800;letter-spacing:-.3px;font-variant-numeric:tabular-nums;-webkit-appearance:none;appearance:none}
+.gasValueInput:focus,.gasValueInput:focus-visible{outline:none!important;box-shadow:none!important}
+.gasValueUnit{flex:0 0 auto;color:var(--muted);font-size:calc(15px * var(--fontScale));font-weight:800;white-space:nowrap}
+.gasClear{flex:0 0 auto;display:grid;place-items:center;width:38px;height:38px;padding:0;border-radius:10px;background:var(--control,#eef1f5);color:var(--muted);font-size:21px;line-height:1;cursor:pointer}
+.gasUnits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px}
+.gasUnits .tab{width:100%;min-height:40px;padding:8px 6px;text-align:center;overflow:hidden;text-overflow:ellipsis}
+.tab.gasOff,.gasScaleBtn.gasOff{opacity:.42}
+.gasWarn{margin-top:9px;padding:8px 10px;border:1px solid #f2d48a;border-radius:10px;background:#fff8e1;color:#6b4f00;font-size:calc(13px * var(--fontScale));line-height:1.35}
+.gasWarn[hidden]{display:none}
+.gasWarn.gasWarnDanger{background:#fff0ef;border-color:#ffd3cf;color:var(--danger)}
+:root[data-theme]:not([data-theme="light"]) .gasWarn{background:color-mix(in srgb,#f2b33d 14%,var(--card));border-color:color-mix(in srgb,#f2b33d 42%,var(--line));color:#ffd88a}
+:root[data-theme]:not([data-theme="light"]) .gasWarn.gasWarnDanger{background:color-mix(in srgb,#ff6b5f 16%,var(--card));border-color:color-mix(in srgb,#ff6b5f 45%,var(--line));color:#ffb1aa}
+
+.gasCondGrid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);margin:9px 0 8px}
+.gasJoin{display:flex;gap:6px;min-width:0}
+.gasJoin input{flex:1 1 auto;min-width:0}
+.gasSign{flex:0 0 auto;width:44px;min-height:44px;padding:0;border:1px solid var(--input-border);border-radius:11px;background:var(--control,#eef1f5);color:var(--text);font-size:19px;font-weight:800;line-height:1;cursor:pointer}
+:root[data-theme]:not([data-theme="light"]) .gasSign{border-color:var(--line)}
+.gasCard .gasJoin select{flex:0 0 auto;width:auto;max-width:52%;padding-left:8px;padding-right:6px}
+
+.gasResults{display:grid;gap:5px}
+.gasRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 10px;width:100%;min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:11px;background:var(--control,#f7f9fc);color:var(--text);font-size:calc(14px * var(--fontScale));font-weight:600;text-align:left;cursor:pointer}
+.gasRowLabel{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 7px;min-width:0;color:var(--muted);font-size:calc(13px * var(--fontScale));font-weight:750}
+.gasRowLabel i{font-style:normal;font-weight:600;font-size:.9em;opacity:.85}
+.gasRowValue{font-size:calc(18px * var(--fontScale));font-weight:800;letter-spacing:-.2px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.gasRow.gasSrc{background:var(--soft);border-color:var(--accent)}
+.gasRow.gasSrc .gasRowLabel{color:var(--accent-strong)}
+.gasRow.gasExtra{background:transparent;border-style:dashed}
+.gasRow.gasRowBad .gasRowValue{color:var(--danger)}
+.gasRow .gasBar{grid-column:1/-1;margin:1px 0 0;height:6px}
+.progressFill.gasFillBad{background:var(--danger)!important}
+.gasEmpty{padding:14px 10px;border:1px dashed var(--line);border-radius:11px;color:var(--muted);font-size:calc(14px * var(--fontScale));text-align:center}
+.gasActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.gasActions .action:disabled{opacity:.45;cursor:default}
+
+.gasScaleRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.gasScaleUnits{margin-top:8px}
+.gasMaRow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:end;gap:6px;margin-top:6px}
+.gasMaArrow{padding:0 1px 12px;color:var(--muted);font-size:20px;font-weight:800}
+.gasMaStatus{min-height:1.35em;margin-top:8px;font-size:calc(13px * var(--fontScale));font-weight:750;line-height:1.35}
+.gasOk{color:#1c7c45}
+.gasWarnText{color:#9a6200}
+.gasBad{color:var(--danger)!important}
+:root[data-theme]:not([data-theme="light"]) .gasOk{color:#7fd8a4}
+:root[data-theme]:not([data-theme="light"]) .gasWarnText{color:#f2c46b}
+
+.gasHelp summary{display:flex;align-items:center;gap:7px;min-height:30px;color:var(--field-label);font-size:calc(12.5px * var(--fontScale));font-weight:800;list-style:none;cursor:pointer}
+.gasHelp summary::-webkit-details-marker{display:none}
+.gasHelp summary::before{content:"▸";display:inline-block;color:var(--muted);transition:transform var(--ui-motion) var(--ui-ease)}
+.gasHelp[open] summary::before{transform:rotate(90deg)}
+.gasFormula p{margin:8px 0;font-size:calc(13.5px * var(--fontScale));line-height:1.45}
+.gasFormula p.mini{font-size:calc(12px * var(--fontScale))}
+@keyframes gasFlash{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}to{box-shadow:0 0 0 14px transparent}}
+.gasFlash{animation:gasFlash .8s ease-out}
+
+@media (max-width:380px){
+  .gasCard{padding:10px 10px 11px}
+  .appSwitch{gap:7px}
+  .appSwitchBadge{padding:0 9px 0 8px}
+  .gasParamGrid{gap:6px}
+  .gasCard .field input,.gasCard .field select{padding-left:9px;padding-right:9px}
+}

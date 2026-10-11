@@ -1,15 +1,16 @@
-// Tag list — service worker (v81).
+// Tag list — service worker (v95).
 // Даёт работу без интернета: приложение открывается из кэша, когда сети нет.
 // Свежие файлы берутся из сети (network-first с таймаутом), кэш — запасной путь.
 // OCR (api.ocr.space) никогда не кэшируется и всегда идёт напрямую в сеть.
 const CACHE_PREFIX = 'tag-list-';
-const CACHE_NAME = CACHE_PREFIX + 'v81-1';
+const CACHE_NAME = CACHE_PREFIX + 'v95-1';
 const APP_SHELL = [
   './',
   './index.html',
   './css/app.css',
   './js/app.js',
   './js/ocr.js',
+  './js/gas.js',
   './js/vendor/xlsx.full.min.js',
   './manifest.webmanifest',
   './favicon-64.png',

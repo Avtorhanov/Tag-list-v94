@@ -17,12 +17,13 @@
 <div class="app">
 <div class="top">
 <div class="titleRow">
-<h1 id="docTitle">Tag list</h1>
+<h1 class="appTitle"><button aria-controls="gasView" aria-expanded="false" aria-label="Открыть конвертор газоанализа" class="appSwitch" id="appSwitch" title="Открыть конвертор газоанализа" type="button"><span class="appSwitchName" id="docTitle">Tag list</span><span aria-hidden="true" class="appSwitchName appSwitchGas" id="gasTitle">Газоанализ</span><span aria-hidden="true" class="appSwitchBadge"><svg class="appSwitchIcon" viewBox="0 0 24 24"><path d="M4 8h14"></path><path d="m14 4 4 4-4 4"></path><path d="M20 16H6"></path><path d="m10 12-4 4 4 4"></path></svg><span id="appSwitchBadgeText">Газоанализ</span></span></button></h1>
 <div aria-label="Настройки вида документа" class="titleActions">
 <button aria-label="Сменить тему" class="iconBtn" id="themeBtn" title="Сменить тему"><span aria-hidden="true" id="themeIcon">☼</span></button>
 </div>
 </div>
 <div class="sub" id="lastSaved">Сохранено на устройстве: —</div>
+<div class="sub gasSub" id="gasSub">ppm · мг/м³ · % об. · % НКПР · 4–20 мА</div>
 <div class="searchPanel" id="searchPanel">
 <input class="search" id="search" placeholder="Поиск по тегу или установке" type="search"/>
 <button aria-label="Закрыть поиск" class="searchClose" id="searchClose" type="button">×</button>
@@ -48,6 +49,7 @@
 </div>
 <div class="tabs" id="tabs"></div>
 </div>
+<section aria-label="Конвертор газоанализа" class="gasView" hidden id="gasView"></section>
 <section aria-label="Прогресс чек-листа" class="summaryCard">
 <div class="summaryHead">
 <div>
