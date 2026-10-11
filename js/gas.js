@@ -125,7 +125,7 @@ const DEFAULT_STATE={
   gas:"ch4",value:"1000",unit:"ppm",t:"20",p:"101,325",pUnit:"kpa",
   overrides:{},custom:{name:"",M:"",lel:"",pdk:""},
   ma:{lo:"0",hi:"100",unit:"lel",mA:"12",val:"",last:"mA"},
-  params:false
+  params:false,tag:""
 };
 function loadState(){
   try{
@@ -220,9 +220,10 @@ const ICON={
   send:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.5 13.5"></path><path d="m21 3-6.5 18-4-7.5L3 9.5Z"></path></svg>',
   down:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v15"></path><path d="m6 13 6 6 6-6"></path></svg>',
   up:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V5"></path><path d="m6 11 6-6 6 6"></path></svg>',
-  x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>'
+  x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>',
+  task:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5H6.5A2 2 0 0 0 4.5 8v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1A1.5 1.5 0 0 0 15 4.5"></path><path d="m8.5 13.5 2.5 2.5 4.5-5"></path></svg>'
 };
-let root=null,els={};
+let root=null,els={},getTags=null;
 function chip(cls,attrs,text){return `<button type="button" class="tab ${cls}" ${attrs}>${text}</button>`;}
 function template(){
   const groups=GROUPS.map(([gid,label])=>{
@@ -289,8 +290,10 @@ function template(){
     <section class="gasCard gasResultCard gasO3" aria-labelledby="gasResultTitle">
       <div class="gasCardHead"><h2 id="gasResultTitle">Результат</h2><span class="gasHeadNote" id="gasResultCond"></span></div>
       <div class="gasResults" id="gasResults" aria-live="polite"></div>
-      <div class="gasActions">
-        <button type="button" class="action" id="gasCopy">${ICON.copy}<span>Копировать</span></button>
+      <div class="field gasTagField"><label for="gasTag">Тэг для задания</label><input id="gasTag" list="gasTagList" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="Например, 2131-QT-501"/><datalist id="gasTagList"></datalist></div>
+      <div class="gasActions gasActions3">
+        <button type="button" class="action iconOnly" id="gasCopy" aria-label="Копировать результат" title="Копировать результат">${ICON.copy}</button>
+        <button type="button" class="action" id="gasTask" title="Дописать результат в задание тэга">${ICON.task}<span>В задание</span></button>
         <button type="button" class="action primary" id="gasShare">${ICON.send}<span>Отправить</span></button>
       </div>
     </section>
@@ -542,6 +545,24 @@ function summaryText(){
   lines.push(`Условия: ${cParts.join(", ")}`);
   return lines.join("\n");
 }
+function refreshTagList(){
+  const dl=root&&root.querySelector("#gasTagList");if(!dl)return;
+  let tags=[];try{tags=typeof getTags==="function"?getTags():[];}catch(_){tags=[];}
+  const uniq=[...new Set(tags.map(t=>String(t||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ru",{numeric:true}));
+  dl.innerHTML=uniq.slice(0,400).map(t=>`<option value="${esc(t)}"></option>`).join("");
+}
+function saveToTask(){
+  const tag=String($("gasTag").value||"").trim();
+  if(!tag){toast("Укажите тэг — результат запишется в его задание");$("gasTag").focus();return;}
+  const text=summaryText();
+  if(!text){toast("Нет результата для записи");return;}
+  const app=window.TagListApp;
+  if(!app?.addResultToTag){toast("Список тэгов недоступен");return;}
+  const r=app.addResultToTag(tag,text.replace(/^Газоанализ — /,"Газоанализ, "));
+  if(!r.ok){toast(r.message||"Не удалось записать");return;}
+  toast(r.created?`Создан тэг ${r.tag} на странице «${r.page}», результат — в задании`:`Записано в задание ${r.tag}`);
+  refreshTagList();
+}
 async function shareSummary(){
   const text=summaryText();
   if(!text){toast("Нет результата для отправки");return;}
@@ -617,6 +638,7 @@ function bind(){
       case "gasClear":state.value="";$("gasValue").value="";persist();render();$("gasValue").focus();break;
       case "gasCopy":{const s=summaryText();if(s)copyText(s,"Результат скопирован");else toast("Нет результата для копирования");break;}
       case "gasShare":shareSummary();break;
+      case "gasTask":saveToTask();break;
       case "gasFromMain":{
         const c=context(),{x}=currentFraction(c);
         const val=fromFraction(x,state.ma.unit,c);
@@ -648,6 +670,7 @@ function bind(){
       case "gasHi":state.ma.hi=v;break;
       case "gasMa":state.ma.mA=v;state.ma.last="mA";break;
       case "gasMaVal":state.ma.val=v;state.ma.last="val";break;
+      case "gasTag":state.tag=v;persist();return;
       default:return;
     }
     persist();render();
@@ -667,20 +690,22 @@ function bind(){
   root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.matches("input")){e.preventDefault();e.target.blur();}});
 }
 
-function mount(container){
-  if(root&&root===container&&root.firstElementChild)return;
+function mount(container,opts={}){
+  if(typeof opts.getTags==="function")getTags=opts.getTags;
+  if(root&&root===container&&root.firstElementChild){refreshTagList();return;}
   root=container;els={};
   root.innerHTML=template();
   bind();
+  setInput("gasTag",state.tag||"");refreshTagList();
   setInput("gasValue",state.value);
   if(state.ma.last==="val")setInput("gasMaVal",state.ma.val);else setInput("gasMa",state.ma.mA);
   render();
 }
 
 window.TagListGas={
-  version:"96",
+  version:"96.1",
   mount,
-  onShow(){render();},
+  onShow(){refreshTagList();render();},
   onHide(){flush();},
   // Для тестов и отладки.
   _api:{molarMass,parseNum,fmt,toFraction,fromFraction,namur,GASES,summaryText,get state(){return state;}}

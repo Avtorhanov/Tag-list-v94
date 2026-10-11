@@ -1598,39 +1598,30 @@ body.gas-mode .fab,body.gas-mode .footer{display:none!important}
   --field-label:#3b4856; --legend-label:#3b4856;
   --amp:#b25e00; --ok:#1f7a3d; --warn:#a86a00; --bad:#b3261e; --zone:#dfe6ef; --on-accent:#ffffff;
 }
-/* Тёмная — та же палитра в ночном варианте (графит с холодным оттенком). Контуры прежние. */
-:root[data-theme="dark"]{
-  --top-divider:rgba(255,255,255,.08);
-  --bg:#12171d; --card:#1a2129; --text:#e4e9ee; --muted:#93a0ad;
-  --accent:#6ea2ff; --accent-strong:#a9c8ff; --soft:#223047; --soft-success:#1b2b26;
-  --danger:#ff7b72; --control:#212a34; --input-bg:#10151b;
-  --field-label:#c3ccd5; --legend-label:#c3ccd5;
-  --amp:#f0a24a; --ok:#5cc985; --warn:#e8b54a; --bad:#ff7b72; --zone:#233040; --on-accent:#0d1520;
-}
+/* Тёмная — прежняя (Nardo Gray). От конвертора — только цвета ролей: ток, состояния, шкала. */
+:root[data-theme="dark"]{--amp:#f0a24a;--ok:#5cc985;--warn:#e8b54a;--bad:#ff7b72;--zone:#25282a;--on-accent:#ffffff;--accent-text:var(--accent-strong)}
 /* Navy и Green сохраняют свой оттенок, но получают ту же систему ролей цвета. */
 :root[data-theme="navy"]{--amp:#f0a24a;--ok:#5cc985;--warn:#e8b54a;--bad:#ff867c;--zone:#1b2a3e;--on-accent:#07101b}
 :root[data-theme="green"]{--amp:#f2b04e;--ok:#8be0b3;--warn:#e8c25a;--bad:#ff9187;--zone:#173a32;--on-accent:#071713}
 
-/* Тёмная тема: поверхности из токенов вместо прежних жёстко заданных #121212/#151515/#171717. */
-:root[data-theme="dark"] .tab,:root[data-theme="dark"] .pageChip,
-:root[data-theme="dark"] .utilityBtn,:root[data-theme="dark"] .iconBtn,:root[data-theme="dark"] .pageAction{background:var(--card)}
-:root[data-theme="dark"] .summaryCard,:root[data-theme="dark"] .row,:root[data-theme="dark"] .gasCard{background:var(--card)}
-:root[data-theme="dark"] .row.done{background:var(--soft-success)}
-:root[data-theme="dark"] .choice,:root[data-theme="dark"] .action:not(.primary):not(.delete),:root[data-theme="dark"] .closex,
-:root[data-theme="dark"] .rowAction,:root[data-theme="dark"] .secondary{background:var(--control)}
-/* Текст на акцентной заливке — тёмный: светлый акцент + белый текст плохо читается. */
-:root[data-theme="dark"] .tab.active,:root[data-theme="dark"] .pageChip.active,:root[data-theme="dark"] .choice.active,
-:root[data-theme="dark"] .utilityBtn.primaryAction,:root[data-theme="dark"] #installApp,
-:root[data-theme="dark"] .action.primary,:root[data-theme="dark"] .fab,:root[data-theme="dark"] .rowSelect.selected{color:var(--on-accent)}
 .progressTrack{background:var(--zone)}
 .action{background:var(--control)}
 .closex{background:var(--control)}
 
-/* Выполнено — зелёный (состояние), выбор — акцент (действие). */
-:root[data-theme] .check.on{background:var(--ok);border-color:var(--ok)}
-.check.on::after{border-left-color:var(--on-accent);border-bottom-color:var(--on-accent)}
-:root[data-theme] .summaryCard .progressFill{background:var(--ok)}
-.summaryPercent{color:var(--ok);font-family:var(--f-mono);font-weight:600;letter-spacing:-.4px}
+/* Выполненные и прогресс — цвет своей темы. Зелёная заливка — только в зелёной теме. */
+:root{--soft-success:#e3ebf7;--accent-text:var(--accent)}
+.row.done{border-color:color-mix(in srgb,var(--accent) 22%,var(--line))}
+:root[data-theme="navy"]{--soft-success:#172d48}
+:root[data-theme="green"] .check.on{background:var(--ok);border-color:var(--ok)}
+:root[data-theme="green"] .check.on::after{border-left-color:var(--on-accent);border-bottom-color:var(--on-accent)}
+:root[data-theme="green"] .summaryCard .progressFill{background:var(--ok)}
+:root[data-theme="green"] .row.done{border-color:color-mix(in srgb,var(--ok) 30%,var(--line))}
+.summaryPercent{font-family:var(--f-mono);font-weight:600;letter-spacing:-.4px}
+/* «Отправить» в верхнем ряду — без заливки, как остальные кнопки ряда. */
+.utilityBtn.primaryAction{background:var(--card);border-color:var(--line);color:var(--text)}
+:root[data-theme="dark"] .utilityBtn.primaryAction{background:var(--control);border-color:var(--line);color:var(--text)}
+/* Окна подтверждения: блок сообщения в цветах темы (раньше — светлый в любой теме). */
+.duplicateMessage{background:color-mix(in srgb,var(--bad,#b3261e) 7%,var(--card));border-color:color-mix(in srgb,var(--bad,#b3261e) 28%,var(--line))}
 .num{font-family:var(--f-mono);font-weight:500;font-size:calc(11px * var(--fontScale));color:var(--muted);opacity:.8}
 
 /* ---------- Шапки ---------- */
@@ -1660,7 +1651,7 @@ body.loop-mode .loopSub{display:block}
   box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 65%,transparent),0 0 12px color-mix(in srgb,var(--accent) 30%,transparent);
   transition:transform var(--ui-motion) var(--ui-ease),width var(--ui-motion) var(--ui-ease)}
 .viewSwitchThumb.instant{transition:none}
-:root[data-theme="dark"] .viewSwitch{background:var(--card)}
+:root[data-theme="dark"] .viewSwitch{background:var(--control)}
 :root[data-theme="dark"] .viewSwitchThumb{background:var(--accent);box-shadow:0 0 0 1px rgba(210,213,215,.34),0 3px 10px rgba(0,0,0,.38)}
 :root[data-theme="dark"] .viewSwitchBtn.active{color:var(--on-accent)}
 :root[data-theme="navy"] .viewSwitch,:root[data-theme="green"] .viewSwitch{background:var(--card)}
@@ -1685,7 +1676,7 @@ body.conv-mode .fab,body.conv-mode .footer{display:none!important}
 .gasActions .action,.iconAction{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px}
 .gasActions .action span,.iconAction span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .gasValueInput{font-family:var(--f-mono);font-weight:600;letter-spacing:-.6px;font-size:max(20px,calc(26px * var(--fontScale)))}
-#gasValue,.loopMain .gasValueInput{color:var(--accent)}
+#gasValue,.loopMain .gasValueInput{color:var(--accent-text)}
 .gasValueUnit{font-family:var(--f-mono);font-weight:500;font-size:calc(14px * var(--fontScale))}
 .gasRowValue{font-family:var(--f-mono);font-weight:600;letter-spacing:-.3px}
 .gasRow[data-copy-text$=" мА"] .gasRowValue,#gasMa,.loopCurrent .gasValueInput{color:var(--amp)}
@@ -1759,7 +1750,7 @@ body.conv-mode .fab,body.conv-mode .footer{display:none!important}
 .loopSeg .tab{width:100%;min-height:36px;padding:6px 8px;text-align:center;overflow:hidden;text-overflow:ellipsis}
 .loopPresets .tab{font-family:var(--f-mono);font-weight:500;font-size:calc(12px * var(--fontScale))}
 .loopResult{padding:8px 10px;border-radius:10px;background:var(--zone);font-family:var(--f-mono);font-size:calc(12.5px * var(--fontScale));line-height:1.4}
-.loopResult b{color:var(--accent);font-weight:600}
+.loopResult b{color:var(--accent-text);font-weight:600}
 .loopBlock .mini{line-height:1.4}
 
 .loopTableWrap{overflow-x:auto;margin:0 -2px 8px}
@@ -1770,7 +1761,7 @@ body.conv-mode .fab,body.conv-mode .footer{display:none!important}
 .loopTable tbody tr{cursor:pointer}
 .loopTable tbody tr:last-child td{border-bottom:0}
 .loopTable tbody tr.active td{background:var(--soft)}
-.loopCellMain{color:var(--accent)}
+.loopCellMain{color:var(--accent-text)}
 .loopCellI{color:var(--amp)}
 @media (hover:hover){.loopTable tbody tr:not(.active):hover td{background:var(--zone)}}
 
@@ -1788,7 +1779,7 @@ body.conv-mode .fab,body.conv-mode .footer{display:none!important}
 .addChoice .choice{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 8px;font-weight:750}
 .addChoice .choice span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .choiceIcon{width:22px;height:22px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.addChoice .choice:not(.active) .choiceIcon{color:var(--accent)}
+.addChoice .choice:not(.active) .choiceIcon{color:var(--accent-text)}
 .iconAction .choiceIcon{width:20px;height:20px}
 @media (max-width:360px){.addChoice .choice{gap:6px;padding:0 5px;font-size:15px}}
 /* Navy и Green: тёмный текст на светлой акцентной заливке — как в тёмной теме. */
@@ -1809,3 +1800,16 @@ body.conv-mode .fab,body.conv-mode .footer{display:none!important}
   .viewSwitchBtn{padding:0 8px;font-size:12.5px}
   .titleRow{gap:6px}
 }
+
+/* Поиск: панель выезжает сразу и ровно на свою высоту (раньше — с запасом и рывком). */
+.searchPanel{animation:none;max-height:0;will-change:max-height,opacity,transform;
+  transition:max-height .22s cubic-bezier(.2,.8,.2,1),opacity .18s ease-out,transform .22s cubic-bezier(.2,.8,.2,1),margin-top .22s cubic-bezier(.2,.8,.2,1)}
+.searchPanel.show{max-height:46px}
+
+/* Результат конвертора → задание тега. */
+.gasActions3{grid-template-columns:44px minmax(0,1fr) minmax(0,1fr)}
+.gasActions .iconOnly{padding:0;min-width:44px}
+.gasTagField{margin-top:10px}
+.gasTagField input{font-family:var(--f-mono);font-weight:500;letter-spacing:.02em}
+/* Заголовок раздела-конвертора чуть компактнее — «Токовая петля» помещается рядом с переключателем. */
+body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px)}

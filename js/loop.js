@@ -176,7 +176,8 @@ const ICON={
   copy:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"></rect><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"></path></svg>',
   send:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.5 13.5"></path><path d="m21 3-6.5 18-4-7.5L3 9.5Z"></path></svg>',
   pin:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4Z"></path></svg>',
-  x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>'
+  x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>',
+  task:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5H6.5A2 2 0 0 0 4.5 8v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1A1.5 1.5 0 0 0 15 4.5"></path><path d="m8.5 13.5 2.5 2.5 4.5-5"></path></svg>'
 };
 let root=null,els={},getTags=null;
 function $(id){return els[id]||(els[id]=root.querySelector("#"+id));}
@@ -205,7 +206,7 @@ function template(){
       <div class="gasCardHead"><h2 id="loopDevTitle">Прибор</h2><span class="gasHeadNote" id="loopCfgLine"></span></div>
       <div class="loopKinds" role="tablist" aria-label="Тип прибора">${kinds}</div>
       <div class="field loopTagField">
-        <label for="loopTag">Тег</label>
+        <label for="loopTag">Тэг</label>
         <div class="gasJoin">
           <input id="loopTag" list="loopTagList" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="2131-TT-434"/>
           <button type="button" class="action loopSaveBtn" id="loopSave" title="Сохранить шкалу для этого тега">${ICON.pin}<span>Сохранить</span></button>
@@ -233,8 +234,9 @@ function template(){
       <div class="loopTicks" aria-hidden="true"><span style="left:10%">4</span><span style="left:30%">8</span><span style="left:50%">12</span><span style="left:70%">16</span><span style="left:90%">20</span></div>
       <div class="gasMaStatus" id="loopStatus" role="status"></div>
       <div class="mini loopClamp" id="loopClamp"></div>
-      <div class="gasActions">
-        <button type="button" class="action" id="loopCopy">${ICON.copy}<span>Копировать</span></button>
+      <div class="gasActions gasActions3">
+        <button type="button" class="action iconOnly" id="loopCopy" aria-label="Копировать результат" title="Копировать результат">${ICON.copy}</button>
+        <button type="button" class="action" id="loopTask" title="Дописать результат в задание тега (поле «Тег» выше)">${ICON.task}<span>В задание</span></button>
         <button type="button" class="action primary" id="loopShare">${ICON.send}<span>Отправить</span></button>
       </div>
     </section>
@@ -442,6 +444,24 @@ function summaryText(){
   vals.push(`${fx(mA,3)} мА (${fx(state.p*100,2)} %)`);
   return plain(`${head}\n${vals.join(" = ")}\n${namur(mA).text}`);
 }
+// Короткая строка для задания тега: тип, шкала, значения и ток.
+function taskText(){
+  const c=C(),m=M(),fs=m.fields(c),v=m.vals(state.p,c),mA=4+16*state.p;
+  const vals=fs.map(f=>`${fx(v[f.k],f.d)} ${f.u}`);
+  vals.push(`${fx(mA,3)} мА (${fx(state.p*100,2)} %)`);
+  const n=namur(mA);
+  return plain(`4–20 мА, ${state.kind} ${m.sum(c)}: ${vals.join(" = ")}${n.cls==="gasOk"?"":` — ${n.text}`}`);
+}
+function saveToTask(){
+  const tag=String($("loopTag").value||"").trim();
+  if(!tag){toast("Укажите тег — результат запишется в его задание");$("loopTag").focus();return;}
+  const app=window.TagListApp;
+  if(!app?.addResultToTag){toast("Список тэгов недоступен");return;}
+  const r=app.addResultToTag(tag,taskText());
+  if(!r.ok){toast(r.message||"Не удалось записать");return;}
+  toast(r.created?`Создан тэг ${r.tag} на странице «${r.page}», результат — в задании`:`Записано в задание ${r.tag}`);
+  refreshTagList();
+}
 async function shareSummary(){
   const text=summaryText();
   try{
@@ -534,6 +554,7 @@ function bind(){
       case "loopSave":saveTag();break;
       case "loopCopy":copyText(summaryText(),"Результат скопирован");break;
       case "loopShare":shareSummary();break;
+      case "loopTask":saveToTask();break;
     }
   });
   root.addEventListener("input",e=>{
@@ -585,7 +606,7 @@ function mount(container,opts={}){
 }
 
 window.TagListLoop={
-  version:"96",
+  version:"96.1",
   mount,
   onShow(){refreshTagList();syncCfgInputs();render();},
   onHide(){flush();},

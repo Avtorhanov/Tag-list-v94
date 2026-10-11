@@ -1616,7 +1616,7 @@ function applyTheme(theme){
   document.documentElement.dataset.theme=selected;
   safeSetStorage(THEME_KEY,selected);
   const meta=document.querySelector('meta[name="theme-color"]');
-  if(meta)meta.content={light:"#eceff2",dark:"#12171d",navy:"#07101b",green:"#071713"}[selected];
+  if(meta)meta.content={light:"#eceff2",dark:"#000000",navy:"#07101b",green:"#071713"}[selected];
   const icon=$("themeIcon");
   if(icon)icon.textContent=THEME_ICON[selected];
   // APK: цвет системной строки состояния под тему.
@@ -2184,7 +2184,7 @@ $("search").addEventListener("input",e=>{
 });
 // v81: Enter в поиске прячет клавиатуру (результаты уже отфильтрованы).
 $("search").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.blur();}});
-$("searchBtn").onclick=()=>{$("searchPanel").classList.add("show");setTimeout(()=>$("search").focus(),20);};
+$("searchBtn").onclick=()=>{$("searchPanel").classList.add("show");try{$("search").focus({preventScroll:true});}catch(_){$("search").focus();}};
 $("searchClose").onclick=()=>{query="";$("search").value="";$("searchPanel").classList.remove("show");renderSummary();renderList();};
 $("fontMinus").onclick=()=>{
   let s=parseFloat(document.documentElement.style.getPropertyValue("--fontScale"))||1;
@@ -2548,6 +2548,36 @@ async function setView(view,{fromHistory=false}={}){
   }catch(_){viewHistoryPushed=false;}
   api?.onShow?.();
 }
+// v96: результат конвертора записывается в задание тега. Тег ищется на всех страницах
+// (сначала на текущей); если его нет — создаётся на последней открытой странице.
+function resultTagKey(t){return tagKey(t).replace(/[ТРЕАСКМНОХВ]/g,ch=>({"Т":"T","Р":"P","Е":"E","А":"A","С":"C","К":"K","М":"M","Н":"H","О":"O","Х":"X","В":"B"})[ch]);}
+function addResultToTag(tag,text){
+  const name=String(tag||"").replace(/\s+/g," ").trim();
+  if(!name)return {ok:false,message:"Укажите тег"};
+  const key=resultTagKey(name);
+  let page=null,item=null;
+  for(const pg of [getActivePage(),...pages.filter(p=>p.id!==activePageId)]){
+    if(!pg)continue;
+    const arr=pg.id===activePageId?data:(pg.data||[]);
+    const found=arr.find(x=>resultTagKey(x.tag)===key);
+    if(found){page=pg;item=found;break;}
+  }
+  const stamp=new Date().toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(",","");
+  const entry=`${stamp} — ${String(text||"").trim()}`;
+  let created=false;
+  if(item){
+    const prev=String(item.task||"").replace(/\s+$/,"");
+    item.task=prev?`${prev}\n${entry}`:entry;
+    if(page&&page.id!==activePageId)page.updatedAt=new Date().toISOString();
+  }else{
+    const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);
+    item={id:max+1,unit:unitFromTag(name),tag:name,done:false,task:entry};
+    data.push(item);page=getActivePage();created=true;
+  }
+  save();render();
+  return {ok:true,created,tag:item.tag,page:page?.name||""};
+}
+window.TagListApp={addResultToTag,tagNames:allTagNames};
 // Совместимость: прежние вызовы закрытия конвертора.
 function closeGasView(fromHistory=false){return setView("list",{fromHistory});}
 $("viewSwitch").addEventListener("click",e=>{
@@ -2658,8 +2688,7 @@ if(window.AndroidApp){
   // Файл состояния, открытый из мессенджера/файлового менеджера («Открыть с помощью Tag list»).
   window.__tagListOpenState=async(text,name)=>{
     try{
-      const ok=await askConfirm(`Открыть состояние из файла «${name||"JSON"}»?\nТекущее состояние будет сохранено локально как резервная копия.`,"Открыть файл","Открыть");
-      if(!ok)return;
+      if(currentView!=="list")await setView("list");
       await importJsonStateFile(new File([String(text||"")],name||"state.json",{type:"application/json"}));
     }catch(e){showToast(e?.message||"Не удалось открыть JSON");}
   };
