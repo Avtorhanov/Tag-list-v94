@@ -290,7 +290,7 @@ function template(){
     <section class="gasCard gasResultCard gasO3" aria-labelledby="gasResultTitle">
       <div class="gasCardHead"><h2 id="gasResultTitle">Результат</h2><span class="gasHeadNote" id="gasResultCond"></span></div>
       <div class="gasResults" id="gasResults" aria-live="polite"></div>
-      <div class="field gasTagField"><label for="gasTag">Тэг для задания</label><input id="gasTag" list="gasTagList" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="Например, 2131-QT-501"/><datalist id="gasTagList"></datalist></div>
+      <div class="field gasTagField"><label for="gasTag">Тэг для задания</label><input id="gasTag" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="Например, 2131-QT-501"/></div>
       <div class="gasActions gasActions3">
         <button type="button" class="action iconOnly" id="gasCopy" aria-label="Копировать результат" title="Копировать результат">${ICON.copy}</button>
         <button type="button" class="action" id="gasTask" title="Дописать результат в задание тэга">${ICON.task}<span>В задание</span></button>
@@ -545,11 +545,13 @@ function summaryText(){
   lines.push(`Условия: ${cParts.join(", ")}`);
   return lines.join("\n");
 }
+// v97: подсказки тегов под полем (общий компонент из app.js) вместо <datalist>.
+let tagPicker=null;
 function refreshTagList(){
-  const dl=root&&root.querySelector("#gasTagList");if(!dl)return;
-  let tags=[];try{tags=typeof getTags==="function"?getTags():[];}catch(_){tags=[];}
-  const uniq=[...new Set(tags.map(t=>String(t||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ru",{numeric:true}));
-  dl.innerHTML=uniq.slice(0,400).map(t=>`<option value="${esc(t)}"></option>`).join("");
+  const input=root&&root.querySelector("#gasTag");if(!input)return;
+  const app=window.TagListApp;
+  if(!tagPicker&&app?.attachTagPicker)tagPicker=app.attachTagPicker(input);
+  tagPicker?.refresh();
 }
 function saveToTask(){
   const tag=String($("gasTag").value||"").trim();
@@ -693,7 +695,7 @@ function bind(){
 function mount(container,opts={}){
   if(typeof opts.getTags==="function")getTags=opts.getTags;
   if(root&&root===container&&root.firstElementChild){refreshTagList();return;}
-  root=container;els={};
+  root=container;els={};tagPicker=null;
   root.innerHTML=template();
   bind();
   setInput("gasTag",state.tag||"");refreshTagList();
@@ -703,7 +705,7 @@ function mount(container,opts={}){
 }
 
 window.TagListGas={
-  version:"96.1",
+  version:"97.1",
   mount,
   onShow(){refreshTagList();render();},
   onHide(){flush();},

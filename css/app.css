@@ -1386,11 +1386,8 @@ button,.choice,.tab,.pageChip,.pageAction,.fontChoice{
 .pageViewport::after{right:0;background:linear-gradient(270deg,var(--bg),transparent);}
 .pageStrip{padding-left:5px;padding-right:20px;scroll-padding-inline:5px;}
 .tabs{padding-left:5px;padding-right:5px;scroll-padding-inline:5px;}
-.tabs::before,.tabs::after{
-  content:"";position:absolute;top:0;bottom:0;width:11px;z-index:3;pointer-events:none;
-}
-.tabs::before{left:0;background:linear-gradient(90deg,var(--bg),transparent);}
-.tabs::after{right:0;background:linear-gradient(270deg,var(--bg),transparent);}
+/* v97: затухание краёв ряда фильтров — маской самого ряда (см. блок v97 ниже).
+   Прежние ::before/::after прокручивались вместе с вкладками и резали их посередине. */
 .pageChip{font-size:calc(12.2px * var(--fontScale));}
 .tab{font-size:calc(13.2px * var(--fontScale));}
 
@@ -1813,3 +1810,41 @@ body.conv-mode .fab,body.conv-mode .footer{display:none!important}
 .gasTagField input{font-family:var(--f-mono);font-weight:500;letter-spacing:.02em}
 /* Заголовок раздела-конвертора чуть компактнее — «Токовая петля» помещается рядом с переключателем. */
 body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px)}
+
+/* ===== v97 ===== */
+/* Карточки тегов никогда не шире экрана. Причина «съезда»: строки с content-visibility
+   запоминали ширину (после поворота/смены ширины), и колонка сетки раздувалась за край. */
+.list{grid-template-columns:minmax(0,1fr)}
+.row{min-width:0;max-width:100%;contain-intrinsic-width:none;contain-intrinsic-height:auto 54px}
+.info,.taskLine,.taskEditorWrap,.taskBox{min-width:0;max-width:100%}
+
+/* Ряд фильтров: мягкие края маской самого ряда — только со стороны скрытых вкладок. */
+.tabs{--fadeL:0px;--fadeR:0px;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 var(--fadeL),#000 calc(100% - var(--fadeR)),transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,#000 var(--fadeL),#000 calc(100% - var(--fadeR)),transparent 100%)}
+.tabs.fadeL{--fadeL:18px}
+.tabs.fadeR{--fadeR:18px}
+
+/* Поле «Задание»: чтение и запись одного размера; «Сохранить» — только во время записи. */
+.taskSave{transition:opacity .14s ease}
+.taskEditorWrap.open:not(.editing) .taskBox textarea{cursor:text}
+
+/* Тег в конверторах: подсказки под полем вместо системного выпадающего списка. */
+.tagSuggest{margin-top:6px;border:1px solid var(--line);border-radius:11px;background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
+.tagSuggest[hidden]{display:none}
+.tagSuggestItem{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;margin:0;padding:7px 11px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;color:var(--text);text-align:left;cursor:pointer;font-size:calc(14px * var(--fontScale));line-height:1.2;box-shadow:none}
+.tagSuggestItem:first-child{border-top:0}
+.tagSuggestItem:active,.tagSuggestItem.kbd{background:var(--soft);transform:none}
+.tsTag{flex:1 1 auto;min-width:0;font-family:var(--f-mono);font-weight:600;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tsTag mark{background:transparent;color:var(--accent-strong);padding:0}
+.tsPage{flex:0 1 auto;min-width:0;max-width:46%;color:var(--muted);font-size:calc(11.5px * var(--fontScale));font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tagSuggestItem.isNew .tsTag{color:var(--accent-strong);font-weight:700}
+.tagSuggestItem.isNew .tsPlus{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--on-accent,#fff);font-size:15px;font-weight:800;line-height:1}
+.tagPickInfo{display:flex;align-items:center;gap:6px;margin-top:6px;min-width:0;font-size:calc(12px * var(--fontScale));color:var(--muted);line-height:1.3}
+.tagPickInfo[hidden]{display:none}
+.tagPickInfo b{color:var(--text);font-weight:700}
+.tagPickInfo .tpMark{flex:0 0 auto;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;line-height:1;color:var(--on-accent,#fff);background:var(--ok,#2f9e5b)}
+.tagPickInfo.isNew .tpMark{background:var(--accent)}
+.tagPickInfo span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Режим записи заметен во всех темах (тёмные темы перекрывали рамку поля). */
+.row .taskEditorWrap.editing .taskBox textarea{border-color:var(--accent)!important}

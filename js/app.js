@@ -378,6 +378,17 @@ function visibleData(){
   });
 }
 
+// v97: края ряда фильтров затухают маской самого ряда, только там, где есть скрытые
+// вкладки. Раньше полосы-градиенты прокручивались вместе с вкладками и «резали»
+// вкладку посередине (тёмная вертикальная полоса на «Невыполненные»).
+function updateTabsFade(){
+  const el=document.getElementById("tabs");
+  if(!el)return;
+  const max=el.scrollWidth-el.clientWidth;
+  el.classList.toggle("fadeL",max>1&&el.scrollLeft>2);
+  el.classList.toggle("fadeR",max>1&&el.scrollLeft<max-2);
+}
+
 function renderTabs(animate=true){
   // v95: все счётчики вкладок — за один проход по списку
   // (раньше — отдельный проход по всем тегам на каждую вкладку и каждую установку).
@@ -405,6 +416,7 @@ function renderTabs(animate=true){
     frag.appendChild(b);
   });
   tabs.replaceChildren(frag);
+  updateTabsFade();
   // v81: анимация вкладок только при смене фильтра/данных пользователем,
   // а не при каждой отметке/сохранении (раньше полоса вкладок «мигала»).
   if(!animate)return;
@@ -572,23 +584,28 @@ function measureTaskTextarea(ta){
   return taskMeasureEl.scrollHeight+borders;
 }
 
-function taskEditorCap(editing){
-  const vh=Math.round(window.visualViewport?.height||window.innerHeight||640);
-  return editing?Math.max(125,Math.min(230,Math.round(vh*.42))):125;
+// v97: поле задания — не выше трёх карточек тегов, одинаково при чтении и записи.
+// Дальше текст прокручивается внутри поля; второе «увеличение» поля убрано.
+const TASK_FIELD_ROWS=3;
+function taskEditorCap(){
+  let rowH=54;
+  const sample=list.querySelector(".row:not(.taskOpen)");
+  if(sample){const h=sample.getBoundingClientRect().height;if(h>30&&h<120)rowH=h;}
+  const gap=parseFloat(getComputedStyle(list).rowGap)||6;
+  return Math.round(TASK_FIELD_ROWS*rowH+(TASK_FIELD_ROWS-1)*gap);
 }
 
 function autosizeTaskTextarea(ta,maxPx){
   if(!ta||!ta.isConnected||!ta.getBoundingClientRect().width)return;
   const cs=getComputedStyle(ta);
   const line=parseFloat(cs.lineHeight)||20;
-  const editing=!!ta.closest(".taskEditorWrap.editing");
-  const min=editing?Math.max(96,line*3+20):Math.max(50,line+18);
-  // Предел высоты фиксируется при входе в режим записи и не меняется,
-  // когда клавиатура открывается/закрывается (иначе поле «прыгает»).
+  // Одинаковый минимум для чтения и записи: при касании текста поле не «прыгает».
+  const min=ta.closest(".taskEditorWrap")?Math.max(58,line*2+20):Math.max(50,line+18);
+  // Предел фиксируется, пока поле открыто, и не меняется при появлении клавиатуры.
   let cap=maxPx;
   if(!cap){
-    if(editing){cap=Number(ta.dataset.cap)||taskEditorCap(true);ta.dataset.cap=String(cap);}
-    else{delete ta.dataset.cap;cap=taskEditorCap(false);}
+    if(ta.closest(".taskEditorWrap.open")){cap=Number(ta.dataset.cap)||taskEditorCap();ta.dataset.cap=String(cap);}
+    else{delete ta.dataset.cap;cap=taskEditorCap();}
   }
   const max=Math.max(min,cap);
   const desired=Math.round(Math.min(max,Math.max(min,measureTaskTextarea(ta))));
@@ -622,8 +639,36 @@ function setTaskEditor(row,item,open,focus=false,opts={}){
     }
   }else if(ta){
     if(document.activeElement===ta)ta.blur();
-    ta.style.height="";ta.scrollTop=0;
+    ta.style.height="";ta.scrollTop=0;delete ta.dataset.cap;
   }
+}
+
+// Пересчёт открытых полей задания (поворот экрана, A−/A+): предел «3 тега» зависит от высоты карточки.
+function refreshOpenTaskFields(){
+  list.querySelectorAll(".taskEditorWrap.open .taskBox textarea").forEach(ta=>{delete ta.dataset.cap;autosizeTaskTextarea(ta);});
+}
+
+// v97: «Задание» — первое касание открывает поле для чтения (без клавиатуры),
+// второе закрывает. Клавиатура — только при касании текста; «Сохранить» видна
+// только во время записи, сохраняет и прячет клавиатуру, поле остаётся открытым.
+function closeTaskEditor(row,item){
+  const ta=row.querySelector(".taskBox textarea");
+  if(ta&&item&&ta.closest(".taskEditorWrap.editing"))item.task=ta.value;
+  flushSave();
+  setTaskEditor(row,item,false);
+  renderTabs(false);
+}
+function commitTaskEditor(row,item){
+  const ta=row.querySelector(".taskBox textarea");
+  if(ta)item.task=String(ta.value||"").trim();
+  if(ta&&ta.value!==item.task)ta.value=item.task;
+  flushSave();
+  row.querySelector(".taskToggle")?.classList.toggle("hasTask",!!item.task.trim());
+  const keep=ta?ta.scrollTop:0;
+  if(ta&&document.activeElement===ta)ta.blur();
+  setTaskEditor(row,item,true,false,{editing:false,scrollTop:keep});
+  renderTabs(false);
+  showToast("Задание сохранено");
 }
 
 // После появления клавиатуры аккуратно показываем поле целиком (один раз),
@@ -1650,7 +1695,7 @@ function refreshAfterViewportChange(){
       scheduleTaskEditorReveal(active);
     }else if(widthChanged){
       // Поворот/изменение ширины: обновляем только размеры открытых полей.
-      list.querySelectorAll(".taskEditorWrap.open .taskBox textarea").forEach(ta=>autosizeTaskTextarea(ta));
+      refreshOpenTaskFields();
     }
   },60);
 }
@@ -1981,6 +2026,9 @@ window.addEventListener("pagehide",flushSave);
 
 // Один набор обработчиков вместо обработчика на каждом теге. Это заметно снижает
 // количество объектов/замыканий на длинных списках и уменьшает нагрузку на iPhone/Android.
+tabs.addEventListener("scroll",updateTabsFade,{passive:true});
+window.addEventListener("resize",updateTabsFade,{passive:true});
+(document.fonts?.ready||Promise.resolve()).then(updateTabsFade);
 tabs.addEventListener("click",e=>{
   const b=e.target.closest(".tab");
   if(!b)return;
@@ -2041,25 +2089,15 @@ list.addEventListener("click",e=>{
   if(taskToggle){
     e.stopPropagation();
     const editor=row.querySelector(".taskEditorWrap");
-    const isOpen=editor?.classList.contains("open");
-    const isEditing=editor?.classList.contains("editing");
-    if(!isOpen) setTaskEditor(row,item,true,false);
-    else if(!isEditing) setTaskEditor(row,item,true,true);
-    else{const ta=row.querySelector(".taskBox textarea");if(ta&&document.activeElement!==ta){try{ta.focus({preventScroll:true});}catch(_){ta.focus();}scheduleTaskEditorReveal(ta);}}
-    // When editing, tapping the task control again must not collapse the editor.
-    // Use the explicit Save button to finish editing and close the field.
+    // Первое касание — открыть для чтения (без фокуса и клавиатуры), второе — закрыть.
+    if(editor?.classList.contains("open")) closeTaskEditor(row,item);
+    else setTaskEditor(row,item,true,false);
     return;
   }
   const taskSave=e.target.closest(".taskSave");
   if(taskSave){
     e.stopPropagation();
-    const ta=row.querySelector(".taskBox textarea");
-    item.task=String(ta?.value||"").trim();
-    save();
-    const toggle=row.querySelector(".taskToggle");
-    toggle?.classList.toggle("hasTask",!!item.task);
-    setTaskEditor(row,item,false);
-    renderTabs(false);
+    commitTaskEditor(row,item);
     return;
   }
   if(longPressTriggered){e.preventDefault();longPressTriggered=false;}
@@ -2166,8 +2204,15 @@ document.addEventListener("focusin",event=>{
 });
 document.addEventListener("focusout",event=>{
   if(event.target.matches(".taskBox textarea")){
+    const ta=event.target,row=ta.closest(".row"),editor=ta.closest(".taskEditorWrap");
     document.body.classList.remove("task-editing");
     flushSave();
+    if(row&&row.isConnected)renderTabs(false); // счётчик «Задания» после записи
+    // v97: запись закончилась — «Сохранить» прячется, поле остаётся открытым для чтения.
+    if(row&&row.isConnected&&editor?.classList.contains("open")&&editor.classList.contains("editing")){
+      const item=data.find(x=>x.id===Number(row.dataset.id));
+      if(item)setTaskEditor(row,item,true,false,{editing:false,scrollTop:ta.scrollTop});
+    }
   }
 });
 // Кнопки «Сохранить»/«Задание» не забирают фокус у поля: клавиатура не прячется
@@ -2189,10 +2234,12 @@ $("searchClose").onclick=()=>{query="";$("search").value="";$("searchPanel").cla
 $("fontMinus").onclick=()=>{
   let s=parseFloat(document.documentElement.style.getPropertyValue("--fontScale"))||1;
   s=Math.max(.65,Math.round((s-.1)*10)/10);document.documentElement.style.setProperty("--fontScale",s);safeSetStorage(FONT_KEY,s);
+  requestAnimationFrame(refreshOpenTaskFields);
 };
 $("fontPlus").onclick=()=>{
   let s=parseFloat(document.documentElement.style.getPropertyValue("--fontScale"))||1;
   s=Math.min(1.35,Math.round((s+.1)*10)/10);document.documentElement.style.setProperty("--fontScale",s);safeSetStorage(FONT_KEY,s);
+  requestAnimationFrame(refreshOpenTaskFields);
 };
 $("addBtn").onclick=openAdd;
 $("exportAction").onclick=openExportMenu;
@@ -2344,8 +2391,11 @@ $("clearChecks").onclick=()=>{
   showToast(allDone?`Снят статус «Выполнено»: ${selected.length}`:`Отмечено выполненными: ${selected.length}`);
 };
 document.addEventListener("selectstart",e=>{
-  if(e.target.closest("input,textarea,select,[contenteditable=true]")) return;
-  if(e.target.closest("button,.pageChip,.tab,.row,.utilityRow,.footer,.fab,.searchClose")) e.preventDefault();
+  // selectstart может прийти на текстовый узел — у него нет closest().
+  const el=e.target?.nodeType===1?e.target:e.target?.parentElement;
+  if(!el)return;
+  if(el.closest("input,textarea,select,[contenteditable=true]")) return;
+  if(el.closest("button,.pageChip,.tab,.row,.utilityRow,.footer,.fab,.searchClose")) e.preventDefault();
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeDuplicateDialog();closeExportMenu();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
 
@@ -2494,6 +2544,7 @@ function updateViewChrome(prev){
   document.body.classList.toggle("gas-mode",currentView==="gas");
   document.body.classList.toggle("loop-mode",currentView==="loop");
   document.body.dataset.view=currentView;
+  if(currentView==="list")requestAnimationFrame(updateTabsFade);
   // Направление анимации: вправо по порядку разделов — новый раздел въезжает справа.
   const dir=VIEW_ORDER.indexOf(currentView)>VIEW_ORDER.indexOf(prev)?"fromRight":"fromLeft";
   const targets=mod?[$(mod.el)]:[document.querySelector(".summaryCard"),$("list")];
@@ -2571,13 +2622,183 @@ function addResultToTag(tag,text){
     if(page&&page.id!==activePageId)page.updatedAt=new Date().toISOString();
   }else{
     const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);
-    item={id:max+1,unit:unitFromTag(name),tag:name,done:false,task:entry};
+    const tagName=plainTagName(name)||name;
+    item={id:max+1,unit:unitFromTag(tagName),tag:tagName,done:false,task:entry};
     data.push(item);page=getActivePage();created=true;
   }
   save();render();
   return {ok:true,created,tag:item.tag,page:page?.name||""};
 }
-window.TagListApp={addResultToTag,tagNames:allTagNames};
+
+// v97: выбор тега в конверторах — подсказки под полем вместо <datalist>.
+// Системный выпадающий список в Android WebView рисовался поверх шапки и результатов
+// полупрозрачным слоем. Теперь: ввод/вставка → совпадения прямо под полем → касание
+// подтверждает. Нет такого тега — он будет создан на последней открытой странице.
+function tagSearchKey(t){return resultTagKey(t).replace(/[^A-Z0-9]/g,"");}
+// Новый тег из конвертора: верхний регистр и обычные дефисы, без «исправлений» OCR.
+// Похожий на позиционное обозначение тег (2131-PT-450) пишется латиницей,
+// даже если набран кириллицей с той же раскладкой букв (Р, Т, Е, А…).
+const FULL_TAG_RE=/^\d{3,5}-[A-Z]{1,8}-?\d{3,5}[A-Z]{0,2}$/;
+function plainTagName(t){
+  const up=String(t||"").trim().toUpperCase().replace(/[–—−_]/g,"-").replace(/\s+/g,"");
+  const latin=resultTagKey(up);
+  return FULL_TAG_RE.test(latin)?latin:up;
+}
+function tagEntries(){
+  const out=[],seen=new Set();
+  const order=[getActivePage(),...pages.filter(p=>p.id!==activePageId)];
+  for(const pg of order){
+    if(!pg)continue;
+    for(const x of (pg.id===activePageId?data:(pg.data||[]))){
+      const tag=String(x?.tag||"").trim();
+      if(!tag)continue;
+      const key=resultTagKey(tag);
+      if(seen.has(key))continue;
+      seen.add(key);
+      out.push({tag,key,search:tagSearchKey(tag),page:pg.name,active:pg.id===activePageId});
+    }
+  }
+  return out;
+}
+function findTagEntry(value){
+  const key=resultTagKey(String(value||"").replace(/\s+/g," ").trim());
+  return key?tagEntries().find(e=>e.key===key)||null:null;
+}
+function activePageName(){return getActivePage()?.name||"";}
+function highlightMatch(tag,q){
+  // Подсвечиваем введённую часть (без учёта дефисов, регистра и кириллицы-двойников).
+  if(!q)return escapeHtml(tag);
+  const chars=[...tag],map=[];let norm="";
+  chars.forEach((ch,i)=>{const k=tagSearchKey(ch);if(k){norm+=k;map.push(i);}});
+  const at=norm.indexOf(q);
+  if(at<0)return escapeHtml(tag);
+  const from=map[at],to=map[at+q.length-1];
+  return escapeHtml(chars.slice(0,from).join(""))+"<mark>"+escapeHtml(chars.slice(from,to+1).join(""))+"</mark>"+escapeHtml(chars.slice(to+1).join(""));
+}
+function attachTagPicker(input,opts={}){
+  if(!input||input.__tagPicker)return input?.__tagPicker;
+  input.removeAttribute("list");
+  input.setAttribute("autocomplete","off");
+  input.setAttribute("aria-autocomplete","list");
+  const anchor=opts.anchor||input;
+  const box=document.createElement("div");
+  box.className="tagSuggest";box.hidden=true;box.setAttribute("role","listbox");
+  box.id=(input.id||"tag")+"Suggest";
+  input.setAttribute("aria-controls",box.id);
+  const info=document.createElement("div");
+  info.className="tagPickInfo";info.hidden=true;info.setAttribute("aria-live","polite");
+  anchor.after(box,info);
+  const limit=opts.limit||5;
+  let items=[],kbd=-1,hideTimer=0,silent=false;
+
+  function rank(entries,q){
+    const res=[];
+    for(const e of entries){
+      const i=e.search.indexOf(q);
+      if(i<0)continue;
+      // Точное совпадение → начало номера после установки → начало → вхождение.
+      const tail=e.search.replace(/^\d{3,5}/,"");
+      const r=e.search===q?0:(tail.startsWith(q)||e.search.startsWith(q))?1:2;
+      res.push({e,r,boost:typeof opts.boost==="function"?opts.boost(e.tag):0});
+    }
+    res.sort((a,b)=>a.r-b.r||b.boost-a.boost||(b.e.active-a.e.active)||a.e.tag.localeCompare(b.e.tag,"ru",{numeric:true}));
+    return res.slice(0,limit).map(x=>x.e);
+  }
+  function renderInfo(){
+    const v=String(input.value||"").trim();
+    if(!v){info.hidden=true;info.className="tagPickInfo";info.innerHTML="";return;}
+    const hit=findTagEntry(v);
+    if(hit){
+      info.className="tagPickInfo";
+      info.innerHTML=`<span class="tpMark" aria-hidden="true">✓</span><span>В списке · ${escapeHtml(hit.page)}</span>`;
+    }else{
+      info.className="tagPickInfo isNew";
+      info.innerHTML=`<span class="tpMark" aria-hidden="true">+</span><span>Новый тег — появится на странице «<b>${escapeHtml(activePageName())}</b>» при записи в задание</span>`;
+    }
+    info.hidden=false;
+  }
+  function close(){clearTimeout(hideTimer);box.hidden=true;box.innerHTML="";items=[];kbd=-1;input.setAttribute("aria-expanded","false");}
+  function open(){
+    const raw=String(input.value||"").replace(/\s+/g," ").trim();
+    const q=tagSearchKey(raw);
+    if(!q||document.activeElement!==input){close();renderInfo();return;}
+    const entries=tagEntries();
+    const exact=entries.find(e=>e.key===resultTagKey(raw));
+    const found=rank(entries,q);
+    items=found.map(e=>({tag:e.tag,page:e.page,isNew:false}));
+    // «Новый тег» предлагается, когда совпадений нет или введён полный тег.
+    const fresh=plainTagName(raw);
+    if(!exact&&(!found.length||FULL_TAG_RE.test(fresh)))items.push({tag:fresh,page:activePageName(),isNew:true});
+    if(!items.length){close();renderInfo();return;}
+    // Единственное точное совпадение уже введено — список не нужен.
+    if(exact&&items.length===1&&items[0].tag===raw){close();renderInfo();return;}
+    kbd=-1;
+    box.innerHTML=items.map((it,i)=>it.isNew
+      ?`<button type="button" class="tagSuggestItem isNew" role="option" data-i="${i}"><span class="tsPlus" aria-hidden="true">+</span><span class="tsTag">${escapeHtml(it.tag)}</span><span class="tsPage">новый · ${escapeHtml(it.page)}</span></button>`
+      :`<button type="button" class="tagSuggestItem" role="option" data-i="${i}"><span class="tsTag">${highlightMatch(it.tag,q)}</span><span class="tsPage">${escapeHtml(it.page)}</span></button>`).join("");
+    box.hidden=false;input.setAttribute("aria-expanded","true");
+    info.hidden=true; // пока открыт список, строка-подсказка не нужна
+    keepVisible();
+  }
+  function keepVisible(){
+    // Список под полем должен оставаться над клавиатурой, а поле — под шапкой.
+    requestAnimationFrame(()=>{
+      if(box.hidden)return;
+      const vv=window.visualViewport;
+      const top=vv?vv.offsetTop:0,height=vv?vv.height:window.innerHeight;
+      const head=document.querySelector(".top");
+      const headBottom=head&&getComputedStyle(head).position==="sticky"?Math.max(0,head.getBoundingClientRect().bottom-top):0;
+      const ir=input.getBoundingClientRect(),br=box.getBoundingClientRect();
+      const over=br.bottom-(top+height-10);
+      if(over<=0)return;
+      const room=ir.top-(top+headBottom+10);
+      const dy=Math.min(over,Math.max(0,room));
+      if(dy>2)window.scrollBy(0,dy);
+    });
+  }
+  function pick(i){
+    const it=items[i];if(!it)return;
+    silent=true;
+    input.value=it.tag;
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+    input.dispatchEvent(new Event("change",{bubbles:true}));
+    silent=false;
+    close();renderInfo();
+    try{input.blur();}catch(_){}
+    if(typeof opts.onPick==="function")opts.onPick(it.tag,{isNew:it.isNew,page:it.page});
+  }
+  function setKbd(i){
+    const btns=box.querySelectorAll(".tagSuggestItem");
+    if(!btns.length)return;
+    kbd=(i+btns.length)%btns.length;
+    btns.forEach((b,j)=>{b.classList.toggle("kbd",j===kbd);b.setAttribute("aria-selected",String(j===kbd));});
+  }
+  input.addEventListener("input",()=>{if(!silent)open();});
+  input.addEventListener("focus",()=>{clearTimeout(hideTimer);open();});
+  input.addEventListener("blur",()=>{hideTimer=setTimeout(()=>{close();renderInfo();},180);});
+  input.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"&&!box.hidden){e.preventDefault();setKbd(kbd+1);return;}
+    if(e.key==="ArrowUp"&&!box.hidden){e.preventDefault();setKbd(kbd-1);return;}
+    if(e.key==="Escape"&&!box.hidden){e.preventDefault();e.stopPropagation();close();return;}
+    if(e.key==="Enter"&&!box.hidden&&items.length){
+      // Enter подтверждает выделенную или первую подсказку (точное совпадение — первое).
+      e.preventDefault();
+      pick(kbd>=0?kbd:0);
+    }
+  });
+  // Касание подсказки не уводит фокус раньше времени — список не исчезает из-под пальца.
+  box.addEventListener("pointerdown",e=>{if(e.target.closest(".tagSuggestItem"))e.preventDefault();});
+  box.addEventListener("mousedown",e=>{if(e.target.closest(".tagSuggestItem"))e.preventDefault();});
+  box.addEventListener("click",e=>{
+    const b=e.target.closest(".tagSuggestItem");
+    if(b)pick(Number(b.dataset.i));
+  });
+  const api={refresh(){if(document.activeElement===input)open();else{close();renderInfo();}},close,element:box,info};
+  input.__tagPicker=api;
+  renderInfo();
+  return api;
+}
+window.TagListApp={addResultToTag,tagNames:allTagNames,tagEntries,findTagEntry,activePageName,attachTagPicker};
 // Совместимость: прежние вызовы закрытия конвертора.
 function closeGasView(fromHistory=false){return setView("list",{fromHistory});}
 $("viewSwitch").addEventListener("click",e=>{
@@ -2680,7 +2901,7 @@ if(window.AndroidApp){
       if(searchOpen){$("searchClose")?.click();return true;}
       if(editorOpen){
         const row=editorOpen.closest(".row"),item=data.find(x=>x.id===Number(row?.dataset.id));
-        if(row&&item){flushSave();setTaskEditor(row,item,false);renderTabs(false);return true;}
+        if(row&&item){closeTaskEditor(row,item);return true;}
       }
     }catch(_){}
     return false;

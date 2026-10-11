@@ -208,10 +208,9 @@ function template(){
       <div class="field loopTagField">
         <label for="loopTag">Тэг</label>
         <div class="gasJoin">
-          <input id="loopTag" list="loopTagList" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="2131-TT-434"/>
+          <input id="loopTag" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="2131-TT-434"/>
           <button type="button" class="action loopSaveBtn" id="loopSave" title="Сохранить шкалу для этого тега">${ICON.pin}<span>Сохранить</span></button>
         </div>
-        <datalist id="loopTagList"></datalist>
       </div>
       <div class="mini loopTagInfo" id="loopTagInfo"></div>
       <div class="loopSaved" id="loopSaved"></div>
@@ -415,14 +414,14 @@ function renderSaved(){
     return `<span class="loopSavedItem${on?" active":""}"><button type="button" class="loopSavedMain" data-load="${esc(n)}"><b>${esc(n)}</b><span>${esc(MODES[r.kind].sum(cfg))}</span></button><button type="button" class="loopSavedDel" data-del="${esc(n)}" aria-label="Удалить ${esc(n)}" title="Удалить">${ICON.x}</button></span>`;
   }).join("");
 }
+// v97: подсказки тегов под полем (общий компонент из app.js) вместо <datalist>.
+// Сначала теги, у которых тип определяется (TT/PT/FT/LT).
+let tagPicker=null;
 function refreshTagList(){
-  const dl=$("loopTagList");if(!dl)return;
-  let tags=[];
-  try{tags=typeof getTags==="function"?getTags():[];}catch(_){tags=[];}
-  const uniq=[...new Set(tags.map(t=>String(t||"").trim()).filter(Boolean))];
-  // Сначала теги, у которых тип определяется (TT/PT/FT/LT), затем остальные.
-  uniq.sort((a,b)=>(detectKind(a)?0:1)-(detectKind(b)?0:1)||a.localeCompare(b,"ru",{numeric:true}));
-  dl.innerHTML=uniq.slice(0,400).map(t=>`<option value="${esc(t)}"></option>`).join("");
+  const input=$("loopTag");if(!input)return;
+  const app=window.TagListApp;
+  if(!tagPicker&&app?.attachTagPicker)tagPicker=app.attachTagPicker(input,{anchor:input.closest(".gasJoin")||input,boost:t=>detectKind(t)?1:0});
+  tagPicker?.refresh();
 }
 
 // ---------------------------------------------------------------- действия
@@ -544,7 +543,7 @@ function bind(){
     }
     if(t.dataset.load!=null){
       const n=t.dataset.load,rec=state.tags[n];
-      if(rec){$("loopTag").value=n;applyTag(n,rec);renderTagInfo(`Загружена сохранённая шкала ${n}.`);}
+      if(rec){$("loopTag").value=n;applyTag(n,rec);renderTagInfo(`Загружена сохранённая шкала ${n}.`);tagPicker?.refresh();}
       return;
     }
     if(t.dataset.del!=null){
@@ -597,7 +596,7 @@ function bind(){
 function mount(container,opts={}){
   if(typeof opts.getTags==="function")getTags=opts.getTags;
   if(root&&root===container&&root.firstElementChild){refreshTagList();return;}
-  root=container;els={};fieldSig="";
+  root=container;els={};fieldSig="";tagPicker=null;
   root.innerHTML=template();
   bind();
   $("loopTag").value=state.tag||"";
@@ -606,7 +605,7 @@ function mount(container,opts={}){
 }
 
 window.TagListLoop={
-  version:"96.1",
+  version:"97.1",
   mount,
   onShow(){refreshTagList();syncCfgInputs();render();},
   onHide(){flush();},
