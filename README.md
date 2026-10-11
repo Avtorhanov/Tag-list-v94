@@ -4,7 +4,8 @@
 
 ### Возможности
 
-- Адрес https://avtorhanov.github.io/Tag-list-v94/
+- Адрес https://avtorhanov.github.io/Tag-list-v94/ (GitHub Pages: Settings → Pages → Deploy from a branch → `main` / `(root)`)
+- Android: https://github.com/Avtorhanov/Tag-list-v94/releases/latest/download/Tag-list.apk
 
 - 📋 Создание и редактирование списков тегов.
 - 📷 Добавление тегов из фотографии через OCR.
@@ -71,4 +72,4 @@
 - Импорт Excel/CSV/TXT полностью локальный (SheetJS в `js/vendor/`), в интернет приложение обращается только для OCR фото.
 - Офлайн-режим веб-версии (service worker), предупреждение при переполнении памяти браузера, мелкие UI/UX-правки.
 - Android-приложение (APK): папка `android/`, сборка через GitHub Actions. Инструкция — `ПУБЛИКАЦИЯ-НА-GITHUB.md`, отчёт — `AUDIT.md`.
-- Скачать APK: `https://github.com/<логин>/<репозиторий>/releases/latest/download/Tag-list.apk`
+- Скачать APK (всегда последняя версия): https://github.com/Avtorhanov/Tag-list-v94/releases/latest/download/Tag-list.apk
