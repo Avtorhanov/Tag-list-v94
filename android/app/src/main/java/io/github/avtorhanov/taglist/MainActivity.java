@@ -15,6 +15,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.InputType;
@@ -70,11 +71,17 @@ public class MainActivity extends Activity {
     static final int RC_SAVE = 103;
     static final long MAX_OPEN_BYTES = 10L * 1024 * 1024;
 
+    static final String STATE_PENDING_SAVE = "taglist.pendingSavePath";
+
     WebView web;
     ValueCallback<Uri[]> fileCallback;
     Uri cameraUri;
     File cameraFile;
+    // Содержимое файла, ожидающее выбора места сохранения. Дублируется во временный
+    // файл: если Android выгрузит приложение, пока открыт системный диалог
+    // «Сохранить», данные не потеряются и документ не останется пустым.
     byte[] pendingSaveBytes;
+    File pendingSaveFile;
     boolean pageReady;
     String pendingOpenText;
     String pendingOpenName;
@@ -84,6 +91,14 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         cleanupCache("share", 24L * 3600 * 1000);
         cleanupCache("camera", 24L * 3600 * 1000);
+        cleanupCache("save", 24L * 3600 * 1000);
+        if (savedInstanceState != null) {
+            String path = savedInstanceState.getString(STATE_PENDING_SAVE);
+            if (path != null) {
+                File f = new File(path);
+                if (f.isFile()) pendingSaveFile = f;
+            }
+        }
         applySystemBars("#F5F7FA", true);
 
         boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
@@ -150,6 +165,7 @@ public class MainActivity extends Activity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         if (web != null) web.saveState(outState);
+        if (pendingSaveFile != null) outState.putString(STATE_PENDING_SAVE, pendingSaveFile.getAbsolutePath());
     }
 
     @Override
@@ -416,16 +432,108 @@ public class MainActivity extends Activity {
             }
             finishFileChooser(result);
         } else if (requestCode == RC_SAVE) {
-            byte[] bytes = pendingSaveBytes;
+            final byte[] memory = pendingSaveBytes;
+            final File stored = pendingSaveFile;
             pendingSaveBytes = null;
-            if (resultCode != RESULT_OK || data == null || data.getData() == null || bytes == null) return;
-            try (OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt")) {
-                if (out == null) throw new IOException("no stream");
-                out.write(bytes);
-                jsToast("Файл сохранён");
-            } catch (Exception e) {
-                jsToast("Не удалось сохранить файл");
+            pendingSaveFile = null;
+            final Uri target = (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+            if (target == null) {
+                deleteQuietly(stored); // пользователь отменил сохранение
+                return;
             }
+            // Запись — в фоне: большой JSON и облачные папки не подвешивают экран.
+            new Thread(() -> {
+                byte[] bytes = memory;
+                if (bytes == null && stored != null) {
+                    try {
+                        bytes = readFile(stored);
+                    } catch (IOException ignored) {
+                        bytes = null;
+                    }
+                }
+                deleteQuietly(stored);
+                if (bytes == null) {
+                    // Данные потеряны вместе с процессом — не оставляем пустой файл.
+                    deleteDocumentQuietly(target);
+                    jsToast("Сохранение прервано системой. Нажми «Сохранить» ещё раз.");
+                    return;
+                }
+                int result = writeDocument(target, bytes);
+                if (result == WRITE_OK) {
+                    jsToast("Файл сохранён");
+                } else if (result == WRITE_UNVERIFIED) {
+                    jsToast("Файл записан, но папка не подтвердила размер. Проверь файл или используй «Отправить».");
+                } else {
+                    deleteDocumentQuietly(target);
+                    jsToast("Не удалось записать файл в эту папку. Выбери другую (например, «Загрузки») или используй «Отправить».");
+                }
+            }).start();
+        }
+    }
+
+    static final int WRITE_OK = 0;
+    static final int WRITE_UNVERIFIED = 1;
+    static final int WRITE_FAILED = 2;
+
+    /**
+     * Записывает данные в документ, выбранный через системный диалог «Сохранить».
+     * Разные хранилища поддерживают разные режимы: «wt» (с обрезкой) есть не везде,
+     * «w» на Android 10+ не обрезает файл, но новый документ и так пуст.
+     * После записи сверяем размер: 0 байт при непустых данных = запись не удалась.
+     */
+    int writeDocument(Uri uri, byte[] bytes) {
+        boolean written = false;
+        for (String mode : new String[]{"wt", "w", "rwt"}) {
+            try {
+                try (OutputStream out = getContentResolver().openOutputStream(uri, mode)) {
+                    if (out == null) continue;
+                    out.write(bytes);
+                    out.flush();
+                    if (out instanceof FileOutputStream) {
+                        try {
+                            ((FileOutputStream) out).getFD().sync();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                written = true;
+                long size = documentSize(uri);
+                if (size < 0 || size == bytes.length || bytes.length == 0) return WRITE_OK;
+                // Хранилище сообщило другой размер — пробуем следующий режим записи.
+            } catch (Exception ignored) {
+                // Режим не поддерживается этим хранилищем — пробуем следующий.
+            }
+        }
+        return written ? WRITE_UNVERIFIED : WRITE_FAILED;
+    }
+
+    long documentSize(Uri uri) {
+        try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.SIZE}, null, null, null)) {
+            if (c != null && c.moveToFirst() && !c.isNull(0)) return c.getLong(0);
+        } catch (Exception ignored) {
+        }
+        return -1;
+    }
+
+    void deleteDocumentQuietly(Uri uri) {
+        try {
+            DocumentsContract.deleteDocument(getContentResolver(), uri);
+        } catch (Exception ignored) {
+        }
+    }
+
+    static void deleteQuietly(File f) {
+        if (f != null && f.exists()) //noinspection ResultOfMethodCallIgnored
+            f.delete();
+    }
+
+    static byte[] readFile(File f) throws IOException {
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream((int) Math.max(0, Math.min(f.length(), MAX_OPEN_BYTES)));
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return out.toByteArray();
         }
     }
 
@@ -546,8 +654,29 @@ public class MainActivity extends Activity {
     }
 
     void requestSave(String name, String mime, byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            jsToast("Нет данных для сохранения");
+            return;
+        }
+        // Копия на диске переживёт выгрузку приложения, пока открыт системный диалог.
+        File stored = null;
+        try {
+            File dir = new File(getCacheDir(), "save");
+            if (dir.exists() || dir.mkdirs()) {
+                stored = new File(dir, "pending-" + System.currentTimeMillis() + ".bin");
+                try (FileOutputStream out = new FileOutputStream(stored)) {
+                    out.write(bytes);
+                }
+            }
+        } catch (IOException e) {
+            deleteQuietly(stored);
+            stored = null; // остаётся копия в памяти
+        }
+        final File pendingFile = stored;
         runOnUiThread(() -> {
+            deleteQuietly(pendingSaveFile); // предыдущий незавершённый запрос
             pendingSaveBytes = bytes;
+            pendingSaveFile = pendingFile;
             Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType(mime == null || mime.isEmpty() ? "application/octet-stream" : mime);
@@ -556,6 +685,8 @@ public class MainActivity extends Activity {
                 startActivityForResult(i, RC_SAVE);
             } catch (ActivityNotFoundException e) {
                 pendingSaveBytes = null;
+                deleteQuietly(pendingSaveFile);
+                pendingSaveFile = null;
                 toast("Не найдено приложение для сохранения файлов");
             }
         });
@@ -677,8 +808,10 @@ public class MainActivity extends Activity {
 
     void jsToast(String msg) {
         runOnUiThread(() -> {
-            if (web != null) web.evaluateJavascript("try{showToast(" + JSONObject.quote(msg) + ")}catch(e){}", null);
-            else toast(msg);
+            // Пока страница загружается (например, после пересоздания экрана), JS-уведомление
+            // может потеряться — показываем системное.
+            if (web != null && pageReady) web.evaluateJavascript("try{showToast(" + JSONObject.quote(msg) + ")}catch(e){}", null);
+            else Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
         });
     }
 }
