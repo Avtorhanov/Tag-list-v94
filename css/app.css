@@ -1577,3 +1577,235 @@ body.gas-mode .fab,body.gas-mode .footer{display:none!important}
   .gasParamGrid{gap:6px}
   .gasCard .field input,.gasCard .field select{padding-left:9px;padding-right:9px}
 }
+
+/* ===== v96 — палитра конвертора 4–20 мА во всех темах, переключатель разделов
+   «Теги · Газ · 4–20», раздел «Токовая петля», окно добавления, компактный газоанализ.
+   Меняются цвета и типографика; толщина, скругления и тени контуров кнопок и вкладок —
+   прежние, как в Tag list. ===== */
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(fonts/ibm-plex-mono-cyrillic-500-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/ibm-plex-mono-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/ibm-plex-mono-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+/* Светлая — «панель калибратора»: холодный серый фон, светлые карточки, синий акцент,
+   янтарный — ток, зелёный/янтарный/красный — состояния. */
+:root{
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --top-divider:rgba(20,32,43,.08);
+  --bg:#eceff2; --card:#f8f9fb; --text:#14202b; --muted:#5b6875;
+  --accent:#1d5fc4; --accent-strong:#174ea3; --soft:#e2eaf6; --soft-success:#e6f2ea;
+  --danger:#b3261e; --control:#eef1f5; --input-bg:#ffffff;
+  --field-label:#3b4856; --legend-label:#3b4856;
+  --amp:#b25e00; --ok:#1f7a3d; --warn:#a86a00; --bad:#b3261e; --zone:#dfe6ef; --on-accent:#ffffff;
+}
+/* Тёмная — та же палитра в ночном варианте (графит с холодным оттенком). Контуры прежние. */
+:root[data-theme="dark"]{
+  --top-divider:rgba(255,255,255,.08);
+  --bg:#12171d; --card:#1a2129; --text:#e4e9ee; --muted:#93a0ad;
+  --accent:#6ea2ff; --accent-strong:#a9c8ff; --soft:#223047; --soft-success:#1b2b26;
+  --danger:#ff7b72; --control:#212a34; --input-bg:#10151b;
+  --field-label:#c3ccd5; --legend-label:#c3ccd5;
+  --amp:#f0a24a; --ok:#5cc985; --warn:#e8b54a; --bad:#ff7b72; --zone:#233040; --on-accent:#0d1520;
+}
+/* Navy и Green сохраняют свой оттенок, но получают ту же систему ролей цвета. */
+:root[data-theme="navy"]{--amp:#f0a24a;--ok:#5cc985;--warn:#e8b54a;--bad:#ff867c;--zone:#1b2a3e;--on-accent:#07101b}
+:root[data-theme="green"]{--amp:#f2b04e;--ok:#8be0b3;--warn:#e8c25a;--bad:#ff9187;--zone:#173a32;--on-accent:#071713}
+
+/* Тёмная тема: поверхности из токенов вместо прежних жёстко заданных #121212/#151515/#171717. */
+:root[data-theme="dark"] .tab,:root[data-theme="dark"] .pageChip,
+:root[data-theme="dark"] .utilityBtn,:root[data-theme="dark"] .iconBtn,:root[data-theme="dark"] .pageAction{background:var(--card)}
+:root[data-theme="dark"] .summaryCard,:root[data-theme="dark"] .row,:root[data-theme="dark"] .gasCard{background:var(--card)}
+:root[data-theme="dark"] .row.done{background:var(--soft-success)}
+:root[data-theme="dark"] .choice,:root[data-theme="dark"] .action:not(.primary):not(.delete),:root[data-theme="dark"] .closex,
+:root[data-theme="dark"] .rowAction,:root[data-theme="dark"] .secondary{background:var(--control)}
+/* Текст на акцентной заливке — тёмный: светлый акцент + белый текст плохо читается. */
+:root[data-theme="dark"] .tab.active,:root[data-theme="dark"] .pageChip.active,:root[data-theme="dark"] .choice.active,
+:root[data-theme="dark"] .utilityBtn.primaryAction,:root[data-theme="dark"] #installApp,
+:root[data-theme="dark"] .action.primary,:root[data-theme="dark"] .fab,:root[data-theme="dark"] .rowSelect.selected{color:var(--on-accent)}
+.progressTrack{background:var(--zone)}
+.action{background:var(--control)}
+.closex{background:var(--control)}
+
+/* Выполнено — зелёный (состояние), выбор — акцент (действие). */
+:root[data-theme] .check.on{background:var(--ok);border-color:var(--ok)}
+.check.on::after{border-left-color:var(--on-accent);border-bottom-color:var(--on-accent)}
+:root[data-theme] .summaryCard .progressFill{background:var(--ok)}
+.summaryPercent{color:var(--ok);font-family:var(--f-mono);font-weight:600;letter-spacing:-.4px}
+.num{font-family:var(--f-mono);font-weight:500;font-size:calc(11px * var(--fontScale));color:var(--muted);opacity:.8}
+
+/* ---------- Шапки ---------- */
+.appTitle{font-size:clamp(19px,calc(21.5px * var(--fontScale)),26px);font-weight:800;letter-spacing:-.45px;line-height:1.15;overflow:hidden}
+.appTitleText{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appTitle [hidden],.convView [hidden]{display:none!important}
+/* Подписи карточек — как на табло прибора: мелко, прописными, с разрядкой. */
+.gasCardHead h2,.summaryKicker,.gasHelp summary{color:var(--muted);font-size:calc(11px * var(--fontScale));font-weight:750;letter-spacing:.09em;text-transform:uppercase}
+.gasHelp summary{text-transform:none;letter-spacing:.01em;font-size:calc(12.5px * var(--fontScale));color:var(--field-label)}
+.gasCardHead{min-height:24px;margin-bottom:9px}
+.gasHeadNote{font-family:var(--f-mono);font-size:calc(11px * var(--fontScale));font-weight:500}
+.summaryKicker{margin-bottom:3px}
+.sheet h2{font-size:calc(18px * var(--fontScale));font-weight:800;letter-spacing:-.25px}
+.viewSub{font-family:var(--f-mono);font-size:calc(11px * var(--fontScale));font-weight:500;letter-spacing:.01em}
+.loopSub{display:none}
+body.loop-mode .loopSub{display:block}
+
+/* ---------- Переключатель разделов «Теги · Газ · 4–20» ----------
+   Бегунок скользит к выбранному разделу, а сам раздел въезжает с той стороны,
+   куда идёт переключение. Обводка бегунка — как у активной вкладки. */
+.titleRow{gap:8px}
+.viewSwitch{position:relative;flex:0 0 auto;display:flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 1px 3px rgba(30,41,59,.04)}
+.viewSwitchBtn{position:relative;z-index:1;min-height:32px;padding:0 10px;border-radius:9px;background:transparent;color:var(--muted);font-size:13px;font-weight:800;letter-spacing:.01em;white-space:nowrap;cursor:pointer;transition:color var(--ui-motion) var(--ui-ease)}
+.viewSwitchBtn.active{color:var(--accent-strong)}
+.viewSwitchBtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.viewSwitchThumb{position:absolute;z-index:0;top:3px;bottom:3px;left:0;width:var(--thumb-w,0px);transform:translate3d(var(--thumb-x,0px),0,0);border-radius:9px;background:var(--soft);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 65%,transparent),0 0 12px color-mix(in srgb,var(--accent) 30%,transparent);
+  transition:transform var(--ui-motion) var(--ui-ease),width var(--ui-motion) var(--ui-ease)}
+.viewSwitchThumb.instant{transition:none}
+:root[data-theme="dark"] .viewSwitch{background:var(--card)}
+:root[data-theme="dark"] .viewSwitchThumb{background:var(--accent);box-shadow:0 0 0 1px rgba(210,213,215,.34),0 3px 10px rgba(0,0,0,.38)}
+:root[data-theme="dark"] .viewSwitchBtn.active{color:var(--on-accent)}
+:root[data-theme="navy"] .viewSwitch,:root[data-theme="green"] .viewSwitch{background:var(--card)}
+@media (hover:hover){.viewSwitchBtn:not(.active):hover{color:var(--text)}}
+@media (max-width:370px){.viewSwitchBtn{padding:0 8px;font-size:12.5px}}
+
+/* Смена раздела: короткий сдвиг с прозрачностью по направлению переключения. */
+.viewIn{animation:viewIn var(--ui-motion) var(--ui-ease) both}
+.viewIn.fromRight{--view-dx:18px}
+.viewIn.fromLeft{--view-dx:-18px}
+@keyframes viewIn{from{opacity:0;transform:translate3d(var(--view-dx,18px),0,0)}to{opacity:1;transform:none}}
+#appTitle.viewIn{--view-dx:0px;animation-name:titleIn}
+@keyframes titleIn{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+
+/* Режим конвертора: список, панели страниц и «+» скрыты, шапка остаётся. */
+body.conv-mode #lastSaved,body.conv-mode .searchPanel,body.conv-mode .utilityRow,body.conv-mode .pageBar,
+body.conv-mode .pageManageBar,body.conv-mode .tabs,body.conv-mode .summaryCard,body.conv-mode .list,
+body.conv-mode .fab,body.conv-mode .footer{display:none!important}
+
+/* ---------- Общие элементы конверторов ---------- */
+.btnIcon{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.gasActions .action,.iconAction{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px}
+.gasActions .action span,.iconAction span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.gasValueInput{font-family:var(--f-mono);font-weight:600;letter-spacing:-.6px;font-size:max(20px,calc(26px * var(--fontScale)))}
+#gasValue,.loopMain .gasValueInput{color:var(--accent)}
+.gasValueUnit{font-family:var(--f-mono);font-weight:500;font-size:calc(14px * var(--fontScale))}
+.gasRowValue{font-family:var(--f-mono);font-weight:600;letter-spacing:-.3px}
+.gasRow[data-copy-text$=" мА"] .gasRowValue,#gasMa,.loopCurrent .gasValueInput{color:var(--amp)}
+.convView .field input[inputmode="decimal"]{font-family:var(--f-mono);font-weight:500}
+.gasClear{color:var(--muted)}
+.gasClear .btnIcon{width:17px;height:17px}
+
+/* Газоанализ — кнопки и вкладки компактнее. */
+.gasChips{gap:5px}
+.gasChips .tab{min-height:32px;padding:5px 10px;font-size:calc(12.5px * var(--fontScale))}
+.gasUnits{gap:5px;margin-top:8px}
+.gasUnits .tab{min-height:34px;padding:6px 6px;font-size:calc(13px * var(--fontScale))}
+.gasLink{min-height:28px;padding:4px 10px;font-size:calc(11.5px * var(--fontScale))}
+.gasSign{width:42px;min-height:42px;font-size:18px}
+.gasRow{min-height:40px;padding:7px 11px}
+.gasResults{gap:4px}
+
+/* Состояние сигнала — метка-пилюля, одинаковая в обоих конверторах. */
+.gasMaStatus{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:0;margin-top:10px;padding:3px 10px;border:1px solid currentColor;border-radius:999px;font-size:calc(12px * var(--fontScale));font-weight:700;line-height:1.3}
+.gasMaStatus::before{content:"";flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:currentColor}
+.gasMaStatus:empty{display:none}
+:root[data-theme] .gasOk{color:var(--ok)}
+:root[data-theme] .gasWarnText{color:var(--warn)}
+:root[data-theme] .gasBad{color:var(--bad)!important}
+:root[data-theme] .gasCard .gasWarn{background:color-mix(in srgb,var(--warn) 11%,var(--card));border-color:color-mix(in srgb,var(--warn) 38%,var(--line));color:color-mix(in srgb,var(--warn) 78%,var(--text))}
+:root[data-theme] .gasCard .gasWarn.gasWarnDanger{background:color-mix(in srgb,var(--bad) 11%,var(--card));border-color:color-mix(in srgb,var(--bad) 38%,var(--line));color:var(--bad)}
+
+/* ---------- Раздел «Токовая петля 4–20 мА» ---------- */
+.loopKinds{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:0 -2px 10px;padding:2px}
+.loopKind{display:grid;justify-items:center;gap:1px;min-width:0;min-height:46px;padding:5px 4px;border-radius:14px}
+.loopKind b{font-family:var(--f-mono);font-size:calc(15px * var(--fontScale));font-weight:600;line-height:1.1;color:inherit}
+.loopKind small{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:calc(10.5px * var(--fontScale));font-weight:650;line-height:1.15;color:var(--muted)}
+.loopKind.active small{color:inherit;opacity:.85}
+.loopTagField{margin:0}
+.loopTagField input{font-family:var(--f-mono);font-weight:500;letter-spacing:.02em}
+.loopSaveBtn{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px}
+.loopTagInfo{margin-top:6px;line-height:1.35}
+.loopTagInfo:empty{display:none}
+.loopSaved{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.loopSavedItem{display:inline-flex;align-items:stretch;max-width:100%;min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--control);overflow:hidden}
+.loopSavedItem.active{border-color:var(--accent);background:var(--soft)}
+.loopSavedMain{display:grid;gap:1px;min-width:0;padding:6px 2px 6px 10px;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.loopSavedMain b{font-family:var(--f-mono);font-size:calc(12.5px * var(--fontScale));font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.loopSavedMain span{font-size:calc(11px * var(--fontScale));color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.loopSavedDel{display:grid;place-items:center;width:34px;padding:0;background:transparent;color:var(--muted);cursor:pointer}
+.loopSavedDel .btnIcon{width:15px;height:15px}
+
+.loopFields{display:grid;gap:10px}
+.loopReadout{display:grid;gap:4px;min-width:0}
+.loopReadout>label{color:var(--field-label);font-size:calc(12px * var(--fontScale));font-weight:750}
+.loopNote{min-height:1.35em;color:var(--muted);font-size:calc(12px * var(--fontScale));line-height:1.35}
+.loopBad{color:var(--bad);font-weight:700}
+.loopWarn{color:var(--warn);font-weight:700}
+.loopPair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:10px}
+.loopPair .gasValueInput{font-size:max(18px,calc(21px * var(--fontScale)))}
+.loopSignBtn{font-size:18px;font-weight:800;color:var(--text)}
+.loopTrack{position:relative;height:24px;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:var(--input-bg);overflow:hidden}
+.loopZone{position:absolute;top:0;bottom:0;left:10%;width:80%;background:var(--zone)}
+.loopFill{position:absolute;top:0;bottom:0;left:10%;width:0;background:color-mix(in srgb,var(--amp) 32%,transparent);transition:width .18s var(--ui-ease)}
+.loopMarker{position:absolute;top:-1px;bottom:-1px;left:10%;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--amp);transition:left .18s var(--ui-ease)}
+.loopTicks{position:relative;height:15px;margin-top:3px;font-family:var(--f-mono);font-size:10.5px;color:var(--muted)}
+.loopTicks span{position:absolute;transform:translateX(-50%)}
+.loopClamp{margin-top:6px}
+.loopClamp:empty{display:none}
+
+.loopBlock{display:grid;gap:10px}
+.loopBlock [data-when]:not(.field):not(.mini){display:grid;gap:8px}
+.loopBlock .gasScaleRow{gap:8px}
+.loopLabel{color:var(--field-label);font-size:calc(12px * var(--fontScale));font-weight:750;margin-bottom:-4px}
+.loopSeg{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin:0 -2px;padding:2px}
+.loopSeg .tab{width:100%;min-height:36px;padding:6px 8px;text-align:center;overflow:hidden;text-overflow:ellipsis}
+.loopPresets .tab{font-family:var(--f-mono);font-weight:500;font-size:calc(12px * var(--fontScale))}
+.loopResult{padding:8px 10px;border-radius:10px;background:var(--zone);font-family:var(--f-mono);font-size:calc(12.5px * var(--fontScale));line-height:1.4}
+.loopResult b{color:var(--accent);font-weight:600}
+.loopBlock .mini{line-height:1.4}
+
+.loopTableWrap{overflow-x:auto;margin:0 -2px 8px}
+.loopTable{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:calc(13px * var(--fontScale))}
+.loopTable th{padding:6px 8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:calc(11px * var(--fontScale));font-weight:600;text-align:right;white-space:nowrap}
+.loopTable td{padding:8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.loopTable th:first-child,.loopTable td:first-child{text-align:left;color:var(--muted)}
+.loopTable tbody tr{cursor:pointer}
+.loopTable tbody tr:last-child td{border-bottom:0}
+.loopTable tbody tr.active td{background:var(--soft)}
+.loopCellMain{color:var(--accent)}
+.loopCellI{color:var(--amp)}
+@media (hover:hover){.loopTable tbody tr:not(.active):hover td{background:var(--zone)}}
+
+/* ---------- Окна: отдельная маленькая кнопка «закрыть» ---------- */
+.sheet>.closex,.exportSheet .closex{position:absolute;top:13px;right:13px;float:none;width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border-radius:10px;color:var(--muted);z-index:5}
+.closex{position:relative}
+.closex::before{content:"";position:absolute;inset:-6px}
+.fullReportHead .closex{width:32px;height:32px;min-width:32px;min-height:32px;border-radius:10px;color:var(--muted)}
+.closeIcon{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.sheet>h2{min-height:32px;display:flex;align-items:center;padding-right:44px;margin-top:-1px}
+.exportSheet h2{margin-right:0}
+
+/* Окно «Добавить прибор»: способы — на всю строку, одинаковые SVG-иконки. */
+.addChoice{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px;clear:both}
+.addChoice .choice{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 8px;font-weight:750}
+.addChoice .choice span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.choiceIcon{width:22px;height:22px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.addChoice .choice:not(.active) .choiceIcon{color:var(--accent)}
+.iconAction .choiceIcon{width:20px;height:20px}
+@media (max-width:360px){.addChoice .choice{gap:6px;padding:0 5px;font-size:15px}}
+/* Navy и Green: тёмный текст на светлой акцентной заливке — как в тёмной теме. */
+:root[data-theme="navy"] .action.primary,:root[data-theme="navy"] .fab,:root[data-theme="navy"] .rowSelect.selected,
+:root[data-theme="green"] .action.primary,:root[data-theme="green"] .fab,:root[data-theme="green"] .rowSelect.selected{color:var(--on-accent)}
+/* Условия пересчёта: давлению с единицей нужно больше места, чем температуре. */
+.gasCondGrid{grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr)}
+.gasCard .gasJoin select{max-width:46%;font-size:15px}
+/* Управление страницами: SVG-значки вместо эмодзи. */
+.pageManageBar button{display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.pageManageBar button span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pageManageBar .btnIcon{width:16px;height:16px}
+.pageManageBar .closeIcon{width:17px;height:17px}
+@media (max-width:360px){.pageManageBar .btnIcon{display:none}}
+/* Узкие телефоны (≤ 380 px): шапка раздела и переключатель помещаются без обрезки. */
+@media (max-width:380px){
+  .appTitle{font-size:clamp(17px,calc(18.5px * var(--fontScale)),22px);letter-spacing:-.5px}
+  .viewSwitchBtn{padding:0 8px;font-size:12.5px}
+  .titleRow{gap:6px}
+}

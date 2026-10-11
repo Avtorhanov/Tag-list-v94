@@ -215,6 +215,13 @@ function unitBlockReason(unit,c){
 }
 
 // ---------------------------------------------------------------- разметка
+const ICON={
+  copy:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"></rect><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"></path></svg>',
+  send:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.5 13.5"></path><path d="m21 3-6.5 18-4-7.5L3 9.5Z"></path></svg>',
+  down:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v15"></path><path d="m6 13 6 6 6-6"></path></svg>',
+  up:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V5"></path><path d="m6 11 6-6 6 6"></path></svg>',
+  x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>'
+};
 let root=null,els={};
 function chip(cls,attrs,text){return `<button type="button" class="tab ${cls}" ${attrs}>${text}</button>`;}
 function template(){
@@ -257,7 +264,7 @@ function template(){
       <div class="gasValueRow">
         <input id="gasValue" class="gasValueInput" inputmode="decimal" autocomplete="off" enterkeyhint="done" aria-label="Значение концентрации" placeholder="0"/>
         <span class="gasValueUnit" id="gasValueUnit" aria-hidden="true">ppm</span>
-        <button type="button" class="gasClear" id="gasClear" aria-label="Очистить значение" title="Очистить">×</button>
+        <button type="button" class="gasClear" id="gasClear" aria-label="Очистить значение" title="Очистить">${ICON.x}</button>
       </div>
       <div class="gasUnits" role="radiogroup" aria-label="Единица исходного значения">${units}</div>
       <div class="gasWarn" id="gasWarn" role="status" hidden></div>
@@ -283,8 +290,8 @@ function template(){
       <div class="gasCardHead"><h2 id="gasResultTitle">Результат</h2><span class="gasHeadNote" id="gasResultCond"></span></div>
       <div class="gasResults" id="gasResults" aria-live="polite"></div>
       <div class="gasActions">
-        <button type="button" class="action" id="gasCopy">⧉ Копировать</button>
-        <button type="button" class="action primary" id="gasShare">↗ Отправить</button>
+        <button type="button" class="action" id="gasCopy">${ICON.copy}<span>Копировать</span></button>
+        <button type="button" class="action primary" id="gasShare">${ICON.send}<span>Отправить</span></button>
       </div>
     </section>
 
@@ -302,8 +309,8 @@ function template(){
       </div>
       <div class="gasMaStatus" id="gasMaStatus" role="status"></div>
       <div class="gasActions">
-        <button type="button" class="action" id="gasFromMain" title="Подставить значение из результата расчёта">↓ Из расчёта</button>
-        <button type="button" class="action" id="gasToMain" title="Передать значение шкалы в поле «Концентрация»">↑ В расчёт</button>
+        <button type="button" class="action" id="gasFromMain" title="Подставить значение из результата расчёта">${ICON.down}<span>Из расчёта</span></button>
+        <button type="button" class="action" id="gasToMain" title="Передать значение шкалы в поле «Концентрация»">${ICON.up}<span>В расчёт</span></button>
       </div>
     </section>
 
@@ -671,7 +678,7 @@ function mount(container){
 }
 
 window.TagListGas={
-  version:"95",
+  version:"96",
   mount,
   onShow(){render();},
   onHide(){flush();},

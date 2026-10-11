@@ -1616,11 +1616,11 @@ function applyTheme(theme){
   document.documentElement.dataset.theme=selected;
   safeSetStorage(THEME_KEY,selected);
   const meta=document.querySelector('meta[name="theme-color"]');
-  if(meta)meta.content={light:"#f5f7fa",dark:"#000000",navy:"#07101b",green:"#071713"}[selected];
+  if(meta)meta.content={light:"#eceff2",dark:"#12171d",navy:"#07101b",green:"#071713"}[selected];
   const icon=$("themeIcon");
   if(icon)icon.textContent=THEME_ICON[selected];
   // APK: цвет системной строки состояния под тему.
-  try{window.AndroidApp?.setThemeColor?.(meta?.content||"#f5f7fa",selected==="light");}catch(_){}
+  try{window.AndroidApp?.setThemeColor?.(meta?.content||"#eceff2",selected==="light");}catch(_){}
   const btn=$("themeBtn");
   if(btn){btn.title=`Тема: ${selected}. Нажми для смены`;btn.setAttribute("aria-label",`Сменить тему. Сейчас: ${selected}`);}
 }
@@ -2347,7 +2347,7 @@ document.addEventListener("selectstart",e=>{
   if(e.target.closest("input,textarea,select,[contenteditable=true]")) return;
   if(e.target.closest("button,.pageChip,.tab,.row,.utilityRow,.footer,.fab,.searchClose")) e.preventDefault();
 });
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeDuplicateDialog();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeDuplicateDialog();closeExportMenu();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
 
 // Enter в поле тега сохраняет запись и закрывает клавиатуру;
 // в многострочном задании сохранение выполняется по Ctrl/Cmd+Enter.
@@ -2441,84 +2441,140 @@ refreshAfterViewportChange();
 if($("search")) $("search").value=query;
 render();
 
-// v95: вкладка «Газоанализ». Шапка-название переключает раздел: Tag list ⇄ конвертор.
-// Модуль js/gas.js загружается по требованию (и заранее, когда устройство свободно).
-let gasLoadPromise=null,gasViewOpen=false,gasHistoryPushed=false;
-function ensureGasLoaded(){
-  if(window.TagListGas)return Promise.resolve(window.TagListGas);
-  if(gasLoadPromise)return gasLoadPromise;
-  gasLoadPromise=new Promise((resolve,reject)=>{
+// v96: разделы «Теги · Газ · 4–20». Переключатель в шапке, у конверторов — свои модули,
+// они загружаются по требованию (и заранее, когда устройство свободно).
+const VIEW_ORDER=["list","gas","loop"];
+const VIEW_MODULES={
+  gas:{file:"./js/gas.js",global:"TagListGas",el:"gasView",title:"Газоанализ",name:"конвертор газоанализа"},
+  loop:{file:"./js/loop.js",global:"TagListLoop",el:"loopView",title:"Токовая петля",name:"конвертор 4–20 мА"}
+};
+const viewLoads={};
+let currentView="list",viewHistoryPushed=false,viewSwitchBusy=false;
+function ensureViewModule(view){
+  const mod=VIEW_MODULES[view];
+  if(window[mod.global])return Promise.resolve(window[mod.global]);
+  if(viewLoads[view])return viewLoads[view];
+  viewLoads[view]=new Promise((resolve,reject)=>{
     const script=document.createElement("script");
-    script.src=new URL("./js/gas.js",document.baseURI).href;
+    script.src=new URL(mod.file,document.baseURI).href;
     script.async=true;
-    script.onload=()=>window.TagListGas?resolve(window.TagListGas):reject(new Error("Не удалось запустить конвертор газоанализа"));
-    script.onerror=()=>{script.remove();reject(new Error("Не удалось загрузить конвертор (js/gas.js). Проверь, что файл опубликован вместе с приложением."));};
+    script.onload=()=>window[mod.global]?resolve(window[mod.global]):reject(new Error(`Не удалось запустить ${mod.name}`));
+    script.onerror=()=>{script.remove();reject(new Error(`Не удалось загрузить ${mod.name} (${mod.file.slice(2)}). Проверь, что файл опубликован вместе с приложением.`));};
     document.head.appendChild(script);
-  }).catch(err=>{gasLoadPromise=null;throw err;});
-  return gasLoadPromise;
+  }).catch(err=>{delete viewLoads[view];throw err;});
+  return viewLoads[view];
 }
-function updateAppSwitch(){
-  const btn=$("appSwitch");if(!btn)return;
-  const label=gasViewOpen?`Вернуться к списку «${docTitle}»`:"Открыть конвертор газоанализа";
-  btn.setAttribute("aria-expanded",String(gasViewOpen));
-  btn.setAttribute("aria-label",label);btn.title=label;
-  const badge=$("appSwitchBadgeText");
-  if(badge)badge.textContent=gasViewOpen?(docTitle||"Tag list"):"Газоанализ";
+// Совместимость с прежним названием.
+function ensureGasLoaded(){return ensureViewModule("gas");}
+function allTagNames(){
+  const out=[];
+  try{pages.forEach(page=>(page.id===activePageId?data:page.data||[]).forEach(x=>{if(x&&x.tag)out.push(String(x.tag));}));}catch(_){}
+  return out;
 }
-function popIn(el){
-  if(!el)return;
-  el.classList.remove("viewPop");void el.offsetWidth;el.classList.add("viewPop");
+function moveViewThumb(instant=false){
+  const nav=$("viewSwitch"),thumb=$("viewSwitchThumb");
+  const btn=nav?.querySelector(`[data-view="${currentView}"]`);
+  if(!nav||!thumb||!btn)return;
+  if(instant)thumb.classList.add("instant");
+  thumb.style.setProperty("--thumb-x",`${btn.offsetLeft}px`);
+  thumb.style.setProperty("--thumb-w",`${btn.offsetWidth}px`);
+  if(instant)requestAnimationFrame(()=>requestAnimationFrame(()=>thumb.classList.remove("instant")));
 }
-async function openGasView(){
-  if(gasViewOpen)return;
-  let api;
-  try{api=await ensureGasLoaded();}catch(e){showToast(e?.message||"Не удалось открыть конвертор");return;}
-  if(gasViewOpen)return;
-  if(selectionMode)setSelectionMode(false);
-  if(pageManageMode)exitPageManage();
-  cancelLongPress();cancelPageLongPress();
+function updateViewChrome(prev){
+  document.querySelectorAll(".viewSwitchBtn").forEach(b=>{
+    const on=b.dataset.view===currentView;
+    b.classList.toggle("active",on);b.setAttribute("aria-selected",String(on));
+  });
+  moveViewThumb();
+  const titleEl=$("viewTitle"),docEl=$("docTitle");
+  const mod=VIEW_MODULES[currentView];
+  if(titleEl){titleEl.textContent=mod?mod.title:"";titleEl.hidden=!mod;}
+  if(docEl)docEl.hidden=!!mod;
+  document.body.classList.toggle("conv-mode",!!mod);
+  document.body.classList.toggle("gas-mode",currentView==="gas");
+  document.body.classList.toggle("loop-mode",currentView==="loop");
+  document.body.dataset.view=currentView;
+  // Направление анимации: вправо по порядку разделов — новый раздел въезжает справа.
+  const dir=VIEW_ORDER.indexOf(currentView)>VIEW_ORDER.indexOf(prev)?"fromRight":"fromLeft";
+  const targets=mod?[$(mod.el)]:[document.querySelector(".summaryCard"),$("list")];
+  targets.push($("appTitle"),document.querySelector(currentView==="list"?"#lastSaved":`#${currentView}Sub`));
+  targets.forEach(el=>{
+    if(!el)return;
+    el.classList.remove("viewIn","fromRight","fromLeft");void el.offsetWidth;el.classList.add("viewIn",dir);
+  });
+}
+async function setView(view,{fromHistory=false}={}){
+  if(!VIEW_ORDER.includes(view)||view===currentView||viewSwitchBusy)return;
+  const prev=currentView;
+  let api=null;
+  if(VIEW_MODULES[view]){
+    viewSwitchBusy=true;
+    try{api=await ensureViewModule(view);}
+    catch(e){viewSwitchBusy=false;showToast(e?.message||"Не удалось открыть раздел");return;}
+    viewSwitchBusy=false;
+    if(view===currentView)return;
+  }
+  if(prev==="list"){
+    if(selectionMode)setSelectionMode(false);
+    if(pageManageMode)exitPageManage();
+    cancelLongPress();cancelPageLongPress();
+    flushSave();
+  }
   const active=document.activeElement;
   if(active&&/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))active.blur();
-  flushSave();
-  const view=$("gasView");
-  api.mount(view);
-  gasViewOpen=true;
-  view.hidden=false;
-  document.body.classList.add("gas-mode");
-  updateAppSwitch();
-  popIn(view);
+  if(VIEW_MODULES[prev]){
+    try{window[VIEW_MODULES[prev].global]?.onHide?.();}catch(_){}
+    $(VIEW_MODULES[prev].el).hidden=true;
+  }
+  currentView=view;
+  if(api){
+    const el=$(VIEW_MODULES[view].el);
+    api.mount(el,{getTags:allTagNames});
+    el.hidden=false;
+  }
+  updateViewChrome(prev);
   window.scrollTo(0,0);
+  // История: из списка в конвертор — новая запись (системное «Назад» вернёт к списку),
+  // между конверторами — замена записи, к списку — шаг назад.
   try{
-    if(history.state?.tagListView!=="gas"){history.pushState({...(history.state||{}),tagListView:"gas"},"");gasHistoryPushed=true;}
-  }catch(_){gasHistoryPushed=false;}
-  api.onShow?.();
+    if(fromHistory){viewHistoryPushed=view!=="list"&&history.state?.tagListView===view;}
+    else if(view==="list"){
+      if(viewHistoryPushed&&history.state?.tagListView){viewHistoryPushed=false;history.back();}
+    }else if(viewHistoryPushed&&history.state?.tagListView){
+      history.replaceState({...(history.state||{}),tagListView:view},"");
+    }else{
+      history.pushState({...(history.state||{}),tagListView:view},"");viewHistoryPushed=true;
+    }
+  }catch(_){viewHistoryPushed=false;}
+  api?.onShow?.();
 }
-function closeGasView(fromHistory=false){
-  if(!gasViewOpen)return;
-  gasViewOpen=false;
-  const view=$("gasView");
-  const active=document.activeElement;
-  if(active&&view.contains(active))active.blur();
-  try{window.TagListGas?.onHide?.();}catch(_){}
-  view.hidden=true;
-  document.body.classList.remove("gas-mode");
-  updateAppSwitch();
-  popIn(document.querySelector(".summaryCard"));popIn($("list"));
-  window.scrollTo(0,0);
-  if(!fromHistory&&gasHistoryPushed&&history.state?.tagListView==="gas"){
-    gasHistoryPushed=false;
-    try{history.back();}catch(_){}
-  }else gasHistoryPushed=false;
-}
-$("appSwitch").addEventListener("click",()=>{gasViewOpen?closeGasView():openGasView();});
-window.addEventListener("popstate",()=>{if(gasViewOpen&&history.state?.tagListView!=="gas")closeGasView(true);});
-// Esc: сначала закрываются окна, затем — конвертор (обработчик в фазе захвата,
+// Совместимость: прежние вызовы закрытия конвертора.
+function closeGasView(fromHistory=false){return setView("list",{fromHistory});}
+$("viewSwitch").addEventListener("click",e=>{
+  const b=e.target.closest(".viewSwitchBtn");
+  if(b)setView(b.dataset.view);
+});
+// Стрелки влево/вправо на переключателе — как у обычных вкладок.
+$("viewSwitch").addEventListener("keydown",e=>{
+  if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
+  const i=VIEW_ORDER.indexOf(currentView)+(e.key==="ArrowRight"?1:-1);
+  const next=VIEW_ORDER[(i+VIEW_ORDER.length)%VIEW_ORDER.length];
+  e.preventDefault();setView(next).then(()=>document.querySelector(`.viewSwitchBtn[data-view="${next}"]`)?.focus());
+});
+window.addEventListener("popstate",()=>{
+  const target=VIEW_ORDER.includes(history.state?.tagListView)?history.state.tagListView:"list";
+  if(target!==currentView)setView(target,{fromHistory:true});
+});
+// Esc: сначала закрываются окна, затем раздел-конвертор (обработчик в фазе захвата,
 // чтобы увидеть окна до того, как их закроет общий обработчик).
 window.addEventListener("keydown",e=>{
-  if(e.key==="Escape"&&gasViewOpen&&!document.querySelector(".overlay.show"))closeGasView();
+  if(e.key==="Escape"&&currentView!=="list"&&!document.querySelector(".overlay.show")&&!e.target.closest?.("input,textarea,select"))setView("list");
 },true);
-// Прогрев модуля, пока пользователь ничего не делает: первое открытие — мгновенное.
-(window.requestIdleCallback||((fn)=>setTimeout(fn,2500)))(()=>{ensureGasLoaded().catch(()=>{});},{timeout:6000});
+window.addEventListener("resize",()=>moveViewThumb(true));
+(document.fonts?.ready||Promise.resolve()).then(()=>moveViewThumb(true));
+moveViewThumb(true);
+// Прогрев модулей, пока пользователь ничего не делает: первое открытие — мгновенное.
+(window.requestIdleCallback||((fn)=>setTimeout(fn,2500)))(()=>{ensureViewModule("gas").catch(()=>{});ensureViewModule("loop").catch(()=>{});},{timeout:6000});
 
 // v81: интеграция с Android-приложением (APK). В браузере этот блок не выполняется.
 if(window.AndroidApp){
@@ -2588,7 +2644,7 @@ if(window.AndroidApp){
         if(still&&still===overlayOpen)still.classList.remove("show");
         return true;
       }
-      if(gasViewOpen){closeGasView();return true;}
+      if(currentView!=="list"){setView("list");return true;}
       if(menuOpen&&typeof closePageContextMenu==="function"){closePageContextMenu();return true;}
       if(pageManageMode){exitPageManage();return true;}
       if(searchOpen){$("searchClose")?.click();return true;}
