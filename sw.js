@@ -3,7 +3,7 @@
 // Свежие файлы берутся из сети (network-first с таймаутом), кэш — запасной путь.
 // OCR (api.ocr.space) никогда не кэшируется и всегда идёт напрямую в сеть.
 const CACHE_PREFIX = 'tag-list-';
-const CACHE_NAME = CACHE_PREFIX + 'v96-2';
+const CACHE_NAME = CACHE_PREFIX + 'v96-3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,10 +18,14 @@ const APP_SHELL = [
   './css/fonts/ibm-plex-mono-latin-600-normal.woff2',
   './js/vendor/xlsx.full.min.js',
   './manifest.webmanifest',
-  './favicon-64.png',
-  './icon-180.png',
-  './icon-192.png',
-  './icon-512.png'
+  // Иконки с ?v=: при смене картинки меняется адрес, и установленное приложение
+  // (Android/Chrome) замечает новую иконку, а не берёт старую из кэша.
+  './favicon-64.png?v=96-3',
+  './icon-180.png?v=96-3',
+  './icon-192.png?v=96-3',
+  './icon-512.png?v=96-3',
+  './icon-192-maskable.png?v=96-3',
+  './icon-512-maskable.png?v=96-3'
 ];
 const NETWORK_TIMEOUT_MS = 3500;
 
