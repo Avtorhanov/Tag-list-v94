@@ -1858,3 +1858,69 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
    Общая высота шапки прежняя. */
 .top{--subGap:9px}
 .top>.sub{line-height:1.35;margin:var(--subGap) 0 calc(var(--subGap) - 7px)}
+
+/* ---------- v98: справка «!» ---------- */
+.helpBtn{position:relative;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;opacity:.85}
+.helpBtn::before{content:"";position:absolute;inset:-7px}
+.helpBtn:active{opacity:1;color:var(--accent-text)}
+@media (hover:hover){.helpBtn:hover{opacity:1;color:var(--accent-text)}}
+.helpIcon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.helpDot{fill:currentColor;stroke:none}
+/* В строке под заголовком: кнопка не меняет высоту строки и не сдвигает центровку. */
+.top>.sub{position:relative;padding-right:24px}
+.subHelp{position:absolute;right:-3px;top:calc(50% - 14px);width:28px;height:28px}
+.subHelp::before{inset:-6px -4px -6px -6px}
+/* В окнах: слева от крестика. */
+.sheetHelp{position:absolute;top:13px;right:51px;z-index:5;width:32px;height:32px;border-radius:10px}
+.sheetHelp .helpIcon{width:19px;height:19px}
+.sheet.hasHelp>h2{padding-right:84px}
+.exportSheet.hasHelp h2{margin-right:0}
+
+.helpOverlay{z-index:70}
+.helpSheet{max-height:min(86dvh,700px)}
+.helpBody{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px 4px;color:var(--text);font-size:14px;line-height:1.45}
+.helpBody h3{margin:14px 0 6px;color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+.helpBody h3:first-child{margin-top:2px}
+.helpBody p{margin:0 0 8px}
+.helpBody p.mini{margin-top:-2px;font-size:12px!important;line-height:1.4}
+.helpBody b{font-weight:750}
+.helpBody ul{display:grid;gap:7px;margin:0 0 8px;padding:0;list-style:none}
+.helpBody li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:start}
+.helpBody ul.hSrc li{display:list-item;margin-left:16px;list-style:disc}
+.helpLead{padding:9px 11px;border-radius:11px;background:var(--soft);color:var(--text)}
+.helpNote{color:var(--muted);font-size:13px}
+.hK{display:inline-grid;place-items:center;min-width:26px;height:24px;padding:0 4px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--text);vertical-align:-6px}
+.hKT{font-size:12px;font-weight:800;line-height:1}
+.hIco{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.hF{margin:0 0 6px;padding:7px 10px;border-radius:9px;background:var(--zone);font-family:var(--f-mono);font-size:12.5px;line-height:1.45;overflow-wrap:anywhere}
+:root[data-theme]:not([data-theme="light"]) .hK{background:var(--control)}
+
+/* ---------- v98: значки в меню «Сохранить / отправить» и «Сухой список» ---------- */
+.exportSheet .choice{display:flex;align-items:center;gap:10px}
+.exportSheet .choice .ico{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;margin:0;color:var(--accent-text)}
+.menuIcon{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.choiceText{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- v98: «Источники и формулы» внизу конверторов ---------- */
+.convFoot{display:flex;justify-content:center;margin-top:12px}
+.convInfoBtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 16px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--field-label);font-size:calc(13px * var(--fontScale));font-weight:750;cursor:pointer}
+.convInfoBtn .btnIcon{color:var(--accent-text)}
+.convInfoBtn:active{background:var(--soft)}
+
+/* ---------- v98 Android: карточки тегов плотнее по вертикали ----------
+   На iPhone 11 карточек на экране, на Android меньше. Здесь ниже строка карточки:
+   меньше поля, квадрат 40 px, явная высота строки тега (не зависит от метрик шрифта).
+   Шрифт, кнопки и логика — прежние. iPhone не затрагивается. */
+@media (max-width:699px){
+  html.is-android .list{gap:5px}
+  html.is-android .row{min-height:46px;padding-top:2px;padding-bottom:2px;contain-intrinsic-height:auto 48px}
+  html.is-android .check{width:40px;height:40px;flex-basis:40px}
+  html.is-android .tag{line-height:1.2}
+  html.is-android .taskLine{margin-top:2px}
+  html.is-android .taskToggle{padding-top:1px;padding-bottom:1px}
+}
+.helpBody .nw{white-space:nowrap}
+.helpSheet>h2{margin-bottom:10px}
+.hF{font-size:12px}
+/* Узкие экраны: подпись «4–20» остаётся в одну строку рядом с «!». */
+@media (max-width:340px){.top>.viewSub{letter-spacing:0}}

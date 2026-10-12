@@ -28,9 +28,9 @@
 <button aria-label="Сменить тему" class="iconBtn" id="themeBtn" title="Сменить тему"><span aria-hidden="true" id="themeIcon">☼</span></button>
 </div>
 </div>
-<div class="sub" id="lastSaved">Сохранено на устройстве: —</div>
-<div class="sub viewSub gasSub" id="gasSub">ppm · мг/м³ · % об. · % НКПР · 4–20 мА</div>
-<div class="sub viewSub loopSub" id="loopSub">TT · PT · FT · LT → 4–20 мА · NAMUR NE 43</div>
+<div class="sub" id="lastSaved"><span id="lastSavedText">Сохранено на устройстве: —</span><button aria-label="Справка: раздел «Тэги»" class="helpBtn subHelp" data-help="list" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
+<div class="sub viewSub gasSub" id="gasSub"><span>ppm · мг/м³ · % об. · % НКПР · 4–20 мА</span><button aria-label="Справка: раздел «Газоанализ»" class="helpBtn subHelp" data-help="gas" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
+<div class="sub viewSub loopSub" id="loopSub"><span>TT · PT · FT · LT → 4–20 мА · NAMUR NE 43</span><button aria-label="Справка: раздел «4–20 мА»" class="helpBtn subHelp" data-help="loop" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="searchPanel" id="searchPanel">
 <input class="search" id="search" placeholder="Поиск по тегу или установке" type="search"/>
 <button aria-label="Закрыть поиск" class="searchClose" id="searchClose" type="button">×</button>
@@ -83,7 +83,8 @@
 </div>
 <button aria-label="Добавить прибор" class="fab" id="addBtn">+</button>
 <div class="overlay" id="overlay">
-<div aria-labelledby="modalTitle" aria-modal="true" class="sheet" role="dialog">
+<div aria-labelledby="modalTitle" aria-modal="true" class="sheet hasHelp" role="dialog">
+<button aria-label="Справка: добавление приборов" class="helpBtn sheetHelp" data-help="add" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button>
 <button aria-label="Закрыть" class="closex" id="closeBtn" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
 <h2 id="modalTitle">Добавить прибор</h2>
 <div aria-label="Импорт тегов" class="addChoice" id="addChoice">
@@ -165,19 +166,20 @@
 </div>
 <div aria-hidden="true" class="pageContextMenu" id="pageContextMenu"></div>
 <div class="overlay exportOverlay" id="exportOverlay">
-<div aria-labelledby="exportTitle" aria-modal="true" class="sheet exportSheet" role="dialog">
+<div aria-labelledby="exportTitle" aria-modal="true" class="sheet exportSheet hasHelp" role="dialog">
+<button aria-label="Справка: что делает каждый пункт" class="helpBtn sheetHelp" data-help="export" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button>
 <button aria-label="Закрыть" class="closex" id="exportCloseBtn" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
 <h2 id="exportTitle">Сохранить / отправить</h2>
 <div class="mini" style="margin-bottom:10px">Выбери способ отправки или передачи состояния.</div>
 <div class="exportMenu">
-<button class="choice" id="exportStateJsonShareBtn" type="button"><span class="ico">↗</span>Отправить • актуал</button>
-<button class="choice" id="exportStateJsonOpenBtn" type="button"><span class="ico">↥</span>Открыть</button>
-<button class="choice" id="exportStateJsonSaveBtn" type="button"><span class="ico">↓</span>Сохранить</button>
-<button class="choice" id="exportStateTextBtn" type="button"><span class="ico">≡</span>Актуал • текст</button>
-<button class="choice" id="exportAllBtn" type="button"><span class="ico">☷</span>Весь список · текст</button>
-<button class="choice" id="exportDoneBtn" type="button"><span class="ico">✓</span>Выполненные</button>
-<button class="choice" id="exportTodoBtn" type="button"><span class="ico">○</span>Невыполненные</button>
-<button class="choice" id="exportTaskBtn" type="button"><span class="ico">✎</span>Задания</button>
+<button class="choice" id="exportStateJsonShareBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M21.5 2.5 10.8 13.2"></path><path d="m21.5 2.5-6.8 19-3.9-8.3-8.3-3.9Z"></path></svg></span><span class="choiceText">Отправить • актуал</span></button>
+<button class="choice" id="exportStateJsonOpenBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M3.5 17.5v-11a2 2 0 0 1 2-2h3.7l2 2.5h7.3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"></path><path d="M12 16.5v-6"></path><path d="m9.3 13.2 2.7-2.7 2.7 2.7"></path></svg></span><span class="choiceText">Открыть</span></button>
+<button class="choice" id="exportStateJsonSaveBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M12 3.5v11"></path><path d="m7.5 10 4.5 4.5 4.5-4.5"></path><path d="M4.5 15.5v1.8A2.7 2.7 0 0 0 7.2 20h9.6a2.7 2.7 0 0 0 2.7-2.7v-1.8"></path></svg></span><span class="choiceText">Сохранить</span></button>
+<button class="choice" id="exportStateTextBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M13.5 3.5H7A2.5 2.5 0 0 0 4.5 6v12A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5V9.5Z"></path><path d="M13.5 3.5v6h6"></path><path d="M8.5 13.5h7M8.5 17h5"></path></svg></span><span class="choiceText">Актуал • текст</span></button>
+<button class="choice" id="exportAllBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"></path><circle class="helpDot" cx="5" cy="6.5" r="1.25"></circle><circle class="helpDot" cx="5" cy="12" r="1.25"></circle><circle class="helpDot" cx="5" cy="17.5" r="1.25"></circle></svg></span><span class="choiceText">Весь список · текст</span></button>
+<button class="choice" id="exportDoneBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="m8.3 12.3 2.6 2.6 4.9-5.2"></path></svg></span><span class="choiceText">Выполненные</span></button>
+<button class="choice" id="exportTodoBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.6V12l2.9 1.8"></path></svg></span><span class="choiceText">Невыполненные</span></button>
+<button class="choice" id="exportTaskBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M4.5 19.5h4L19 9a2.8 2.8 0 0 0-4-4L4.5 15.5Z"></path><path d="m13.5 6.5 4 4"></path></svg></span><span class="choiceText">Задания</span></button>
 </div>
 </div>
 </div>
@@ -187,10 +189,10 @@
 <h2 id="dryListTitle">Сухой список</h2>
 <div class="mini">Выбери, какой перечень открыть на весь экран.</div>
 <div class="exportMenu dryChoices">
-<button class="choice" data-dry-kind="all"><span class="ico">☷</span>Весь список</button>
-<button class="choice" data-dry-kind="done"><span class="ico">✓</span>Выполненные</button>
-<button class="choice" data-dry-kind="todo"><span class="ico">○</span>Невыполненные</button>
-<button class="choice" data-dry-kind="task"><span class="ico">✎</span>Задания</button>
+<button class="choice" data-dry-kind="all" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"></path><circle class="helpDot" cx="5" cy="6.5" r="1.25"></circle><circle class="helpDot" cx="5" cy="12" r="1.25"></circle><circle class="helpDot" cx="5" cy="17.5" r="1.25"></circle></svg></span><span class="choiceText">Весь список</span></button>
+<button class="choice" data-dry-kind="done" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="m8.3 12.3 2.6 2.6 4.9-5.2"></path></svg></span><span class="choiceText">Выполненные</span></button>
+<button class="choice" data-dry-kind="todo" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.6V12l2.9 1.8"></path></svg></span><span class="choiceText">Невыполненные</span></button>
+<button class="choice" data-dry-kind="task" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M4.5 19.5h4L19 9a2.8 2.8 0 0 0-4-4L4.5 15.5Z"></path><path d="m13.5 6.5 4 4"></path></svg></span><span class="choiceText">Задания</span></button>
 </div>
 </div>
 </div>
@@ -212,6 +214,13 @@
 <button class="action" id="confirmCancel" type="button">Отмена</button>
 <button class="action delete" id="confirmOk" type="button">Удалить</button>
 </div>
+</div>
+</div>
+<div class="overlay exportOverlay helpOverlay" id="helpOverlay">
+<div aria-labelledby="helpTitle" aria-modal="true" class="sheet exportSheet helpSheet" role="dialog">
+<button aria-label="Закрыть справку" class="closex" id="helpClose" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
+<h2 id="helpTitle">Справка</h2>
+<div class="helpBody" id="helpBody"></div>
 </div>
 </div>
 <div aria-live="polite" class="fontBubble" id="fontBubble"></div>

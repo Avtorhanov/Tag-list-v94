@@ -177,7 +177,8 @@ const ICON={
   send:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.5 13.5"></path><path d="m21 3-6.5 18-4-7.5L3 9.5Z"></path></svg>',
   pin:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4Z"></path></svg>',
   x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>',
-  task:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5H6.5A2 2 0 0 0 4.5 8v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1A1.5 1.5 0 0 0 15 4.5"></path><path d="m8.5 13.5 2.5 2.5 4.5-5"></path></svg>'
+  task:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5H6.5A2 2 0 0 0 4.5 8v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1A1.5 1.5 0 0 0 15 4.5"></path><path d="m8.5 13.5 2.5 2.5 4.5-5"></path></svg>',
+  book:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5a2 2 0 0 1 2-2h11.5v14H7a2 2 0 0 0-2 2Z"></path><path d="M5 19.5a2 2 0 0 0 2 2h11.5v-4"></path><path d="M8.5 7.5h6.5M8.5 11h4.5"></path></svg>'
 };
 let root=null,els={},getTags=null;
 function $(id){return els[id]||(els[id]=root.querySelector("#"+id));}
@@ -299,21 +300,38 @@ function template(){
       <div class="mini" id="loopCalHint"></div>
     </section>
 
-    <details class="gasCard gasHelp gasO6">
-      <summary>Формулы и источники</summary>
-      <div class="gasFormula">
-        <p><b>I</b> = 4 + 16 · x, мА — x: доля шкалы</p>
-        <p><b>Pt, П</b> (ГОСТ 6651-2009, IEC 60751): t ≥ 0 — R = R<sub>0</sub>(1 + A·t + B·t²); t &lt; 0 — добавляется C·(t − 100)·t³</p>
-        <p class="mini">α 0,00385: A = 3,9083·10⁻³, B = −5,775·10⁻⁷, C = −4,183·10⁻¹². α 0,00391: A = 3,9690·10⁻³, B = −5,841·10⁻⁷, C = −4,330·10⁻¹².</p>
-        <p><b>М</b> α 0,00428: t ≥ 0 — R = R<sub>0</sub>(1 + α·t); t &lt; 0 — R<sub>0</sub>(1 + A·t + B·t(t + 6,7) + C·t³)</p>
-        <p><b>Расход по перепаду:</b> Q = Q<sub>max</sub>·√(ΔP / ΔP<sub>max</sub>)</p>
-        <p><b>Гидростатика:</b> ΔP = ρ·g·h + смещение, g = 9,80665 м/с²</p>
-        <p class="mini">Состояние сигнала — по NAMUR NE 43: насыщение 3,8 и 20,5 мА, отказ ≤ 3,6 и ≥ 21 мА. Шкалу берите из конфигурации преобразователя (HART) или карты уставок — на ПНР их часто меняют.</p>
-      </div>
-    </details>
   </div>
-</div>`;
+</div>
+<div class="convFoot"><button type="button" class="convInfoBtn" id="loopSources">${ICON.book}<span>Источники и формулы</span></button></div>`;
 }
+
+// v98: короткая справка — формулы и откуда взяты данные (кнопка внизу страницы).
+const SOURCES_HTML=`
+<h3>Формулы</h3>
+<div class="hF">I = 4 + 16 · x, мА</div>
+<p class="mini">x — доля шкалы от 0 до 1.</p>
+<p><b>Термосопротивления Pt и П</b> (Каллендар — Ван Дюзен):</p>
+<div class="hF">t ≥ 0: R = R₀ · (1 + A·t + B·t²)<br>t &lt; 0: R = R₀ · (1 + A·t + B·t² + C·(t − 100)·t³)</div>
+<p class="mini">α 0,00385: A = 3,9083·10⁻³, B = −5,775·10⁻⁷, C = −4,183·10⁻¹². α 0,00391: A = 3,9690·10⁻³, B = −5,841·10⁻⁷, C = −4,330·10⁻¹².</p>
+<p><b>Медь М</b>, α 0,00428:</p>
+<div class="hF">t ≥ 0: R = R₀ · (1 + α·t)<br>t &lt; 0: R = R₀ · (1 + A·t + B·t·(t + 6,7) + C·t³)</div>
+<p class="mini">A = 4,28·10⁻³, B = −6,2032·10⁻⁷, C = 8,5154·10⁻¹⁰.</p>
+<p><b>Расход по перепаду</b> (сужающее устройство):</p>
+<div class="hF">Q = Q<sub>max</sub> · √(ΔP / ΔP<sub>max</sub>)</div>
+<p><b>Уровень гидростатикой</b>, g = 9,80665 м/с²:</p>
+<div class="hF">ΔP = ρ · g · h + смещение</div>
+<p class="mini">1 кгс/см² = 98,0665 кПа · 1 бар = 100 кПа · 1 мм вод. ст. = 9,80665 Па · 1 мм рт. ст. = 133,3224 Па · 1 psi = 6,894757 кПа.</p>
+<h3>Откуда данные</h3>
+<ul class="hSrc">
+<li>Сигнал 4–20 мА — <span class="nw">ГОСТ 26.011-80</span>, <span class="nw">IEC 60381-1</span>.</li>
+<li>Состояние сигнала — <span class="nw">NAMUR NE 43</span>: <span class="nw">3,8…20,5 мА</span> — измерение, <span class="nw">≤ 3,6</span> и <span class="nw">≥ 21 мА</span> — отказ.</li>
+<li>НСХ термосопротивлений — <span class="nw">ГОСТ 6651-2009</span>, <span class="nw">IEC 60751</span>.</li>
+<li>Расход на сужающих устройствах — <span class="nw">ГОСТ 8.586.1-2005</span>.</li>
+<li>Единицы давления — <span class="nw">ГОСТ 8.417-2002</span>.</li>
+</ul>
+<h3>Ограничения</h3>
+<p>Шкалу берите из конфигурации преобразователя (HART) или карты уставок — на ПНР их часто меняют. Расход по перепаду — без поправок на плотность и расширение среды.</p>
+<p class="helpNote">Считается на телефоне, без интернета.</p>`;
 
 // ---------------------------------------------------------------- отрисовка
 let fieldSig="";
@@ -554,6 +572,7 @@ function bind(){
       case "loopCopy":copyText(summaryText(),"Результат скопирован");break;
       case "loopShare":shareSummary();break;
       case "loopTask":saveToTask();break;
+      case "loopSources":window.TagListApp?.openInfo?.("Источники и формулы",SOURCES_HTML);break;
     }
   });
   root.addEventListener("input",e=>{

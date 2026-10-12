@@ -1,4 +1,7 @@
 
+// v98: на Android карточки тегов плотнее по вертикали (см. css «v98 Android»).
+try{if(/Android/i.test(navigator.userAgent||""))document.documentElement.classList.add("is-android");}catch(_){}
+
 function safeGetStorage(key,fallback=null){
   try{const value=localStorage.getItem(key);return value===null?fallback:value;}
   catch(e){return fallback;}
@@ -172,7 +175,7 @@ function formatSaved(value){
 }
 
 function renderLastSaved(){
-  const el=$("lastSaved"),page=getActivePage();
+  const el=$("lastSavedText")||$("lastSaved"),page=getActivePage();
   if(el&&page)el.textContent=formatSaved(page.updatedAt);
 }
 
@@ -296,15 +299,8 @@ function editSelectedPage(){
 
 async function deleteSelectedPages(){
   const ids=[...selectedPageIds];
-  if(!ids.length)return;
-  // v98: удаление страницы стирает все её теги и задания — спрашиваем, как при удалении тега.
-  const doomed=pages.filter(page=>ids.includes(page.id));
-  const tagCount=doomed.reduce((n,page)=>n+page.data.length,0);
-  const question=doomed.length===1
-    ?`Удалить страницу «${doomed[0].name}»?\nТегов на странице: ${tagCount}.`
-    :`Удалить выбранные страницы: ${doomed.length}?\nТегов на них: ${tagCount}.`;
-  if(!await askConfirm(question,doomed.length===1?"Удаление страницы":"Удаление страниц","Удалить"))return;
   resetTagSelection();
+  if(!ids.length)return;
   pages=pages.filter(page=>!ids.includes(page.id));
   if(!pages.length){
     const fresh={id:createPageId(),name:"Основная страница",data:[],updatedAt:new Date().toISOString()};
@@ -753,7 +749,7 @@ async function copyTags(ids){
   if(!items.length)return;
   const lines=items.map(item=>{
     const tag=String(item.tag||"").trim();
-    const task=String(item.task||"").trim().replace(/\s*[\r\n]+\s*/g," ");
+    const task=String(item.task||"").trim().replace(/\\s*[\\r\\n]+\\s*/g," ");
     return task ? `${tag} — ${task}` : tag;
   });
   const text=lines.join("\n");
@@ -2212,6 +2208,132 @@ const FONT_OPTIONS=[
   {id:"courier",name:"Courier New",family:'"Courier New",Courier,"serif-monospace",monospace',sample:"Aa КИП 123"}
 ];
 
+// ===== v98: справка — маленькие «!» в каждом разделе и в окнах, одно общее окно справки =====
+// Тексты — коротко «что для чего». Формулы и нормативы конверторов — в их модулях
+// (кнопка «Источники и формулы» внизу страниц «Газ» и «4–20»).
+const HELP_SVG={
+  eye:'<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle>',
+  send:'<path d="M21.5 2.5 10.8 13.2"></path><path d="m21.5 2.5-6.8 19-3.9-8.3-8.3-3.9Z"></path>',
+  search:'<circle cx="10.8" cy="10.8" r="6.2"></circle><path d="m16 16 5 5"></path>',
+  install:'<path d="M12 4v11"></path><path d="m7 10.5 5 5 5-5"></path><path d="M5 20h14"></path>',
+  open:'<path d="M3.5 17.5v-11a2 2 0 0 1 2-2h3.7l2 2.5h7.3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"></path><path d="M12 16.5v-6"></path><path d="m9.3 13.2 2.7-2.7 2.7 2.7"></path>',
+  save:'<path d="M12 3.5v11"></path><path d="m7.5 10 4.5 4.5 4.5-4.5"></path><path d="M4.5 15.5v1.8A2.7 2.7 0 0 0 7.2 20h9.6a2.7 2.7 0 0 0 2.7-2.7v-1.8"></path>',
+  text:'<path d="M13.5 3.5H7A2.5 2.5 0 0 0 4.5 6v12A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5V9.5Z"></path><path d="M13.5 3.5v6h6"></path><path d="M8.5 13.5h7M8.5 17h5"></path>',
+  all:'<path d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"></path><circle class="helpDot" cx="5" cy="6.5" r="1.25"></circle><circle class="helpDot" cx="5" cy="12" r="1.25"></circle><circle class="helpDot" cx="5" cy="17.5" r="1.25"></circle>',
+  done:'<circle cx="12" cy="12" r="8.5"></circle><path d="m8.3 12.3 2.6 2.6 4.9-5.2"></path>',
+  todo:'<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.6V12l2.9 1.8"></path>',
+  task:'<path d="M4.5 19.5h4L19 9a2.8 2.8 0 0 0-4-4L4.5 15.5Z"></path><path d="m13.5 6.5 4 4"></path>',
+  camera:'<path d="M3.5 8.5A2 2 0 0 1 5.5 6.5h2l1.6-2.2h5.8l1.6 2.2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"></path><circle cx="12" cy="13" r="3.6"></circle>',
+  photo:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><circle cx="9" cy="9.5" r="1.7"></circle><path d="m20.5 15.5-5-5-8.5 9"></path>',
+  paste:'<rect x="5.5" y="5" width="13" height="15.5" rx="2.5"></rect><path d="M9 5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v1"></path><path d="M9 11h6M9 14.5h6M9 18h3.5"></path>',
+  check:'<rect x="4" y="4" width="16" height="16" rx="3.5"></rect><path d="m8.2 12.2 2.6 2.6 5-5.3"></path>'
+};
+const hK=inner=>`<span class="hK" aria-hidden="true">${inner}</span>`;
+const hS=name=>hK(`<svg class="hIco" viewBox="0 0 24 24">${HELP_SVG[name]}</svg>`);
+const hT=text=>hK(`<span class="hKT">${text}</span>`);
+const hLi=(key,body)=>`<li>${key}<span>${body}</span></li>`;
+const HELP={
+  list:{title:"Тэги — справка",html:`
+<p class="helpLead">Чек-лист приборов: что сделано, что осталось и задания по каждому тегу. Данные хранятся только на этом телефоне.</p>
+<h3>Кнопки под шапкой</h3>
+<ul>
+${hLi(hS("eye"),"<b>Сухой список</b> — перечень на весь экран: весь, выполненные, невыполненные, задания.")}
+${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
+${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
+${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
+${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
+${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
+</ul>
+<h3>Страницы</h3>
+<p>Отдельные списки — например, по установкам или сменам. Нажми — открыть, <b>+</b> — новая. Удержи страницу — «Изменить» (название), «Выбрать» (все) и «Удалить».</p>
+<h3>Фильтры и прогресс</h3>
+<p>Все, Задания, Выполненные, Невыполненные и по установке — по первым четырём цифрам тега. В скобках — сколько тегов. «Общий прогресс» считает всю страницу.</p>
+<h3>Карточка тега</h3>
+<ul>
+${hLi(hS("check"),"<b>Квадрат слева</b> — выполнено / не выполнено.")}
+${hLi(hT("▾"),"<b>Задание</b> — открыть поле. Нажми в текст, чтобы писать, «Сохранить» — закончить. «есть» — задание записано.")}
+${hLi(hT("✎"),"<b>Изменить</b> — тег, задание, статус или удалить прибор.")}
+</ul>
+<h3>Выбор нескольких</h3>
+<p>Удержи карточку тега. Справа: <b>×</b> — выйти из выбора, пустая кнопка — выбрать (появится ✓), <b>⧉</b> — копировать выбранные теги с заданиями. Внизу: «Удалить» — сразу удаляет выбранные, «Все» — выбрать всё в текущем фильтре или снять выбор, «Выполнено» — отметить выбранные или снять отметку.</p>
+<h3>Добавить — кнопка «+»</h3>
+<p>Вручную, с камеры, из фото или из файла. Подробнее — «!» в окне добавления.</p>
+<h3>Где данные</h3>
+<p>Теги, задания и настройки хранятся в памяти телефона и работают без интернета. Сеть нужна только для распознавания тегов с фото — сервис OCR.space (Engine 3, при сбое Engine 2); в браузере — ещё для обновления самого приложения. Перенести список на другой телефон: «Сохранить / отправить» → файл .json → «Открыть» на другом телефоне.</p>`},
+  gas:{title:"Газоанализ — справка",html:`
+<p class="helpLead">Пересчёт показаний газоанализатора: ppm, мг/м³, % об., % НКПР, ppb, г/м³ и ток 4–20 мА. Считается на телефоне, без интернета.</p>
+<h3>Вещество</h3>
+<p>Газ — из списка или кнопкой. «Параметры» — молярная масса, НКПР и ПДК: если в паспорте прибора НКПР другой, впиши его; «Справочные» вернут значения. «Свой газ» (в конце списка) — для смесей.</p>
+<h3>Концентрация</h3>
+<p>Введи показание и выбери его единицу. Серые единицы недоступны: для % НКПР газ должен быть горючим, для мг/м³ нужна молярная масса.</p>
+<h3>Условия пересчёта</h3>
+<p>Температура и абсолютное давление. Влияют только на мг/м³ и г/м³. Кнопки — типовые условия: 20 °C — для ПДК рабочей зоны.</p>
+<h3>Результат</h3>
+<p>Все единицы сразу; нажми строку — значение скопируется. Ниже — доля ПДК и ток по шкале из блока «Сигнал». «Тэг для задания» и «В задание» — дописать результат в задание тега (если тега нет, он создаётся). Копировать и «Отправить» — текст результата.</p>
+<h3>Сигнал 4–20 мА</h3>
+<p>Шкала прибора: начало, конец и единица. Ток и значение пересчитываются в обе стороны, состояние сигнала — по NAMUR NE 43. «Из расчёта» и «В расчёт» — обмен с блоком «Концентрация».</p>
+<p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>`},
+  loop:{title:"4–20 мА — справка",html:`
+<p class="helpLead">Пересчёт «величина ⇄ ток ⇄ % шкалы» для TT, PT, FT и LT и точки поверки. Считается на телефоне, без интернета.</p>
+<h3>Прибор</h3>
+<p>Тип: TT — температура, PT — давление, FT — расход, LT — уровень. Введи тег — тип определится по буквам (<span class="nw">2131-TT-434</span> → TT). «Сохранить» запоминает шкалу для тега; сохранённые теги — кнопками ниже, × — удалить.</p>
+<h3>Значение</h3>
+<p>Введи любое поле — величину, сопротивление или перепад, ток или % шкалы, — остальные пересчитаются. Полоса показывает ток в петле, состояние — по NAMUR NE 43. Копировать, «В задание» и «Отправить» — как в «Газе».</p>
+<h3>Шкала</h3>
+<p>НПИ (4 мА), ВПИ (20 мА) и настройки типа: НСХ и R₀ термосопротивления, единицы давления, расход по перепаду (где извлекается корень), уровень прямой или гидростатикой (плотность и смещение). Кнопки — типовые шкалы.</p>
+<h3>Точки поверки</h3>
+<p>0, 25, 50, 75 и 100 % шкалы с ожидаемым током. Нажми строку — значения перейдут в «Значение».</p>
+<p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>`},
+  export:{title:"Отправка — справка",html:`
+<h3>Состояние — все страницы целиком</h3>
+<ul>
+${hLi(hS("send"),"<b>Отправить • актуал</b> — файл .json в мессенджер. Из Chrome на Android уходит как «….json.txt» — открывается так же.")}
+${hLi(hS("open"),"<b>Открыть</b> — загрузить состояние из файла .json. Текущее перед этим сохраняется резервной копией в памяти телефона.")}
+${hLi(hS("save"),"<b>Сохранить</b> — файл .json в «Загрузки» или выбранную папку.")}
+${hLi(hS("text"),"<b>Актуал • текст</b> — все страницы текстом: выполненные, невыполненные, задания.")}
+</ul>
+<h3>Отчёт по открытой странице</h3>
+<ul>
+${hLi(hS("all"),"<b>Весь список</b> — выполненные и невыполненные.")}
+${hLi(hS("done"),"<b>Выполненные</b> — только выполненные.")}
+${hLi(hS("todo"),"<b>Невыполненные</b> — только оставшиеся.")}
+${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, задание в одну строку.")}
+</ul>
+<p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
+  add:{title:"Добавление — справка",html:`
+<ul>
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото уменьшается и отправляется на распознавание в OCR.space (Engine 3, при сбое Engine 2) — нужен интернет. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("text"),"<b>Файл</b> — XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
+${hLi(hS("paste"),"<b>Вставить</b> — текст из буфера обмена: из письма, таблицы или мессенджера.")}
+</ul>
+<h3>Вручную</h3>
+<p>Тег, задание и статус. Тег начинается с номера установки из четырёх цифр — например, <span class="nw">2131-PZT-414A</span>: по нему работают фильтры по установкам.</p>
+<p class="helpNote">Дубликаты не добавляются — приложение предложит изменить тег или удалить прежнюю запись.</p>`}
+};
+// Проверки на null: при обновлении браузер может на минуту взять старый index.html из кэша.
+function openInfo(title,html){
+  const ov=$("helpOverlay"),body=$("helpBody"),head=$("helpTitle");
+  if(!ov||!body)return;
+  if(head)head.textContent=title;
+  body.innerHTML=html;
+  body.scrollTop=0;
+  ov.classList.add("show");
+}
+function closeInfo(){$("helpOverlay")?.classList.remove("show");}
+function openHelp(key){const h=HELP[key];if(h)openInfo(h.title,h.html);}
+document.addEventListener("click",e=>{
+  const b=e.target.closest?.(".helpBtn[data-help]");
+  if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  openHelp(b.dataset.help);
+});
+if($("helpClose"))$("helpClose").onclick=closeInfo;
+$("helpOverlay")?.addEventListener("click",e=>{if(e.target===$("helpOverlay"))closeInfo();});
+// Esc закрывает только справку, окно под ней остаётся открытым.
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&$("helpOverlay")?.classList.contains("show")){closeInfo();e.stopImmediatePropagation();}
+},true);
+
 document.querySelectorAll("[data-dry-kind]").forEach(btn=>btn.addEventListener("click",()=>openDryReport(btn.dataset.dryKind)));
 $("dryListClose").onclick=()=>$("dryListOverlay").classList.remove("show");
 $("dryListOverlay").addEventListener("click",e=>{if(e.target===$("dryListOverlay"))$("dryListOverlay").classList.remove("show")});
@@ -2401,15 +2523,11 @@ $("duplicateOverlay").addEventListener("click",e=>{if(e.target===$("duplicateOve
 $("saveBtn").onclick=saveModal;
 deleteBtn.onclick=deleteCurrent;
 overlay.addEventListener("click",e=>{if(e.target===overlay)closeModal();});
-$("deleteAll").onclick=async()=>{
+$("deleteAll").onclick=()=>{
   if(selectionMode){
     const visibleIds=new Set(getSelectionScope().map(item=>item.id));
     const ids=[...selectedTagIds].filter(id=>visibleIds.has(id));
     if(!ids.length){showToast("Выбери теги в текущей вкладке");return;}
-    // v98: массовое удаление — с подтверждением, как удаление одного тега.
-    const one=ids.length===1?data.find(item=>item.id===ids[0]):null;
-    if(!await askConfirm(one?`Удалить ${one.tag}?`:`Удалить выбранные теги: ${ids.length}?`,"Удаление тегов","Удалить"))return;
-    if(!selectionMode)return;
     const set=new Set(ids);
     data=data.filter(item=>!set.has(item.id));
     selectedTagIds.clear();
@@ -2423,7 +2541,6 @@ $("deleteAll").onclick=async()=>{
   }
   const count=data.length;
   if(!count){showToast("Список уже пуст");return;}
-  if(!await askConfirm(`Удалить все теги страницы: ${count}?`,"Удаление тегов","Удалить"))return;
   data=[];
   save();
   filter="all";
@@ -2865,7 +2982,7 @@ function attachTagPicker(input,opts={}){
   renderInfo();
   return api;
 }
-window.TagListApp={addResultToTag,tagNames:allTagNames,tagEntries,findTagEntry,activePageName,attachTagPicker};
+window.TagListApp={addResultToTag,tagNames:allTagNames,tagEntries,findTagEntry,activePageName,attachTagPicker,openInfo};
 // Совместимость: прежние вызовы закрытия конвертора.
 function closeGasView(fromHistory=false){return setView("list",{fromHistory});}
 $("viewSwitch").addEventListener("click",e=>{

@@ -221,7 +221,8 @@ const ICON={
   down:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v15"></path><path d="m6 13 6 6 6-6"></path></svg>',
   up:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V5"></path><path d="m6 11 6-6 6 6"></path></svg>',
   x:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"></path></svg>',
-  task:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5H6.5A2 2 0 0 0 4.5 8v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1A1.5 1.5 0 0 0 15 4.5"></path><path d="m8.5 13.5 2.5 2.5 4.5-5"></path></svg>'
+  task:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5H6.5A2 2 0 0 0 4.5 8v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1A1.5 1.5 0 0 0 15 4.5"></path><path d="m8.5 13.5 2.5 2.5 4.5-5"></path></svg>',
+  book:'<svg class="btnIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5a2 2 0 0 1 2-2h11.5v14H7a2 2 0 0 0-2 2Z"></path><path d="M5 19.5a2 2 0 0 0 2 2h11.5v-4"></path><path d="M8.5 7.5h6.5M8.5 11h4.5"></path></svg>'
 };
 let root=null,els={},getTags=null;
 function chip(cls,attrs,text){return `<button type="button" class="tab ${cls}" ${attrs}>${text}</button>`;}
@@ -317,20 +318,34 @@ function template(){
       </div>
     </section>
 
-    <details class="gasCard gasHelp gasO6">
-      <summary>Формулы и источники</summary>
-      <div class="gasFormula">
-        <p><b>V<sub>m</sub></b> = R·T / P — молярный объём, л/моль (22,414 при 0 °C; 24,055 при 20 °C; 101,325 кПа)</p>
-        <p><b>мг/м³</b> = ppm · M / V<sub>m</sub></p>
-        <p><b>% об.</b> = ppm / 10 000 &nbsp;·&nbsp; <b>ppb</b> = ppm · 1000</p>
-        <p><b>% НКПР</b> = % об. / НКПР · 100</p>
-        <p><b>I</b> = 4 + 16 · (C − C<sub>н</sub>) / (C<sub>в</sub> − C<sub>н</sub>), мА</p>
-        <p class="mini">НКПР — справочно по ГОСТ 31610.20-1-2020 (IEC 60079-20-1) и ГОСТ Р 51330.19-99. ПДК р.з. — справочно по СанПиН 1.2.3685-21. Для настройки и проверки газоанализатора используйте значения из паспорта прибора, свидетельства о поверке и проекта. Расчёт — для идеального газа, давление абсолютное. Состояние сигнала — по NAMUR NE 43.</p>
-      </div>
-    </details>
   </div>
-</div>`;
+</div>
+<div class="convFoot"><button type="button" class="convInfoBtn" id="gasSources">${ICON.book}<span>Источники и формулы</span></button></div>`;
 }
+
+// v98: короткая справка — формулы и откуда взяты данные (кнопка внизу страницы).
+const SOURCES_HTML=`
+<h3>Формулы</h3>
+<div class="hF">V<sub>m</sub> = R·T / P, л/моль</div>
+<p>R = 8,314462618 Дж/(моль·К). При 101,325 кПа: 22,414 л/моль при 0 °C, 24,055 л/моль при 20 °C.</p>
+<div class="hF">мг/м³ = ppm · M / V<sub>m</sub></div>
+<div class="hF">г/м³ = мг/м³ / 1000</div>
+<div class="hF">% об. = ppm / 10 000</div>
+<div class="hF">ppb = ppm · 1000</div>
+<div class="hF">% НКПР = % об. / НКПР · 100</div>
+<div class="hF">доля ПДК = мг/м³ / ПДК р.з.</div>
+<div class="hF">I = 4 + 16 · (C − C<sub>н</sub>) / (C<sub>в</sub> − C<sub>н</sub>), мА</div>
+<h3>Откуда данные</h3>
+<ul class="hSrc">
+<li>НКПР — <span class="nw">ГОСТ 31610.20-1-2020</span> <span class="nw">(IEC 60079-20-1)</span>, <span class="nw">ГОСТ Р 51330.19-99</span>.</li>
+<li>ПДК рабочей зоны, максимальная разовая — <span class="nw">СанПиН 1.2.3685-21</span>.</li>
+<li>Молярная масса — по формуле вещества из стандартных атомных масс ИЮПАК.</li>
+<li>Стандартные условия 20 °C и 101,325 кПа — <span class="nw">ГОСТ 2939-63</span>.</li>
+<li>Состояние сигнала — <span class="nw">NAMUR NE 43</span>: <span class="nw">3,8…20,5 мА</span> — измерение, <span class="nw">≤ 3,6</span> и <span class="nw">≥ 21 мА</span> — отказ.</li>
+</ul>
+<h3>Ограничения</h3>
+<p>Расчёт для идеального газа, давление абсолютное. Справочные значения — для ориентира: для настройки и проверки газоанализатора берите НКПР и шкалу из паспорта прибора, свидетельства о поверке и проекта.</p>
+<p class="helpNote">Считается на телефоне, без интернета.</p>`;
 
 function $(id){return els[id]||(els[id]=root.querySelector("#"+id));}
 
@@ -641,6 +656,7 @@ function bind(){
       case "gasCopy":{const s=summaryText();if(s)copyText(s,"Результат скопирован");else toast("Нет результата для копирования");break;}
       case "gasShare":shareSummary();break;
       case "gasTask":saveToTask();break;
+      case "gasSources":window.TagListApp?.openInfo?.("Источники и формулы",SOURCES_HTML);break;
       case "gasFromMain":{
         const c=context(),{x}=currentFraction(c);
         const val=fromFraction(x,state.ma.unit,c);

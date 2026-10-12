@@ -3,7 +3,7 @@
 // Свежие файлы берутся из сети (network-first с таймаутом), кэш — запасной путь.
 // OCR (api.ocr.space) никогда не кэшируется и всегда идёт напрямую в сеть.
 const CACHE_PREFIX = 'tag-list-';
-const CACHE_NAME = CACHE_PREFIX + 'v98-1';
+const CACHE_NAME = CACHE_PREFIX + 'v98-2';
 const APP_SHELL = [
   './',
   './index.html',
