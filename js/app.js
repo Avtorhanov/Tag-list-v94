@@ -2141,12 +2141,12 @@ let ocrRunToken=0;
 let fileCandidates=[];
 let sheetJsPromise=null;
 
+// Только шрифты, которые реально меняют вид и на Android, и на iPhone.
+// Arial, Verdana и Trebuchet MS убраны: на Android их нет, и они подменялись системным Roboto.
+// Сохранённый выбор удалённого шрифта автоматически сбрасывается на «Системный» (getFontOption).
 const FONT_OPTIONS=[
   {id:"system",name:"Системный",family:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif',sample:"Aa КИП 123"},
-  {id:"arial",name:"Arial",family:'Arial,"Helvetica Neue",sans-serif',sample:"Aa КИП 123"},
-  {id:"verdana",name:"Verdana",family:'Verdana,sans-serif',sample:"Aa КИП 123"},
   {id:"georgia",name:"Georgia",family:'Georgia,"Times New Roman",serif',sample:"Aa КИП 123"},
-  {id:"trebuchet",name:"Trebuchet MS",family:'"Trebuchet MS",Arial,sans-serif',sample:"Aa КИП 123"},
   {id:"courier",name:"Courier New",family:'"Courier New",monospace',sample:"Aa КИП 123"}
 ];
 
