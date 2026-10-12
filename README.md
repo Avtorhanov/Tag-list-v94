@@ -31,3 +31,16 @@
 Приложение работает непосредственно в браузере.  
 Основные данные сохраняются локально на устройстве, поэтому список можно использовать без постоянной регистрации или серверной базы данных.
 
+### Лицензия
+
+Copyright © 2026 Akhmad ([Avtorhanov](https://github.com/Avtorhanov))
+
+Проект распространяется под лицензией **GNU General Public License v3.0** — полный текст в файле [LICENSE](LICENSE).
+Вы можете свободно использовать, изучать, изменять и распространять код, при условии что производные работы также распространяются под GPL-3.0 с открытым исходным кодом.
+
+Сторонние компоненты сохраняют свои лицензии:
+
+- [SheetJS](js/vendor/LICENSE-SheetJS.txt) — Apache License 2.0;
+- [IBM Plex Mono](css/fonts/LICENSE-IBM-Plex.txt) — SIL Open Font License 1.1;
+- Gradle Wrapper (`android/gradlew*`) — Apache License 2.0.
+
