@@ -41,9 +41,17 @@ jobs:
       - name: Gradle (кэш)
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Ключ подписи из секретов (необязательно)
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
+      # Ключ подписи хранится только в секретах репозитория (Settings → Secrets and variables → Actions):
+      #   TAGLIST_KEYSTORE_BASE64   — файл .jks в base64
+      #   TAGLIST_KEYSTORE_PASSWORD — пароль хранилища
+      #   TAGLIST_KEY_ALIAS         — псевдоним ключа (по умолчанию taglist)
+      #   TAGLIST_KEY_PASSWORD      — пароль ключа (если пусто — как у хранилища)
+      - name: Ключ подписи из секретов
         run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Не задан секрет TAGLIST_KEYSTORE_BASE64 — APK нечем подписать."
+            exit 1
+          fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "TAGLIST_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
@@ -54,8 +62,7 @@ jobs:
           TAGLIST_KEY_ALIAS: ${{ secrets.TAGLIST_KEY_ALIAS }}
           TAGLIST_KEY_PASSWORD: ${{ secrets.TAGLIST_KEY_PASSWORD }}
         run: |
-          # Пустые секреты не должны перекрывать значения по умолчанию.
-          if [ -z "$TAGLIST_KEYSTORE_PASSWORD" ]; then unset TAGLIST_KEYSTORE_PASSWORD; fi
+          # Пустые необязательные секреты не должны перекрывать значения по умолчанию.
           if [ -z "$TAGLIST_KEY_ALIAS" ]; then unset TAGLIST_KEY_ALIAS; fi
           if [ -z "$TAGLIST_KEY_PASSWORD" ]; then unset TAGLIST_KEY_PASSWORD; fi
           bash ./gradlew --no-daemon --stacktrace assembleRelease

@@ -13,3 +13,9 @@ android/build/
 android/app/build/
 android/local.properties
 *.apk
+
+# Ключи подписи — только в секретах GitHub, не в репозитории
+*.jks
+*.keystore
+*.p12
+android/keystore/

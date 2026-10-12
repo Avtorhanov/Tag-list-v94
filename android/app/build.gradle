@@ -7,11 +7,20 @@ plugins {
 def webRoot = rootProject.file('..')          // корень репозитория с index.html, css/, js/
 def ciBuildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
 
-// Ключ подписи: из секретов GitHub (если заданы) или из файла keystore/ в репозитории.
-def ksFile = System.getenv('TAGLIST_KEYSTORE_FILE') ? file(System.getenv('TAGLIST_KEYSTORE_FILE')) : rootProject.file('keystore/taglist-release.jks')
-def ksPass = System.getenv('TAGLIST_KEYSTORE_PASSWORD') ?: 'taglist-kip-2026'
+// Ключ подписи берётся ТОЛЬКО из переменных окружения (секреты GitHub Actions или локальная сборка).
+// Сам ключ (*.jks) и пароли в репозиторий не кладутся.
+def ksPath = System.getenv('TAGLIST_KEYSTORE_FILE')
+def ksFile = ksPath ? file(ksPath) : null
+def ksPass = System.getenv('TAGLIST_KEYSTORE_PASSWORD')
 def ksAlias = System.getenv('TAGLIST_KEY_ALIAS') ?: 'taglist'
 def ksKeyPass = System.getenv('TAGLIST_KEY_PASSWORD') ?: ksPass
+def hasSigning = ksFile != null && ksFile.exists() && ksPass
+
+gradle.taskGraph.whenReady { graph ->
+    if (!hasSigning && graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        throw new GradleException('Нет ключа подписи: задайте TAGLIST_KEYSTORE_FILE и TAGLIST_KEYSTORE_PASSWORD (в CI — секреты репозитория).')
+    }
+}
 
 android {
     namespace 'io.github.avtorhanov.taglist'
@@ -26,13 +35,15 @@ android {
     }
 
     signingConfigs {
-        release {
-            storeFile ksFile
-            storePassword ksPass
-            keyAlias ksAlias
-            keyPassword ksKeyPass
-            enableV1Signing true
-            enableV2Signing true
+        if (hasSigning) {
+            release {
+                storeFile ksFile
+                storePassword ksPass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
+                enableV1Signing true
+                enableV2Signing true
+            }
         }
     }
 
@@ -40,7 +51,9 @@ android {
         release {
             minifyEnabled false
             shrinkResources false
-            signingConfig signingConfigs.release
+            if (hasSigning) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             applicationIdSuffix '.debug'
