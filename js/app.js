@@ -1497,6 +1497,7 @@ function openAdd(){
   $("fileProgressWrap").style.display="none";
   setFileProgress(0);
   overlay.classList.add("show");
+  probeOcrNetwork(); // v99: заранее узнать, доступно ли распознавание фото
   setTimeout(()=>tagInput.focus(),50);
 }
 
@@ -1861,7 +1862,7 @@ async function runOCR(file){
     if(runToken!==ocrRunToken)return;
     console.error(e);
     setProgress(0);
-    $("ocrStatus").textContent=`Ошибка распознавания: ${e.message||e}. Проверь интернет и доступ к OCR.space.`;
+    $("ocrStatus").textContent=`Ошибка распознавания: ${e.message||e}. Проверь интернет и VPN — нужен доступ к OCR.space.`;
   }
 }
 
@@ -2259,7 +2260,7 @@ ${hLi(hT("✎"),"<b>Изменить</b> — тег, задание, стату�
 <h3>Добавить — кнопка «+»</h3>
 <p>Вручную, с камеры, из фото или из файла. Подробнее — «!» в окне добавления.</p>
 <h3>Где данные</h3>
-<p>Теги, задания и настройки хранятся в памяти телефона и работают без интернета. Сеть нужна только для распознавания тегов с фото — сервис OCR.space (Engine 3, при сбое Engine 2); в браузере — ещё для обновления самого приложения. Перенести список на другой телефон: «Сохранить / отправить» → файл .json → «Открыть» на другом телефоне.</p>`},
+<p>Теги, задания и настройки хранятся в памяти телефона и работают без интернета. Сеть с VPN нужна только для распознавания тегов с фото — сервис OCR.space (Engine 3, при сбое Engine 2); в браузере — ещё для обновления самого приложения. Перенести список на другой телефон: «Сохранить / отправить» → файл .json → «Открыть» на другом телефоне.</p>`},
   gas:{title:"Газоанализ — справка",html:`
 <p class="helpLead">Пересчёт показаний газоанализатора: ppm, мг/м³, % об., % НКПР, ppb, г/м³ и ток 4–20 мА. Считается на телефоне, без интернета.</p>
 <h3>Вещество</h3>
@@ -2302,7 +2303,7 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото уменьшается и отправляется на распознавание в OCR.space (Engine 3, при сбое Engine 2) — нужен интернет. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото уменьшается и отправляется на распознавание в OCR.space (Engine 3, при сбое Engine 2) — нужны интернет и VPN. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — текст из буфера обмена: из письма, таблицы или мессенджера.")}
 </ul>
@@ -2455,8 +2456,47 @@ document.addEventListener("pointerdown",e=>{
 document.addEventListener("scroll",closePageContextMenu,{passive:true});
 $("closeBtn").onclick=closeModal;
 
-$("cameraChoice").onclick=()=>{setAddMode("camera"); setTimeout(()=>$("cameraInput").click(),50);};
-$("photoChoice").onclick=()=>{setAddMode("photo"); setTimeout(()=>$("photoInput").click(),50);};
+// v99: распознавание фото идёт через интернет (api.ocr.space, обычно — через VPN).
+// Сам VPN страница увидеть не может, поэтому проверяем, отвечает ли сервис распознавания:
+// отвечает — камера/фото открываются сразу; нет или ещё неизвестно — сначала окно
+// «Включите сеть и VPN», камера/фото открываются по «OK» (касание — нужно для выбора файла).
+const OCR_PROBE_URL="https://api.ocr.space/parse/image";
+const OCR_PROBE_TTL=120000;
+let ocrNet={up:false,at:0,promise:null},pendingOcrPick=null;
+function probeOcrNetwork(force=false){
+  if(navigator.onLine===false){ocrNet={up:false,at:Date.now(),promise:null};return Promise.resolve(false);}
+  if(ocrNet.promise)return ocrNet.promise;
+  if(!force&&ocrNet.up&&Date.now()-ocrNet.at<OCR_PROBE_TTL)return Promise.resolve(true);
+  const ctl=typeof AbortController==="function"?new AbortController():null;
+  const timer=setTimeout(()=>ctl?.abort(),4000);
+  // no-cors: любой ответ сервера = сервис доступен; сбой сети, блокировка, таймаут = недоступен.
+  const p=fetch(OCR_PROBE_URL,{method:"GET",mode:"no-cors",cache:"no-store",credentials:"omit",signal:ctl?.signal})
+    .then(()=>true,()=>false)
+    .then(up=>{clearTimeout(timer);ocrNet={up,at:Date.now(),promise:null};return up;});
+  ocrNet.promise=p;
+  return p;
+}
+function ocrNetworkKnownUp(){return navigator.onLine!==false&&ocrNet.up&&Date.now()-ocrNet.at<OCR_PROBE_TTL;}
+function closeNetWarning(){pendingOcrPick=null;$("netOverlay").classList.remove("show");}
+function openOcrPicker(mode){
+  const input=$(mode==="camera"?"cameraInput":"photoInput");
+  const go=()=>{setAddMode(mode);setTimeout(()=>input.click(),50);};
+  if(ocrNetworkKnownUp()){go();return;}
+  pendingOcrPick=go;
+  $("netOverlay").classList.add("show");
+  probeOcrNetwork(true);
+}
+$("netOk").onclick=()=>{const go=pendingOcrPick;closeNetWarning();if(go)go();};
+$("netCancel").onclick=closeNetWarning;
+$("netClose").onclick=closeNetWarning;
+$("netOverlay").addEventListener("click",e=>{if(e.target===$("netOverlay"))closeNetWarning();});
+// Esc закрывает только это окно, окно «Добавить прибор» под ним остаётся.
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&$("netOverlay").classList.contains("show")){closeNetWarning();e.stopImmediatePropagation();}
+},true);
+window.addEventListener("online",()=>{if(overlay.classList.contains("show"))probeOcrNetwork(true);});
+$("cameraChoice").onclick=()=>openOcrPicker("camera");
+$("photoChoice").onclick=()=>openOcrPicker("photo");
 $("fileChoice").onclick=()=>setAddMode("file");
 
 $("ocrBackBtn").onclick=()=>{
@@ -3072,6 +3112,7 @@ if(window.AndroidApp){
       const menuOpen=$("pageContextMenu")?.classList.contains("show");
       const editorOpen=list.querySelector(".taskEditorWrap.open");
       if(confirmOpen){finishConfirm(false);return true;}
+      if($("netOverlay")?.classList.contains("show")){closeNetWarning();return true;}
       if(overlayOpen||selectionMode){
         if(overlayOpen&&overlayOpen.id==="exportOverlay"){closeExportMenu();return true;}
         document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));

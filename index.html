@@ -12,8 +12,132 @@
 <title>Tag list</title>
 
 
-<link href="./css/app.css" rel="stylesheet"/><link href="./manifest.webmanifest" rel="manifest"/><link href="./favicon-64.png?v=96-3" rel="icon" sizes="64x64" type="image/png"/><link href="./icon-180.png?v=96-3" rel="apple-touch-icon" sizes="180x180"/></head>
+<link href="./css/app.css" rel="stylesheet"/><link href="./manifest.webmanifest" rel="manifest"/><link href="./favicon-64.png?v=96-3" rel="icon" sizes="64x64" type="image/png"/><link href="./icon-180.png?v=96-3" rel="apple-touch-icon" sizes="180x180"/>
+<!-- v99: заставка при запуске — один раз за сеанс (новый запуск приложения / новая вкладка).
+     Фон #0b1728 совпадает с background_color манифеста и фоном окна APK: переход без вспышки.
+     Касание пропускает заставку. «Уменьшить движение» в системе — короткое затухание без анимаций. -->
+<style id="tlSplashCss">
+#tlSplash{display:none}
+html.tl-splash:not(.tl-splash-out),html.tl-splash:not(.tl-splash-out) body{background:#0b1728}
+html.tl-splash .app,html.tl-splash .fab{opacity:0}
+html.tl-splash #tlSplash{display:flex}
+#tlSplash{position:fixed;inset:0;z-index:1000;flex-direction:column;align-items:center;justify-content:center;
+  padding:env(safe-area-inset-top) 24px env(safe-area-inset-bottom);overflow:hidden;touch-action:none;
+  -webkit-user-select:none;user-select:none;color:#eaf2ff;
+  background:radial-gradient(120% 72% at 50% 38%,#17407f 0%,#0f2a57 34%,#0b1a36 62%,#081226 100%);
+  transition:opacity .6s ease,visibility 0s linear .6s}
+.tlSpGrid{position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(120,170,255,.075) 1px,transparent 1px),linear-gradient(90deg,rgba(120,170,255,.075) 1px,transparent 1px);
+  background-size:28px 28px;background-position:center;
+  -webkit-mask-image:radial-gradient(72% 56% at 50% 42%,#000 0%,transparent 100%);mask-image:radial-gradient(72% 56% at 50% 42%,#000 0%,transparent 100%)}
+.tlSpChips{position:absolute;inset:0;pointer-events:none;
+  -webkit-mask-image:radial-gradient(50% 30% at 50% 50%,transparent 50%,#000 100%);mask-image:radial-gradient(50% 30% at 50% 50%,transparent 50%,#000 100%)}
+.tlSpChip{position:absolute;top:100%;left:calc((100% - 132px) * var(--x));display:flex;align-items:center;gap:6px;
+  padding:6px 9px;border-radius:7px;border:1px solid rgba(140,185,255,.26);background:rgba(18,44,88,.5);
+  color:#d3e3ff;font:600 11px/1 var(--f-mono,ui-monospace,Menlo,monospace);letter-spacing:.04em;white-space:nowrap;
+  opacity:0;filter:blur(var(--b,0));will-change:transform,opacity;animation:tlChip var(--d) linear var(--dl) infinite}
+.tlSpChip i{width:6px;height:6px;border-radius:50%;flex:none;background:#f0a24a;box-shadow:0 0 6px rgba(240,162,74,.7)}
+.tlSpChip.is-done i{background:#5cc985;box-shadow:0 0 6px rgba(92,201,133,.7)}
+.tlSpStage{position:relative;display:flex;flex-direction:column;align-items:center;transition:transform .65s cubic-bezier(.2,.8,.2,1),opacity .5s ease}
+.tlSpGlow{position:absolute;left:50%;top:38%;width:min(96vw,440px);aspect-ratio:1;pointer-events:none;
+  background:radial-gradient(circle,rgba(70,145,255,.46) 0%,rgba(23,105,224,.2) 36%,transparent 68%);
+  transform:translate(-50%,-50%);animation:tlGlow 3.6s ease-in-out infinite}
+.tlSpTags{position:relative;width:min(66vw,300px);aspect-ratio:720/732;margin:-2% 0 -4%;animation:tlDrop .9s cubic-bezier(.2,.8,.2,1) both}
+.tlSpShadow{position:absolute;left:16%;right:12%;top:34%;bottom:2%;pointer-events:none;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(0,6,20,.55),rgba(0,6,20,.25) 55%,transparent);transform:translateY(16px);filter:blur(10px)}
+.tlSpSwing{position:relative;width:100%;height:100%}
+.tlSpSwing img{display:block;width:100%;height:100%;filter:drop-shadow(0 6px 7px rgba(0,0,0,.45)) drop-shadow(0 1px 2px rgba(0,0,0,.4))}
+.tlSpGlint{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.62) 49%,transparent 60%) 130% 0/260% 100% no-repeat;
+  -webkit-mask:url(splash-tags.webp) center/contain no-repeat;mask:url(splash-tags.webp) center/contain no-repeat;
+  animation:tlGlint 1.25s ease-in-out .8s both}
+.tlSpTitle{margin-top:clamp(16px,3.6vh,28px);font:800 clamp(30px,8.6vw,40px)/1.05 var(--appFont,system-ui,sans-serif);letter-spacing:-.6px;color:#f3f7ff;
+  text-shadow:0 2px 18px rgba(30,110,255,.38);animation:tlRise .7s cubic-bezier(.2,.8,.2,1) .35s both}
+.tlSpSub{margin-top:8px;font:500 12px/1.3 var(--f-mono,ui-monospace,Menlo,monospace);letter-spacing:.06em;color:#8fb3e6;animation:tlRise .7s cubic-bezier(.2,.8,.2,1) .5s both}
+.tlSpBar{margin-top:22px;width:132px;height:3px;border-radius:3px;overflow:hidden;background:rgba(160,195,255,.16);animation:tlRise .6s ease .6s both}
+.tlSpBar i{display:block;width:100%;height:100%;border-radius:inherit;transform:scaleX(0);transform-origin:left;
+  background:linear-gradient(90deg,#1769e0,#67a8ff,#cfe3ff);animation:tlBar var(--tl-bar,1.5s) cubic-bezier(.4,0,.2,1) .2s forwards}
+html.tl-splash-out #tlSplash{opacity:0;visibility:hidden;pointer-events:none}
+html.tl-splash-out .tlSpStage{transform:scale(1.08);opacity:0}
+html.tl-reveal .app{animation:tlAppIn .7s cubic-bezier(.2,.8,.2,1) .08s both}
+html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
+@keyframes tlChip{0%{transform:translate3d(0,0,0) scale(var(--s));opacity:0}12%,80%{opacity:var(--o)}100%{transform:translate3d(0,-125vh,0) scale(var(--s));opacity:0}}
+@keyframes tlDrop{from{opacity:0;transform:translateY(-22px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes tlGlint{from{background-position:130% 0}to{background-position:-30% 0}}
+@keyframes tlGlow{0%,100%{opacity:.85;transform:translate(-50%,-50%) scale(.96)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}}
+@keyframes tlRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes tlBar{to{transform:scaleX(1)}}
+@keyframes tlAppIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes tlFabIn{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.tlSpChips,.tlSpGlint{display:none}}
+</style>
+<script>
+(function(){try{
+  var seen=false;try{seen=sessionStorage.getItem("tl-splash")==="1";}catch(_){}
+  if(seen)return;
+  document.documentElement.classList.add("tl-splash");
+  var m=document.getElementById("themeColorMeta");if(m)m.setAttribute("content","#0b1728");
+}catch(_){}})();
+</script>
+</head>
 <body>
+<div aria-hidden="true" id="tlSplash">
+<div class="tlSpGrid"></div>
+<div class="tlSpChips" id="tlSpChips"></div>
+<div class="tlSpStage">
+<div class="tlSpGlow"></div>
+<div class="tlSpTags"><span class="tlSpShadow"></span><div class="tlSpSwing"><img alt="" decoding="async" onerror="this.onerror=null;this.src='./icon-512.png?v=96-3'" src="./splash-tags.webp"/><span class="tlSpGlint"></span></div></div>
+<div class="tlSpTitle">Tag list</div>
+<div class="tlSpSub">Чек-лист КИП · Газ · 4–20 мА</div>
+<div class="tlSpBar"><i></i></div>
+</div>
+</div>
+<script>
+(function(){
+  var d=document.documentElement,splash=document.getElementById("tlSplash");
+  if(!d.classList.contains("tl-splash")){if(splash)splash.parentNode.removeChild(splash);return;}
+  try{sessionStorage.setItem("tl-splash","1");}catch(_){}
+  var NAVY="#0b1728",reduce=false;
+  try{reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(_){}
+  var MIN=reduce?700:1700,MAX=4000,t0=Date.now(),done=false;
+  d.style.setProperty("--tl-bar",(MIN-200)+"ms");
+  // Теги КИП «всплывают» на фоне: точка — статус как в списке (зелёная — выполнено, янтарная — нет).
+  // Колонки по краям экрана: середина остаётся чистой под жетоны и название.
+  var chips=[
+    ["2131-PZT-414A",.02,15,.10,1,.46,1],["2131-TT-434",.96,13,.55,.95,.42,0],
+    ["2140-FT-118",.14,18,.32,.82,.26,1],["2131-LT-205",.84,14,.82,1,.4,0],
+    ["2150-PDT-302",.06,17,.62,.88,.3,0],["2140-TIC-117",.90,16,.05,.8,.24,1],
+    ["2131-XV-410",1,19,.36,.78,.22,1],["2150-AT-021",0,15,.90,.9,.34,0],
+    ["2140-LSHH-208B",.80,20,.20,.76,.2,0],["2131-PT-450",.18,14,.70,.92,.32,1]
+  ];
+  if(!reduce){
+    var box=document.getElementById("tlSpChips"),html="";
+    chips.forEach(function(c){
+      html+='<span class="tlSpChip'+(c[6]?" is-done":"")+'" style="--x:'+c[1]+';--d:'+c[2]+'s;--dl:-'+(c[2]*c[3]).toFixed(2)+'s;--s:'+c[4]+';--o:'+c[5]+';--b:'+(c[4]<.85?"0.6px":"0")+'"><i></i>'+c[0]+'</span>';
+    });
+    if(box)box.innerHTML=html;
+  }
+  // Строка состояния — в цвет заставки (тема приложения уже применена в app.js к этому моменту).
+  function navyBars(){try{
+    var m=document.getElementById("themeColorMeta");if(m)m.setAttribute("content",NAVY);
+    if(window.AndroidApp&&AndroidApp.setThemeColor)AndroidApp.setThemeColor(NAVY,false);
+  }catch(_){}}
+  document.addEventListener("DOMContentLoaded",navyBars);
+  function finish(){
+    if(done)return;done=true;
+    d.classList.add("tl-reveal","tl-splash-out");
+    try{if(typeof applyTheme==="function")applyTheme(d.dataset.theme||"light");}catch(_){}
+    setTimeout(function(){
+      d.classList.remove("tl-splash","tl-splash-out","tl-reveal");
+      if(splash&&splash.parentNode)splash.parentNode.removeChild(splash);
+    },reduce?150:1000);
+  }
+  function ready(){setTimeout(finish,Math.max(0,MIN-(Date.now()-t0)));}
+  if(document.readyState==="complete")ready();else window.addEventListener("load",ready,{once:true});
+  setTimeout(finish,MAX);
+  if(splash)splash.addEventListener("click",function(){if(Date.now()-t0>350)finish();});
+})();
+</script>
 <div class="app">
 <div class="top">
 <div class="titleRow">
@@ -213,6 +337,17 @@
 <div class="actions">
 <button class="action" id="confirmCancel" type="button">Отмена</button>
 <button class="action delete" id="confirmOk" type="button">Удалить</button>
+</div>
+</div>
+</div>
+<div class="overlay confirmOverlay" id="netOverlay">
+<div aria-labelledby="netTitle" aria-modal="true" class="sheet confirmSheet" role="dialog">
+<button aria-label="Закрыть" class="closex" id="netClose" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
+<h2 id="netTitle">Включите сеть и VPN</h2>
+<div class="duplicateMessage" id="netMessage">Для импорта с камеры и фото нужны интернет и VPN: снимок распознаётся сервисом OCR.space. Остальные функции работают без сети.</div>
+<div class="actions">
+<button class="action" id="netCancel" type="button">Отмена</button>
+<button class="action primary" id="netOk" type="button">OK</button>
 </div>
 </div>
 </div>

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="app_bg">#F5F7FA</color>
+    <!-- v99: фон окна при запуске = фон заставки (без светлой вспышки до загрузки страницы). -->
+    <color name="app_bg">#0B1728</color>
     <color name="accent">#1769E0</color>
     <color name="ic_launcher_background">#0A5FD6</color>
 </resources>

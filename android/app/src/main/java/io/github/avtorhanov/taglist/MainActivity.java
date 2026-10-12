@@ -99,13 +99,14 @@ public class MainActivity extends Activity {
                 if (f.isFile()) pendingSaveFile = f;
             }
         }
-        applySystemBars("#F5F7FA", true);
+        // v99: при запуске — цвет заставки; тему приложения затем выставляет страница (setThemeColor).
+        applySystemBars("#0B1728", false);
 
         boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         WebView.setWebContentsDebuggingEnabled(debuggable);
 
         web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#F5F7FA"));
+        web.setBackgroundColor(Color.parseColor("#0B1728"));
         setContentView(web);
 
         WebSettings s = web.getSettings();
