@@ -296,8 +296,15 @@ function editSelectedPage(){
 
 async function deleteSelectedPages(){
   const ids=[...selectedPageIds];
-  resetTagSelection();
   if(!ids.length)return;
+  // v98: удаление страницы стирает все её теги и задания — спрашиваем, как при удалении тега.
+  const doomed=pages.filter(page=>ids.includes(page.id));
+  const tagCount=doomed.reduce((n,page)=>n+page.data.length,0);
+  const question=doomed.length===1
+    ?`Удалить страницу «${doomed[0].name}»?\nТегов на странице: ${tagCount}.`
+    :`Удалить выбранные страницы: ${doomed.length}?\nТегов на них: ${tagCount}.`;
+  if(!await askConfirm(question,doomed.length===1?"Удаление страницы":"Удаление страниц","Удалить"))return;
+  resetTagSelection();
   pages=pages.filter(page=>!ids.includes(page.id));
   if(!pages.length){
     const fresh={id:createPageId(),name:"Основная страница",data:[],updatedAt:new Date().toISOString()};
@@ -533,7 +540,7 @@ function renderSummary(){
   const done=data.filter(x=>x.done).length;
   const remaining=Math.max(0,total-done);
   const percent=total ? Math.round((done/total)*100) : 0;
-  const scope=filter==="all" ? "Весь список" : filter==="todo" ? "Только невыполненные" : filter==="done" ? "Только выполненные" : `Unit ${filter}`;
+  const scope=filter==="all" ? "Весь список" : filter==="todo" ? "Только невыполненные" : filter==="done" ? "Только выполненные" : filter==="task" ? "Только с заданиями" : `Unit ${filter}`;
   $("summaryCount").textContent=`${done} из ${total} выполнено`;
   $("summaryPercent").textContent=`${percent}%`;
   $("summaryRemaining").textContent=`Осталось: ${remaining}`;
@@ -746,7 +753,7 @@ async function copyTags(ids){
   if(!items.length)return;
   const lines=items.map(item=>{
     const tag=String(item.tag||"").trim();
-    const task=String(item.task||"").trim().replace(/\\s*[\\r\\n]+\\s*/g," ");
+    const task=String(item.task||"").trim().replace(/\s*[\r\n]+\s*/g," ");
     return task ? `${tag} — ${task}` : tag;
   });
   const text=lines.join("\n");
@@ -763,6 +770,17 @@ function enterTagSelection(id){
   setSelectionMode(true,id);
   if(navigator.vibrate)navigator.vibrate(25);
 }
+
+// v98: строка перерисовывается в момент включения режима выбора, и click, который браузер
+// присылает после отпускания пальца, попадал в новую строку и тут же снимал выбор.
+// Этот один click гасится; любое новое касание снимает защиту.
+let suppressRowClickUntil=0;
+function endLongPressGesture(){
+  if(longPressTriggered){longPressTriggered=false;suppressRowClickUntil=Date.now()+1000;}
+}
+document.addEventListener("pointerup",endLongPressGesture,true);
+document.addEventListener("pointercancel",endLongPressGesture,true);
+document.addEventListener("pointerdown",()=>{suppressRowClickUntil=0;},true);
 
 function startLongPress(id){
   cancelLongPress();
@@ -843,7 +861,9 @@ function saveModal(){
     const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);
     data.push({id:max+1,unit,tag,done,task});
   }
-  save();closeModal();render();showToast(editId===null?"Прибор добавлен":"Сохранено");
+  // v98: closeModal() обнуляет editId — раньше после правки показывалось «Прибор добавлен».
+  const wasEdit=editId!==null;
+  save();closeModal();render();showToast(wasEdit?"Сохранено":"Прибор добавлен");
 }
 
 async function deleteCurrent(){
@@ -1609,20 +1629,49 @@ function importFileCandidates(){
   closeModal();render();showToast(`Добавлено из файла/текста: ${additions.length}`);
 }
 
-function getFontOption(id){return FONT_OPTIONS.find(x=>x.id===id)||FONT_OPTIONS[0];}
+// v98: пункт шрифта показывается, только если на этом устройстве он действительно
+// отличается от системного — и латиница (теги), и кириллица (интерфейс) — и не повторяет
+// уже показанный пункт. Так в списке нет «пустых» пунктов, которые молча подменяются
+// системным шрифтом или рисуют кириллицу системным. Замер шириной текста на canvas.
+let fontProbeCtx=null;
+function fontSignature(family){
+  const ctx=fontProbeCtx||(fontProbeCtx=document.createElement("canvas").getContext("2d"));
+  return ["2131-PZT-414A wm","КИП Жжщы задание"].map(text=>{
+    ctx.font="1px serif";ctx.font=`40px ${family}`;
+    if(!/40px/.test(ctx.font))throw new Error("font-parse");
+    return ctx.measureText(text).width;
+  });
+}
+function availableFontOptions(){
+  try{
+    const near=(a,b)=>Math.abs(a-b)<=0.5;
+    const sys=fontSignature(SYSTEM_FONT_STACK),kept=[{option:FONT_OPTIONS[0],sig:sys}];
+    for(const option of FONT_OPTIONS.slice(1)){
+      const sig=fontSignature(option.family);
+      if(near(sig[0],sys[0])||near(sig[1],sys[1]))continue;
+      if(kept.some(k=>near(k.sig[0],sig[0])&&near(k.sig[1],sig[1])))continue;
+      kept.push({option,sig});
+    }
+    return kept.map(k=>k.option);
+  }catch(_){return FONT_OPTIONS.slice();}
+}
+function getFontOption(id){const list=availableFontOptions();return list.find(x=>x.id===id)||list[0];}
 
-function applyFontFamily(id){
+let currentFontId="system";
+function applyFontFamily(id,persist=true){
   const option=getFontOption(id);
+  currentFontId=option.id;
   document.documentElement.style.setProperty("--appFont",option.family);
-  safeSetStorage(FONT_FAMILY_KEY,option.id);
+  // При запуске не затираем сохранённый выбор, если шрифт сейчас недоступен.
+  if(persist)safeSetStorage(FONT_FAMILY_KEY,option.id);
   const btn=$("fontBtn");
   if(btn){btn.title=`Шрифт: ${option.name}`;btn.setAttribute("aria-label",`Выбрать шрифт. Сейчас: ${option.name}`);}
 }
 
 function cycleFont(){
-  const current=safeGetStorage(FONT_FAMILY_KEY,"system")||"system";
-  const idx=FONT_OPTIONS.findIndex(x=>x.id===current);
-  const next=FONT_OPTIONS[(idx+1+FONT_OPTIONS.length)%FONT_OPTIONS.length];
+  const list=availableFontOptions();
+  const idx=list.findIndex(x=>x.id===currentFontId);
+  const next=list[(idx+1+list.length)%list.length];
   applyFontFamily(next.id);
   const bubble=$("fontBubble");
   bubble.textContent=next.name;
@@ -2042,6 +2091,9 @@ tabs.addEventListener("click",e=>{
 });
 
 list.addEventListener("click",e=>{
+  if(suppressRowClickUntil&&Date.now()<suppressRowClickUntil){
+    suppressRowClickUntil=0;e.preventDefault();e.stopPropagation();return;
+  }
   const ref=rowItemFromTarget(e.target);
   if(!ref)return;
   const {row,item}=ref;
@@ -2141,13 +2193,23 @@ let ocrRunToken=0;
 let fileCandidates=[];
 let sheetJsPromise=null;
 
-// Только шрифты, которые реально меняют вид и на Android, и на iPhone.
+// Только системные шрифты: ничего не скачивается, работает без интернета.
+// Каждый пункт — стек «шрифт iPhone, шрифт Android, общий запасной». Android берёт
+// семейства по именам из своего fonts.xml: sans-serif-condensed — Roboto Condensed,
+// serif-monospace и Courier New — Cutive Mono, Georgia — Noto Serif, monospace — Droid Sans Mono.
 // Arial, Verdana и Trebuchet MS убраны: на Android их нет, и они подменялись системным Roboto.
-// Сохранённый выбор удалённого шрифта автоматически сбрасывается на «Системный» (getFontOption).
+// Пункт, который на устройстве не отличается от системного, скрывается (availableFontOptions);
+// сохранённый выбор такого или удалённого шрифта показывается «Системным».
+const SYSTEM_FONT_STACK='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
 const FONT_OPTIONS=[
-  {id:"system",name:"Системный",family:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif',sample:"Aa КИП 123"},
+  {id:"system",name:"Системный",family:SYSTEM_FONT_STACK,sample:"Aa КИП 123"},
+  // Узкий: длинные теги помещаются в строку. iPhone — Avenir Next Condensed, Android — Roboto Condensed.
+  {id:"condensed",name:"Узкий",family:`"sans-serif-condensed","Avenir Next Condensed","Roboto Condensed","Arial Narrow",${SYSTEM_FONT_STACK}`,sample:"Aa КИП 123"},
   {id:"georgia",name:"Georgia",family:'Georgia,"Times New Roman",serif',sample:"Aa КИП 123"},
-  {id:"courier",name:"Courier New",family:'"Courier New",monospace',sample:"Aa КИП 123"}
+  // Моно без засечек: iPhone — SF Mono (Menlo на старых iOS), Android — Droid Sans Mono.
+  {id:"mono",name:"Моно",family:'ui-monospace,"SF Mono",Menlo,Consolas,monospace',sample:"Aa КИП 123"},
+  // «Пишущая машинка»: iPhone — Courier New, Android — Cutive Mono (кириллица — Droid Sans Mono).
+  {id:"courier",name:"Courier New",family:'"Courier New",Courier,"serif-monospace",monospace',sample:"Aa КИП 123"}
 ];
 
 document.querySelectorAll("[data-dry-kind]").forEach(btn=>btn.addEventListener("click",()=>openDryReport(btn.dataset.dryKind)));
@@ -2339,11 +2401,15 @@ $("duplicateOverlay").addEventListener("click",e=>{if(e.target===$("duplicateOve
 $("saveBtn").onclick=saveModal;
 deleteBtn.onclick=deleteCurrent;
 overlay.addEventListener("click",e=>{if(e.target===overlay)closeModal();});
-$("deleteAll").onclick=()=>{
+$("deleteAll").onclick=async()=>{
   if(selectionMode){
     const visibleIds=new Set(getSelectionScope().map(item=>item.id));
     const ids=[...selectedTagIds].filter(id=>visibleIds.has(id));
     if(!ids.length){showToast("Выбери теги в текущей вкладке");return;}
+    // v98: массовое удаление — с подтверждением, как удаление одного тега.
+    const one=ids.length===1?data.find(item=>item.id===ids[0]):null;
+    if(!await askConfirm(one?`Удалить ${one.tag}?`:`Удалить выбранные теги: ${ids.length}?`,"Удаление тегов","Удалить"))return;
+    if(!selectionMode)return;
     const set=new Set(ids);
     data=data.filter(item=>!set.has(item.id));
     selectedTagIds.clear();
@@ -2357,6 +2423,7 @@ $("deleteAll").onclick=()=>{
   }
   const count=data.length;
   if(!count){showToast("Список уже пуст");return;}
+  if(!await askConfirm(`Удалить все теги страницы: ${count}?`,"Удаление тегов","Удалить"))return;
   data=[];
   save();
   filter="all";
@@ -2484,7 +2551,7 @@ window.addEventListener("appinstalled",hideInstallButton);
 const savedFont=parseFloat(safeGetStorage(FONT_KEY,null));
 if(savedFont) document.documentElement.style.setProperty("--fontScale",savedFont);
 const savedFontFamily=safeGetStorage(FONT_FAMILY_KEY,"system")||"system";
-applyFontFamily(savedFontFamily);
+applyFontFamily(savedFontFamily,false);
 applyTheme(safeGetStorage(THEME_KEY,"dark")||"dark");
 applyDocumentTitle();
 refreshAfterViewportChange();

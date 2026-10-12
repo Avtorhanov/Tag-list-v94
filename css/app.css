@@ -1848,3 +1848,13 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
 .tagPickInfo span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Режим записи заметен во всех темах (тёмные темы перекрывали рамку поля). */
 .row .taskEditorWrap.editing .taskBox textarea{border-color:var(--accent)!important}
+
+/* ===== v98 ===== */
+/* Строка под заголовком раздела («Сохранено на устройстве…», подписи «Газ» и «4–20») —
+   ровно посередине между рядом заголовка и следующим блоком: одинаковый зазор сверху и снизу.
+   Раньше было 2 px сверху и 18 px снизу, и строка прижималась к заголовку.
+   Сверху margin-top схлопывается с 2 px под .titleRow, поэтому зазор = margin-top.
+   Снизу margin-bottom + 7 px (верх .utilityRow в «Тэгах», нижний отступ .top в конверторах).
+   Общая высота шапки прежняя. */
+.top{--subGap:9px}
+.top>.sub{line-height:1.35;margin:var(--subGap) 0 calc(var(--subGap) - 7px)}
