@@ -166,8 +166,10 @@ function loadState(){
 }
 let state=loadState();
 let saveTimer=0;
-function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(flush,250);}
-function flush(){clearTimeout(saveTimer);try{localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(_){}}
+let dirty=false;
+function persist(){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,250);}
+// v100: при смене раздела состояние пишется, только если что-то менялось.
+function flush(){clearTimeout(saveTimer);if(!dirty)return;dirty=false;try{localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(_){}}
 const C=()=>state.cfg[state.kind];
 const M=()=>MODES[state.kind];
 
@@ -614,7 +616,8 @@ function bind(){
 
 function mount(container,opts={}){
   if(typeof opts.getTags==="function")getTags=opts.getTags;
-  if(root&&root===container&&root.firstElementChild){refreshTagList();return;}
+  // v100: раздел уже размечен — обновление делает onShow() сразу после mount().
+  if(root&&root===container&&root.firstElementChild)return;
   root=container;els={};fieldSig="";tagPicker=null;
   root.innerHTML=template();
   bind();
@@ -623,8 +626,12 @@ function mount(container,opts={}){
   if(state.tag&&state.tags[state.tag])renderTagInfo(`Шкала ${state.tag} из сохранённых.`);
 }
 
+// v100: приложение свернули сразу после ввода — значение не теряется.
+window.addEventListener("pagehide",flush);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flush();});
+
 window.TagListLoop={
-  version:"97.1",
+  version:"100",
   mount,
   onShow(){refreshTagList();syncCfgInputs();render();},
   onHide(){flush();},

@@ -166,7 +166,9 @@ function loadActivePageId(){
 
 function getActivePage(){return pages.find(page=>page.id===activePageId)||pages[0];}
 
-function persistPages(){safeSetStorage(PAGES_KEY,JSON.stringify(pages));safeSetStorage(ACTIVE_PAGE_KEY,activePageId);}
+function persistPages(){tagIndexVersion=(tagIndexVersion|0)+1;safeSetStorage(PAGES_KEY,JSON.stringify(pages));safeSetStorage(ACTIVE_PAGE_KEY,activePageId);}
+// v100: версия данных для кэша тегов конверторов (подсказки, «В списке · страница»).
+var tagIndexVersion=0;
 
 function formatSaved(value){
   const date=new Date(value||0);
@@ -348,7 +350,11 @@ function createPage(){
   persistPages();render();showToast("Создана новая страница");
 }
 
+// v100: признак «есть несохранённые правки» — смена раздела больше не переписывает
+// весь список в память, если ничего не менялось (на больших списках это сотни мс).
+let savePending=false;
 function save(){
+  savePending=false;
   const page=getActivePage();
   if(page){
     page.data=data;
@@ -360,6 +366,7 @@ function save(){
 }
 
 function scheduleSave(){
+  savePending=true;
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>save(),350);
 }
@@ -546,6 +553,7 @@ function renderSummary(){
 }
 
 function render(){
+  tagIndexVersion=(tagIndexVersion|0)+1;
   renderPages();renderLastSaved();renderTabs();renderSummary();updateSelectionFooter();renderList();
 }
 
@@ -1188,7 +1196,7 @@ function createStateBackupFile(){
 function applyImportedState(parsed,createBackup=true){
   const next=validateImportedState(parsed);
   if(createBackup) createStateBackupFile();
-  clearTimeout(saveTimer);
+  clearTimeout(saveTimer);savePending=false;
   pages=next.pages;activePageId=next.activePageId;data=(pages.find(p=>p.id===activePageId)||pages[0]).data;
   docTitle=next.title;filter=next.filter;query=next.query;
   if($("search"))$("search").value=query;
@@ -2723,17 +2731,33 @@ const VIEW_MODULES={
   loop:{file:"./js/loop.js",global:"TagListLoop",el:"loopView",title:"Токовая петля",name:"конвертор 4–20 мА"}
 };
 const viewLoads={};
-let currentView="list",viewHistoryPushed=false,viewSwitchBusy=false;
+let currentView="list",viewHistoryPushed=false;
+// v100: надёжность переключателя разделов.
+// • Побеждает последнее касание: пока грузится модуль одного раздела, другие разделы
+//   открываются сразу, а запоздавшая загрузка уже ничего не переключает.
+//   (Раньше переключатель на время загрузки глох, а если файл не приходил — навсегда.)
+// • Загрузка модуля ограничена по времени — после неё можно повторить попытку.
+// • В APK системное «Назад» обрабатывает приложение (__tagListBack) — записи в истории
+//   браузера там не нужны и не создаются.
+let viewRequestSeq=0;
+const VIEW_LOAD_TIMEOUT_MS=12000;
+const VIEW_NATIVE_BACK=!!window.AndroidApp;
 function ensureViewModule(view){
   const mod=VIEW_MODULES[view];
   if(window[mod.global])return Promise.resolve(window[mod.global]);
   if(viewLoads[view])return viewLoads[view];
   viewLoads[view]=new Promise((resolve,reject)=>{
     const script=document.createElement("script");
+    let timer=0;
+    const fail=msg=>{clearTimeout(timer);script.onload=script.onerror=null;script.remove();reject(new Error(msg));};
     script.src=new URL(mod.file,document.baseURI).href;
     script.async=true;
-    script.onload=()=>window[mod.global]?resolve(window[mod.global]):reject(new Error(`Не удалось запустить ${mod.name}`));
-    script.onerror=()=>{script.remove();reject(new Error(`Не удалось загрузить ${mod.name} (${mod.file.slice(2)}). Проверь, что файл опубликован вместе с приложением.`));};
+    script.onload=()=>{clearTimeout(timer);window[mod.global]?resolve(window[mod.global]):reject(new Error(`Не удалось запустить ${mod.name}`));};
+    script.onerror=()=>fail(`Не удалось загрузить ${mod.name} (${mod.file.slice(2)}). Проверь, что файл опубликован вместе с приложением.`);
+    timer=setTimeout(()=>{
+      if(window[mod.global]){resolve(window[mod.global]);return;}
+      fail(`Не удалось загрузить ${mod.name}: нет ответа. Попробуй ещё раз.`);
+    },VIEW_LOAD_TIMEOUT_MS);
     document.head.appendChild(script);
   }).catch(err=>{delete viewLoads[view];throw err;});
   return viewLoads[view];
@@ -2745,14 +2769,63 @@ function allTagNames(){
   try{pages.forEach(page=>(page.id===activePageId?data:page.data||[]).forEach(x=>{if(x&&x.tag)out.push(String(x.tag));}));}catch(_){}
   return out;
 }
+// v100: положение бегунка измеряется один раз (и заново — только когда меняется ширина
+// кнопок: шрифт, поворот, размер окна). Раньше каждое переключение читало offsetLeft
+// и заставляло браузер пересчитывать раскладку всей страницы.
+let viewThumbGeom=null;
+function measureViewThumb(){
+  const nav=$("viewSwitch");
+  if(!nav)return null;
+  const geom={};
+  for(const b of nav.querySelectorAll(".viewSwitchBtn")){
+    if(!b.offsetWidth)return null; // ещё не размечено — измерим позже
+    geom[b.dataset.view]={x:b.offsetLeft,w:b.offsetWidth};
+  }
+  return geom;
+}
 function moveViewThumb(instant=false){
-  const nav=$("viewSwitch"),thumb=$("viewSwitchThumb");
-  const btn=nav?.querySelector(`[data-view="${currentView}"]`);
-  if(!nav||!thumb||!btn)return;
+  const thumb=$("viewSwitchThumb");
+  if(!thumb)return;
+  if(!viewThumbGeom)viewThumbGeom=measureViewThumb();
+  const g=viewThumbGeom&&viewThumbGeom[currentView];
+  if(!g)return;
   if(instant)thumb.classList.add("instant");
-  thumb.style.setProperty("--thumb-x",`${btn.offsetLeft}px`);
-  thumb.style.setProperty("--thumb-w",`${btn.offsetWidth}px`);
+  thumb.style.setProperty("--thumb-x",`${g.x}px`);
+  thumb.style.setProperty("--thumb-w",`${g.w}px`);
   if(instant)requestAnimationFrame(()=>requestAnimationFrame(()=>thumb.classList.remove("instant")));
+}
+function remeasureViewThumb(){viewThumbGeom=null;moveViewThumb(true);}
+// v100: въезд раздела — та же анимация (сдвиг 18 px + прозрачность, время и кривая из
+// --ui-motion / --ui-ease), но через Web Animations: без принудительного пересчёта
+// раскладки (void el.offsetWidth) на каждый элемент и без «залипания» после окончания.
+const viewAnims=new WeakMap();
+let viewMotion=null;
+function viewMotionParams(){
+  if(viewMotion)return viewMotion;
+  let ms=340,ease="cubic-bezier(.16,1,.3,1)",reduce=false;
+  try{
+    const cs=getComputedStyle(document.documentElement);
+    const raw=String(cs.getPropertyValue("--ui-motion")||"").trim();
+    const n=parseFloat(raw);
+    if(Number.isFinite(n))ms=/ms$/.test(raw)?n:n*1000;
+    ease=String(cs.getPropertyValue("--ui-ease")||"").trim()||ease;
+    reduce=!!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  }catch(_){}
+  viewMotion={ms,ease,reduce};
+  return viewMotion;
+}
+try{window.matchMedia?.("(prefers-reduced-motion: reduce)").addEventListener?.("change",()=>{viewMotion=null;});}catch(_){}
+function playViewIn(el,from){
+  if(!el)return;
+  const prev=viewAnims.get(el);
+  if(prev){try{prev.cancel();}catch(_){}viewAnims.delete(el);}
+  const m=viewMotionParams();
+  if(m.reduce||m.ms<20||typeof el.animate!=="function")return;
+  try{
+    const a=el.animate([{opacity:0,transform:from},{opacity:1,transform:"none"}],{duration:m.ms,easing:m.ease,fill:"backwards"});
+    viewAnims.set(el,a);
+    a.onfinish=()=>{if(viewAnims.get(el)===a)viewAnims.delete(el);};
+  }catch(_){}
 }
 function updateViewChrome(prev){
   document.querySelectorAll(".viewSwitchBtn").forEach(b=>{
@@ -2770,58 +2843,109 @@ function updateViewChrome(prev){
   document.body.dataset.view=currentView;
   if(currentView==="list")requestAnimationFrame(updateTabsFade);
   // Направление анимации: вправо по порядку разделов — новый раздел въезжает справа.
-  const dir=VIEW_ORDER.indexOf(currentView)>VIEW_ORDER.indexOf(prev)?"fromRight":"fromLeft";
-  const targets=mod?[$(mod.el)]:[document.querySelector(".summaryCard"),$("list")];
-  targets.push($("appTitle"),document.querySelector(currentView==="list"?"#lastSaved":`#${currentView}Sub`));
-  targets.forEach(el=>{
-    if(!el)return;
-    el.classList.remove("viewIn","fromRight","fromLeft");void el.offsetWidth;el.classList.add("viewIn",dir);
-  });
+  const dx=VIEW_ORDER.indexOf(currentView)>VIEW_ORDER.indexOf(prev)?18:-18;
+  const shift=`translate3d(${dx}px,0,0)`;
+  const targets=mod?[$(mod.el)]:[document.querySelector(".summaryCard"),...listAnimTargets()];
+  targets.push(document.querySelector(currentView==="list"?"#lastSaved":`#${currentView}Sub`));
+  targets.forEach(el=>playViewIn(el,shift));
+  playViewIn($("appTitle"),"translate3d(0,6px,0)");
+}
+// v100: длинный список въезжает так же, но анимируются только строки на экране
+// (после переключения список всегда открыт сверху). Анимация всего списка из тысяч
+// строк заставляла браузер дважды перестраивать слои всей страницы — до 1–2 с «зависания»
+// при возврате к «Тэгам» на телефоне. Короткий список анимируется целиком, как раньше.
+const LIST_ANIM_WHOLE_MAX=60;
+function listAnimTargets(){
+  const el=$("list");
+  if(!el)return [];
+  if(el.childElementCount<=LIST_ANIM_WHOLE_MAX)return [el];
+  const onScreen=Math.ceil((window.innerHeight||800)/28)+4;
+  return Array.prototype.slice.call(el.children,0,onScreen);
+}
+// Ровно один раздел на экране — даже если прошлое переключение прервалось ошибкой.
+function applyViewSections(){
+  for(const [key,mod] of Object.entries(VIEW_MODULES)){
+    const el=$(mod.el);
+    if(el&&el.hidden!==(key!==currentView))el.hidden=key!==currentView;
+  }
 }
 async function setView(view,{fromHistory=false}={}){
-  if(!VIEW_ORDER.includes(view)||view===currentView||viewSwitchBusy)return;
-  const prev=currentView;
-  let api=null;
-  if(VIEW_MODULES[view]){
-    viewSwitchBusy=true;
+  if(!VIEW_ORDER.includes(view))return;
+  const seq=++viewRequestSeq;
+  if(view===currentView)return;
+  const mod=VIEW_MODULES[view];
+  let api=mod?window[mod.global]||null:null;
+  if(mod&&!api){
     try{api=await ensureViewModule(view);}
-    catch(e){viewSwitchBusy=false;showToast(e?.message||"Не удалось открыть раздел");return;}
-    viewSwitchBusy=false;
-    if(view===currentView)return;
+    catch(e){if(seq===viewRequestSeq)showToast(e?.message||"Не удалось открыть раздел");return;}
+    // Пока модуль грузился, пользователь выбрал другой раздел — его выбор важнее.
+    if(seq!==viewRequestSeq||view===currentView)return;
   }
+  // Модуль уже загружен — переключение выполняется сразу, в том же касании.
+  switchViewNow(view,api,fromHistory);
+}
+function switchViewNow(view,api,fromHistory){
+  const prev=currentView;
   if(prev==="list"){
-    if(selectionMode)setSelectionMode(false);
-    if(pageManageMode)exitPageManage();
-    cancelLongPress();cancelPageLongPress();
-    flushSave();
+    try{
+      if(selectionMode)setSelectionMode(false);
+      if(pageManageMode)exitPageManage();
+      cancelLongPress();cancelPageLongPress();
+    }catch(e){console.warn("Tag list: list cleanup",e);}
+    if(savePending)flushSave();
   }
   const active=document.activeElement;
   if(active&&/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))active.blur();
   if(VIEW_MODULES[prev]){
-    try{window[VIEW_MODULES[prev].global]?.onHide?.();}catch(_){}
-    $(VIEW_MODULES[prev].el).hidden=true;
+    try{window[VIEW_MODULES[prev].global]?.onHide?.();}catch(e){console.warn("Tag list: onHide",e);}
   }
   currentView=view;
+  let mounted=true;
   if(api){
-    const el=$(VIEW_MODULES[view].el);
-    api.mount(el,{getTags:allTagNames});
-    el.hidden=false;
+    try{api.mount($(VIEW_MODULES[view].el),{getTags:allTagNames});}
+    catch(e){mounted=false;console.warn("Tag list: mount",e);}
   }
+  applyViewSections();
   updateViewChrome(prev);
   window.scrollTo(0,0);
-  // История: из списка в конвертор — новая запись (системное «Назад» вернёт к списку),
-  // между конверторами — замена записи, к списку — шаг назад.
+  syncViewHistory(view,fromHistory);
+  if(api&&mounted){
+    try{api.onShow?.();}catch(e){console.warn("Tag list: onShow",e);}
+  }else if(api){
+    showToast(`Не удалось открыть ${VIEW_MODULES[view].name}`);
+  }
+}
+// История (только браузер/PWA): из списка в конвертор — одна новая запись (системное
+// «Назад» вернёт к списку), между конверторами — та же запись, к списку — шаг назад.
+// v100: шаг назад асинхронный. Если пока он идёт открыть конвертор, новая запись
+// создаётся только после возврата (popstate) — иначе браузер «откатывал» только что
+// открытый раздел обратно в список.
+let viewPopPending=false,viewPopTimer=0;
+function syncViewHistory(view,fromHistory){
+  if(VIEW_NATIVE_BACK)return;
   try{
-    if(fromHistory){viewHistoryPushed=view!=="list"&&history.state?.tagListView===view;}
-    else if(view==="list"){
-      if(viewHistoryPushed&&history.state?.tagListView){viewHistoryPushed=false;history.back();}
+    if(fromHistory){viewHistoryPushed=view!=="list"&&history.state?.tagListView===view;return;}
+    if(viewPopPending)return; // запись поправит finishViewPop()
+    if(view==="list"){
+      if(viewHistoryPushed&&history.state?.tagListView){
+        viewHistoryPushed=false;viewPopPending=true;
+        clearTimeout(viewPopTimer);viewPopTimer=setTimeout(finishViewPop,1500);
+        history.back();
+      }
     }else if(viewHistoryPushed&&history.state?.tagListView){
-      history.replaceState({...(history.state||{}),tagListView:view},"");
+      // Между конверторами запись не переписываем: «Назад» всё равно ведёт к «Тэгам»,
+      // а replaceState на телефоне стоит десятки миллисекунд на каждое переключение.
     }else{
       history.pushState({...(history.state||{}),tagListView:view},"");viewHistoryPushed=true;
     }
   }catch(_){viewHistoryPushed=false;}
-  api?.onShow?.();
+}
+function finishViewPop(){
+  clearTimeout(viewPopTimer);
+  if(!viewPopPending)return;
+  viewPopPending=false;
+  // Пока шёл возврат, пользователь мог снова открыть конвертор — восстанавливаем запись.
+  if(currentView!=="list")syncViewHistory(currentView,false);
 }
 // v96: результат конвертора записывается в задание тега. Тег ищется на всех страницах
 // (сначала на текущей); если его нет — создаётся на последней открытой странице.
@@ -2868,8 +2992,17 @@ function plainTagName(t){
   const latin=resultTagKey(up);
   return FULL_TAG_RE.test(latin)?latin:up;
 }
+// v100: перечень тегов всех страниц строится один раз на версию данных, а не на каждое
+// открытие конвертора и каждый введённый символ (на тысячах тегов это заметные паузы).
+let tagEntriesCache=null;
+function tagEntriesSignature(){
+  let n=0;for(const pg of pages)n+=(pg.id===activePageId?data:(pg.data||[])).length;
+  return `${tagIndexVersion|0}|${activePageId}|${pages.length}|${n}`;
+}
 function tagEntries(){
-  const out=[],seen=new Set();
+  const sig=tagEntriesSignature();
+  if(tagEntriesCache&&tagEntriesCache.sig===sig)return tagEntriesCache.list;
+  const out=[],byKey=new Map();
   const order=[getActivePage(),...pages.filter(p=>p.id!==activePageId)];
   for(const pg of order){
     if(!pg)continue;
@@ -2877,16 +3010,20 @@ function tagEntries(){
       const tag=String(x?.tag||"").trim();
       if(!tag)continue;
       const key=resultTagKey(tag);
-      if(seen.has(key))continue;
-      seen.add(key);
-      out.push({tag,key,search:tagSearchKey(tag),page:pg.name,active:pg.id===activePageId});
+      if(byKey.has(key))continue;
+      const e={tag,key,search:tagSearchKey(tag),page:pg.name,active:pg.id===activePageId};
+      byKey.set(key,e);
+      out.push(e);
     }
   }
+  tagEntriesCache={sig,list:out,byKey};
   return out;
 }
 function findTagEntry(value){
   const key=resultTagKey(String(value||"").replace(/\s+/g," ").trim());
-  return key?tagEntries().find(e=>e.key===key)||null:null;
+  if(!key)return null;
+  tagEntries();
+  return tagEntriesCache.byKey.get(key)||null;
 }
 function activePageName(){return getActivePage()?.name||"";}
 function highlightMatch(tag,q){
@@ -3037,16 +3174,36 @@ $("viewSwitch").addEventListener("keydown",e=>{
   e.preventDefault();setView(next).then(()=>document.querySelector(`.viewSwitchBtn[data-view="${next}"]`)?.focus());
 });
 window.addEventListener("popstate",()=>{
+  // Свой шаг назад (переход к «Тэгам» кнопкой) — раздел уже переключён, только сверяем историю.
+  if(viewPopPending){finishViewPop();return;}
   const target=VIEW_ORDER.includes(history.state?.tagListView)?history.state.tagListView:"list";
   if(target!==currentView)setView(target,{fromHistory:true});
+  else viewHistoryPushed=target!=="list"&&history.state?.tagListView===target;
 });
+// v100: страница перезагрузилась, когда был открыт конвертор (история браузера это помнит,
+// а приложение открывается на «Тэгах») — снимаем пометку, иначе «Тэги» отскакивали бы в конвертор.
+if(!VIEW_NATIVE_BACK){
+  try{
+    if(history.state&&history.state.tagListView){
+      const {tagListView,...rest}=history.state;
+      history.replaceState(Object.keys(rest).length?rest:null,"");
+    }
+  }catch(_){}
+}
 // Esc: сначала закрываются окна, затем раздел-конвертор (обработчик в фазе захвата,
 // чтобы увидеть окна до того, как их закроет общий обработчик).
 window.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&currentView!=="list"&&!document.querySelector(".overlay.show")&&!e.target.closest?.("input,textarea,select"))setView("list");
 },true);
-window.addEventListener("resize",()=>moveViewThumb(true));
-(document.fonts?.ready||Promise.resolve()).then(()=>moveViewThumb(true));
+window.addEventListener("resize",remeasureViewThumb,{passive:true});
+(document.fonts?.ready||Promise.resolve()).then(remeasureViewThumb);
+// Ширина кнопок меняется и без resize (смена шрифта «Aa») — следим за самими кнопками.
+if(typeof ResizeObserver==="function"){
+  try{
+    const ro=new ResizeObserver(()=>remeasureViewThumb());
+    document.querySelectorAll(".viewSwitchBtn").forEach(b=>ro.observe(b));
+  }catch(_){}
+}
 moveViewThumb(true);
 // Прогрев модулей, пока пользователь ничего не делает: первое открытие — мгновенное.
 (window.requestIdleCallback||((fn)=>setTimeout(fn,2500)))(()=>{ensureViewModule("gas").catch(()=>{});ensureViewModule("loop").catch(()=>{});},{timeout:6000});
