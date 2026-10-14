@@ -1443,7 +1443,8 @@ function paintReportEditState(){
     const reset=document.createElement("button");reset.type="button";reset.className="rpLink";reset.id="reportResetEdit";reset.textContent="Вернуть исходный";
     box.append(warn,reset);
   }else{
-    const hint=document.createElement("span");hint.textContent="Текст можно дополнить и исправить перед отправкой";
+    const hint=document.createElement("span");
+    hint.textContent=reportEditing?"Правка: дополните или исправьте текст":"Двойное касание по тексту — правка на весь экран";
     box.append(hint);
   }
   const has=!!ta.value.trim();
@@ -1520,16 +1521,129 @@ function openReport(){
   if(!reportState.pages.length)reportState.pages=[String(activePageId)];
   safeSetStorage(REPORT_SEEN_KEY,"1");
   $("reportBtn")?.classList.remove("isNew");
+  exitReportEdit();
   renderReport();
-  const sheet=document.querySelector("#reportOverlay .sheet");
-  if(sheet)sheet.scrollTop=0;
+  $("reportBody").scrollTop=0;
+  $("reportText").scrollTop=0;
+  watchReportViewport(true);
   $("reportOverlay").classList.add("show");
 }
 function closeReport(){
+  exitReportEdit();
   const ta=$("reportText");
   if(document.activeElement===ta)ta.blur();
   closeReportPick();
   $("reportOverlay").classList.remove("show");
+  watchReportViewport(false);
+}
+
+// v103: окно занимает ровно видимую область экрана. На iPhone клавиатура не сжимает страницу,
+// а перекрывает её — поэтому окно подгоняется под visualViewport, и «Отправить» остаётся над клавиатурой.
+// В APK (adjustResize) и на Android в браузере видимая область и так уменьшается — тот же код.
+let reportViewportOn=false;
+function syncReportViewport(){
+  const ov=$("reportOverlay");
+  if(!ov)return;
+  const vv=window.visualViewport;
+  const h=Math.round(vv?vv.height:window.innerHeight),top=Math.round(vv?vv.offsetTop:0);
+  ov.style.setProperty("--rp-vh",h+"px");
+  ov.style.setProperty("--rp-top",top+"px");
+  // Клавиатура открыта — нижний отступ под «полоску» iPhone не нужен.
+  ov.classList.toggle("kb",window.innerHeight-h>120);
+  if(reportEditing)requestAnimationFrame(()=>keepReportCaretVisible());
+}
+function watchReportViewport(on){
+  const vv=window.visualViewport;
+  if(on===reportViewportOn){if(on)syncReportViewport();return;}
+  reportViewportOn=on;
+  const fn=on?"addEventListener":"removeEventListener";
+  vv?.[fn]("resize",syncReportViewport);
+  vv?.[fn]("scroll",syncReportViewport);
+  window[fn]("resize",syncReportViewport);
+  if(on)syncReportViewport();
+}
+
+// v103: правка текста. Обычное касание и прокрутка — чтение (клавиатура не выскакивает),
+// двойное касание — правка: настройки прячутся, поле текста на всё окно, курсор там, где коснулись.
+let reportEditing=false;
+function reportTextMirror(ta){
+  const r=ta.getBoundingClientRect(),cs=getComputedStyle(ta),m=document.createElement("div");
+  ["boxSizing","paddingTop","paddingRight","paddingBottom","paddingLeft","borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
+   "borderTopStyle","borderRightStyle","borderBottomStyle","borderLeftStyle","fontFamily","fontSize","fontWeight","fontStyle","lineHeight",
+   "letterSpacing","wordSpacing","textTransform","textIndent","tabSize","wordBreak","overflowWrap"].forEach(k=>{m.style[k]=cs[k];});
+  Object.assign(m.style,{position:"fixed",left:r.left+"px",top:r.top+"px",width:r.width+"px",height:r.height+"px",margin:"0",
+    overflow:"hidden",whiteSpace:"pre-wrap",opacity:"0",zIndex:"2147483647",borderColor:"transparent",background:"transparent",
+    userSelect:"text",webkitUserSelect:"text",pointerEvents:"auto"});
+  m.textContent=(ta.value||"")+"\u200b";
+  document.body.appendChild(m);
+  m.scrollTop=ta.scrollTop;
+  return m;
+}
+// Номер символа под пальцем: тот же текст в невидимой копии поля поверх него (без перерисовки экрана).
+function reportOffsetAtPoint(ta,x,y){
+  let m=null;
+  try{
+    m=reportTextMirror(ta);
+    let node=null,offset=0;
+    if(document.caretRangeFromPoint){const r=document.caretRangeFromPoint(x,y);if(r){node=r.startContainer;offset=r.startOffset;}}
+    else if(document.caretPositionFromPoint){const r=document.caretPositionFromPoint(x,y);if(r){node=r.offsetNode;offset=r.offset;}}
+    if(node&&m.contains(node))return Math.max(0,Math.min(ta.value.length,offset));
+  }catch(_){}finally{m?.remove();}
+  return null;
+}
+// Высота от начала текста до курсора — чтобы прокрутить поле к месту правки.
+function reportCaretTop(ta,pos){
+  let m=null;
+  try{
+    m=reportTextMirror(ta);m.scrollTop=0;
+    const node=m.firstChild,rg=document.createRange();
+    const at=Math.max(0,Math.min(pos,node.length-1));
+    rg.setStart(node,at);rg.setEnd(node,at+1);
+    const rects=rg.getClientRects(),rect=rects[0]||rg.getBoundingClientRect();
+    return rect.top-m.getBoundingClientRect().top;
+  }catch(_){return null;}finally{m?.remove();}
+}
+function keepReportCaretVisible(center=false){
+  const ta=$("reportText");
+  if(!ta||document.activeElement!==ta)return;
+  const y=reportCaretTop(ta,ta.selectionEnd);
+  if(y==null)return;
+  const line=parseFloat(getComputedStyle(ta).lineHeight)||22,view=ta.clientHeight;
+  if(center){ta.scrollTop=Math.max(0,y-view*0.3);return;}
+  if(y<ta.scrollTop+line*0.5)ta.scrollTop=Math.max(0,y-line);
+  else if(y+line*1.5>ta.scrollTop+view)ta.scrollTop=y+line*2-view;
+}
+function enterReportEdit(pos=null){
+  const ta=$("reportText");
+  if(reportEditing||!ta||!$("reportOverlay").classList.contains("show"))return;
+  if(pos==null){
+    const sel=ta.selectionEnd;
+    pos=Number.isFinite(sel)&&sel>0?sel:ta.value.length;
+  }
+  // Фокус синхронно, в обработчике касания: иначе iPhone не открывает клавиатуру.
+  if(document.activeElement===ta)ta.blur();
+  reportEditing=true;
+  ta.readOnly=false;
+  $("reportSheet").classList.add("editing");
+  $("reportEditDone").hidden=false;
+  paintReportEditState();
+  try{ta.focus({preventScroll:true});}catch(_){ta.focus();}
+  try{ta.setSelectionRange(pos,pos);}catch(_){}
+  keepReportCaretVisible(true);
+}
+function exitReportEdit(){
+  const ta=$("reportText");
+  if(!reportEditing)return;
+  reportEditing=false;
+  const pos=ta.selectionEnd;
+  if(document.activeElement===ta)ta.blur();
+  ta.readOnly=true;
+  $("reportSheet").classList.remove("editing");
+  $("reportEditDone").hidden=true;
+  paintReportEditState();
+  // Строка, которую правили, остаётся на виду и в обычном окне.
+  const y=reportCaretTop(ta,pos);
+  if(y!=null)ta.scrollTop=Math.max(0,y-ta.clientHeight*0.4);
 }
 function reportChanged(){saveReportState();renderReport();}
 
@@ -2785,6 +2899,7 @@ document.addEventListener("focusin",e=>{
   const target=e.target;
   if(!target?.matches?.("input,textarea,select"))return;
   if(!target.closest(".sheet"))return;
+  if(target.id==="reportText")return; // v103: окно «Отчёт» само держит поле и кнопку над клавиатурой
   setTimeout(()=>scrollModalFieldIntoView(target),120);
   setTimeout(()=>scrollModalFieldIntoView(target),320);
 });
@@ -2965,7 +3080,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
-${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без, исполнители. Текст можно поправить перед отправкой — правки сохраняются при смене выбора.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без, исполнители. Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -3182,6 +3297,42 @@ $("reportPeople").addEventListener("click",e=>{
   reportState.on=reportState.on.includes(name)?reportState.on.filter(x=>x!==name):[...reportState.on,name];
   reportChanged();
 });
+// v103: двойное касание по тексту — правка на весь экран.
+(()=>{
+  const ta=$("reportText");
+  let touch=null,last={t:0,x:0,y:0};
+  ta.addEventListener("touchstart",e=>{
+    if(reportEditing||e.touches.length!==1){touch=null;return;}
+    const t=e.touches[0];touch={x:t.clientX,y:t.clientY,moved:false};
+  },{passive:true});
+  ta.addEventListener("touchmove",e=>{
+    if(!touch)return;
+    const t=e.touches[0];
+    if(Math.abs(t.clientX-touch.x)>10||Math.abs(t.clientY-touch.y)>10)touch.moved=true;
+  },{passive:true});
+  ta.addEventListener("touchend",e=>{
+    if(reportEditing||!touch||touch.moved){touch=null;return;}
+    const now=Date.now(),{x,y}=touch;touch=null;
+    if(now-last.t<380&&Math.abs(x-last.x)<32&&Math.abs(y-last.y)<32){
+      last={t:0,x:0,y:0};
+      // Без обычной обработки касания: поле уже раскрыто, и браузер поставил бы курсор не туда.
+      e.preventDefault();
+      enterReportEdit(reportOffsetAtPoint(ta,x,y));
+    }else last={t:now,x,y};
+  },{passive:false});
+  ta.addEventListener("dblclick",e=>{if(!reportEditing)enterReportEdit(reportOffsetAtPoint(ta,e.clientX,e.clientY));});
+  ta.addEventListener("keydown",e=>{if(!reportEditing&&e.key==="Enter"){e.preventDefault();enterReportEdit();}});
+  ta.addEventListener("blur",()=>{if(reportEditing)exitReportEdit();});
+  // Кнопки не забирают фокус у поля во время правки: иначе окно перестраивается
+  // (клавиатура уходит) до того, как сработает нажатие.
+  const keepFocus=e=>{if(reportEditing&&(e.type==="mousedown"||e.pointerType!=="mouse"))e.preventDefault();};
+  ["#reportSend","#reportEditDone","#reportEditState"].forEach(sel=>{
+    const el=document.querySelector(sel);
+    el.addEventListener("pointerdown",keepFocus);
+    el.addEventListener("mousedown",keepFocus);
+  });
+  $("reportEditDone").onclick=()=>exitReportEdit();
+})();
 $("reportText").addEventListener("input",()=>{
   const fresh=diffReportOps(reportAutoLines,$("reportText").value);
   const keys=new Set(reportAutoLines.map(l=>l.k));keys.add("^");
@@ -3418,7 +3569,7 @@ document.addEventListener("selectstart",e=>{
   if(el.closest("input,textarea,select,[contenteditable=true]")) return;
   if(el.closest("button,.pageChip,.tab,.row,.utilityRow,.footer,.fab,.searchClose")) e.preventDefault();
 });
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){if($("reportPickOverlay")?.classList.contains("show")){closeReportPick(true);return;}closeReport();closeModal();closeDuplicateDialog();closeExportMenu();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if($("reportPickOverlay")?.classList.contains("show")){closeReportPick(true);return;}if(reportEditing){exitReportEdit();return;}closeReport();closeModal();closeDuplicateDialog();closeExportMenu();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
 
 // Enter в поле тега сохраняет запись и закрывает клавиатуру;
 // в многострочном задании сохранение выполняется по Ctrl/Cmd+Enter.
@@ -4059,6 +4210,7 @@ if(window.AndroidApp){
       const editorOpen=list.querySelector(".taskEditorWrap.open");
       if(confirmOpen){finishConfirm(false);return true;}
       if($("reportPickOverlay")?.classList.contains("show")){closeReportPick(true);return true;}
+      if(reportEditing){exitReportEdit();return true;}
       if($("netOverlay")?.classList.contains("show")){closeNetWarning();return true;}
       if(ocrCropMode){cancelOcrCrop();return true;}
       if(overlayOpen||selectionMode){
