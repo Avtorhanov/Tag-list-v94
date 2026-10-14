@@ -1613,21 +1613,21 @@ function keepReportCaretVisible(center=false){
   if(y<ta.scrollTop+line*0.5)ta.scrollTop=Math.max(0,y-line);
   else if(y+line*1.5>ta.scrollTop+view)ta.scrollTop=y+line*2-view;
 }
-function enterReportEdit(pos=null){
+// focused=true — поле уже в фокусе от касания (клавиатура открыта браузером), фокус не трогаем.
+function enterReportEdit(pos=null,focused=false){
   const ta=$("reportText");
   if(reportEditing||!ta||!$("reportOverlay").classList.contains("show"))return;
   if(pos==null){
     const sel=ta.selectionEnd;
-    pos=Number.isFinite(sel)&&sel>0?sel:ta.value.length;
+    pos=Number.isFinite(sel)&&(sel>0||focused)?sel:ta.value.length;
   }
-  // Фокус синхронно, в обработчике касания: иначе iPhone не открывает клавиатуру.
-  if(document.activeElement===ta)ta.blur();
+  if(!focused&&document.activeElement===ta)ta.blur();
   reportEditing=true;
   ta.readOnly=false;
   $("reportSheet").classList.add("editing");
   $("reportEditDone").hidden=false;
   paintReportEditState();
-  try{ta.focus({preventScroll:true});}catch(_){ta.focus();}
+  if(!focused){try{ta.focus({preventScroll:true});}catch(_){ta.focus();}}
   try{ta.setSelectionRange(pos,pos);}catch(_){}
   keepReportCaretVisible(true);
 }
@@ -1657,6 +1657,7 @@ function reportAddPerson(name,enable=true){
 function reportContactsAvailable(){
   return typeof window.AndroidApp?.pickContact==="function"||("contacts" in navigator&&typeof navigator.contacts?.select==="function");
 }
+const IS_IOS=/iP(hone|ad|od)/.test(navigator.userAgent||"")||(/Macintosh/.test(navigator.userAgent||"")&&navigator.maxTouchPoints>1);
 function renderReportPickList(){
   const list=$("reportPickList");
   if(!reportState.people.length){
@@ -1682,7 +1683,10 @@ function reportPickCommitChecks(){
   });
 }
 function openReportPick(){
-  $("reportContactsBtn").hidden=!reportContactsAvailable();
+  // v104: на iPhone кнопка видна всегда — без доступа к телефонной книге она открывает ввод имени
+  // с подсказками iPhone и объясняет, как включить выбор контактов.
+  $("reportContactsBtn").hidden=!(reportContactsAvailable()||IS_IOS);
+  $("reportPickHint").hidden=true;
   $("reportManualName").value="";
   renderReportPickList();
   $("reportPickOverlay").classList.add("show");
@@ -1705,6 +1709,13 @@ async function reportPickFromContacts(){
   reportPickCommitChecks();
   const bridge=window.AndroidApp;
   if(typeof bridge?.pickContact==="function"){try{bridge.pickContact();}catch(_){showToast("Не удалось открыть контакты");}return;}
+  if(!("contacts" in navigator&&typeof navigator.contacts?.select==="function")){
+    // iPhone без Contact Picker API: сайтам телефонная книга недоступна.
+    const inp=$("reportManualName"),hint=$("reportPickHint");
+    hint.hidden=false;
+    try{inp.focus({preventScroll:true});}catch(_){inp.focus();}
+    return;
+  }
   try{
     const picked=await navigator.contacts.select(["name"],{multiple:true});
     let added=0;
@@ -3080,7 +3091,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
-${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без, исполнители. Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без, исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -3297,32 +3308,62 @@ $("reportPeople").addEventListener("click",e=>{
   reportState.on=reportState.on.includes(name)?reportState.on.filter(x=>x!==name):[...reportState.on,name];
   reportChanged();
 });
-// v103: двойное касание по тексту — правка на весь экран.
+// v103/v104: двойное касание по тексту — правка на весь экран.
+// iPhone открывает клавиатуру только от настоящего касания редактируемого поля — программный
+// фокус (как было в v103) он игнорирует. Поэтому: одиночное касание гасится (поле только для чтения,
+// без курсора и клавиатуры), а на втором касании поле становится редактируемым ещё до отпускания
+// пальца — и это касание браузер обрабатывает сам: ставит курсор и открывает клавиатуру.
 (()=>{
   const ta=$("reportText");
-  let touch=null,last={t:0,x:0,y:0};
+  let touch=null,last={t:0,x:0,y:0},armed=null,armTimer=0;
+  const disarm=()=>{clearTimeout(armTimer);if(armed&&!reportEditing&&document.activeElement!==ta)ta.readOnly=true;armed=null;};
   ta.addEventListener("touchstart",e=>{
-    if(reportEditing||e.touches.length!==1){touch=null;return;}
-    const t=e.touches[0];touch={x:t.clientX,y:t.clientY,moved:false};
+    if(reportEditing)return;
+    if(e.touches.length!==1){touch=null;disarm();return;}
+    const t=e.touches[0],now=Date.now();
+    touch={x:t.clientX,y:t.clientY,t:now,moved:false};
+    if(now-last.t<400&&Math.abs(t.clientX-last.x)<36&&Math.abs(t.clientY-last.y)<36){
+      clearTimeout(armTimer);
+      armed={pos:reportOffsetAtPoint(ta,t.clientX,t.clientY)};
+      ta.readOnly=false;
+    }
   },{passive:true});
   ta.addEventListener("touchmove",e=>{
     if(!touch)return;
     const t=e.touches[0];
-    if(Math.abs(t.clientX-touch.x)>10||Math.abs(t.clientY-touch.y)>10)touch.moved=true;
+    if(Math.abs(t.clientX-touch.x)>10||Math.abs(t.clientY-touch.y)>10){touch.moved=true;disarm();}
   },{passive:true});
   ta.addEventListener("touchend",e=>{
-    if(reportEditing||!touch||touch.moved){touch=null;return;}
-    const now=Date.now(),{x,y}=touch;touch=null;
-    if(now-last.t<380&&Math.abs(x-last.x)<32&&Math.abs(y-last.y)<32){
+    if(reportEditing||!touch)return;
+    const tt=touch;touch=null;
+    // Прокрутка или долгое нажатие — не касание.
+    if(tt.moved||Date.now()-tt.t>450){disarm();last={t:0,x:0,y:0};return;}
+    if(armed){
       last={t:0,x:0,y:0};
-      // Без обычной обработки касания: поле уже раскрыто, и браузер поставил бы курсор не туда.
-      e.preventDefault();
-      enterReportEdit(reportOffsetAtPoint(ta,x,y));
-    }else last={t:now,x,y};
+      // Подстраховка: если браузер не поставил фокус сам — правка вручную.
+      armTimer=setTimeout(()=>{if(armed&&!reportEditing){const pos=armed.pos;armed=null;enterReportEdit(pos);}},450);
+      return;
+    }
+    e.preventDefault();
+    last={t:Date.now(),x:tt.x,y:tt.y};
   },{passive:false});
-  ta.addEventListener("dblclick",e=>{if(!reportEditing)enterReportEdit(reportOffsetAtPoint(ta,e.clientX,e.clientY));});
+  ta.addEventListener("touchcancel",()=>{touch=null;disarm();});
+  // Фокус от касания редактируемого поля — правка. Окно перестраивается после того,
+  // как браузер поставил курсор (на месте касания по прежней раскладке).
+  ta.addEventListener("focus",()=>{
+    if(reportEditing||ta.readOnly)return;
+    clearTimeout(armTimer);
+    const pos=armed?armed.pos:null;armed=null;
+    setTimeout(()=>{if(document.activeElement===ta&&!reportEditing)enterReportEdit(pos,true);},0);
+  });
+  // Двойной щелчок мышью. После двойного касания браузер тоже присылает dblclick — к этому
+  // моменту поле уже в фокусе от касания, и второй, программный фокус не нужен.
+  ta.addEventListener("dblclick",e=>{
+    if(reportEditing||(document.activeElement===ta&&!ta.readOnly))return;
+    enterReportEdit(reportOffsetAtPoint(ta,e.clientX,e.clientY));
+  });
   ta.addEventListener("keydown",e=>{if(!reportEditing&&e.key==="Enter"){e.preventDefault();enterReportEdit();}});
-  ta.addEventListener("blur",()=>{if(reportEditing)exitReportEdit();});
+  ta.addEventListener("blur",()=>{if(reportEditing)exitReportEdit();else if(!armed)ta.readOnly=true;});
   // Кнопки не забирают фокус у поля во время правки: иначе окно перестраивается
   // (клавиатура уходит) до того, как сработает нажатие.
   const keepFocus=e=>{if(reportEditing&&(e.type==="mousedown"||e.pointerType!=="mouse"))e.preventDefault();};
@@ -3350,8 +3391,7 @@ $("reportEditState").addEventListener("click",e=>{
 $("reportSend").onclick=sendReport;
 $("reportPickDone").onclick=()=>closeReportPick(true);
 $("reportPickOverlay").addEventListener("click",e=>{if(e.target===$("reportPickOverlay"))closeReportPick(true);});
-$("reportManualAdd").onclick=reportManualAdd;
-$("reportManualName").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();reportManualAdd();}});
+$("reportManualForm").addEventListener("submit",e=>{e.preventDefault();reportManualAdd();});
 $("reportContactsBtn").onclick=reportPickFromContacts;
 $("reportPickList").addEventListener("click",e=>{
   const f=e.target.closest(".rpForget");if(!f)return;

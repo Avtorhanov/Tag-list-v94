@@ -2106,3 +2106,10 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .reportSheet.editing .rpEdit{min-height:0}
 .reportSheet.editing .rpBody{padding-top:0}
 .reportSheet.editing .rpText,.reportSheet.editing .rpText.edited{border-color:var(--accent);background:var(--card)}
+
+/* ---------- v104: iPhone ---------- */
+/* Текст для чтения не выделяется: второе касание не превращается в «выделить слово». */
+.rpText[readonly]{-webkit-user-select:none;user-select:none}
+.rpPickHint{font-size:calc(12.5px * var(--fontScale));line-height:1.4;color:var(--muted);background:var(--soft);border-radius:10px;padding:9px 11px}
+.rpPickHint[hidden]{display:none}
+.rpPickHint b{color:var(--text)}
