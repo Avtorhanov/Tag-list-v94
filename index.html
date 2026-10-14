@@ -215,6 +215,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button class="choice" id="cameraChoice" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><path d="M3.5 8.5A2 2 0 0 1 5.5 6.5h2l1.6-2.2h5.8l1.6 2.2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"></path><circle cx="12" cy="13" r="3.6"></circle></svg><span>Камера</span></button>
 <button class="choice" id="photoChoice" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><circle cx="9" cy="9.5" r="1.7"></circle><path d="m20.5 15.5-5-5-8.5 9"></path></svg><span>Фото</span></button>
 <button class="choice" id="fileChoice" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><path d="M13.5 3.5H7A2.5 2.5 0 0 0 4.5 6v12A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5V9.5Z"></path><path d="M13.5 3.5v6h6"></path><path d="M8.5 13.5h7M8.5 17h5"></path></svg><span>Файл</span></button>
+<button class="choice" id="pasteChoice" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15.5" rx="2.5"></rect><path d="M9 5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v1"></path><path d="M9 11h6M9 14.5h6M9 18h3.5"></path></svg><span>Вставить</span></button>
 </div>
 <div id="manualForm">
 <div class="field">
@@ -238,10 +239,27 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 </div>
 <div id="photoForm" style="display:none">
-<div class="ocrModeRow"><div class="mini" id="ocrConfigStatus">Распознавание: OCR.space Engine 3 → Engine 2</div></div>
+<label class="ocrEngineRow" for="ocrOnlineToggle">
+<span class="ocrEngineText"><strong id="ocrEngineTitle">На телефоне, без интернета</strong><span class="mini" id="ocrConfigStatus">Фото не покидает устройство</span></span>
+<span class="ocrEngineSwitch"><span class="ocrEngineName">OCR.space</span><input id="ocrOnlineToggle" role="switch" type="checkbox"/><span aria-hidden="true" class="switchTrack"></span></span>
+</label>
 <input accept="image/*" capture="environment" id="cameraInput" style="display:none" type="file"/>
 <input accept="image/*" id="photoInput" style="display:none" type="file"/>
-<button class="action" id="ocrBackBtn" style="width:100%;margin-top:10px" type="button">← Другой способ</button>
+<div class="ocrPreview" id="ocrPreview">
+<button class="ocrPick" id="ocrPickBtn" type="button">Снимите перечень или бирку либо выберите фото</button>
+<canvas aria-label="Фото для распознавания" id="ocrCanvas" hidden=""></canvas>
+<button aria-label="Выделить участок" class="cropFab" hidden="" id="ocrCropBtn" title="Выделить участок" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><path d="M6.5 2.5v13a2 2 0 0 0 2 2h13"></path><path d="M2.5 6.5h13a2 2 0 0 1 2 2v13"></path></svg></button>
+</div>
+<div class="mini" hidden="" id="ocrCropHint"></div>
+<div class="ocrRunRow" id="ocrRunRow">
+<button class="action" id="ocrBackBtn" type="button">← Назад</button>
+<button class="action primary" disabled="" id="ocrRunBtn" type="button">Распознать</button>
+</div>
+<div class="ocrRunRow three" hidden="" id="ocrCropBar">
+<button class="action" id="ocrCropCancel" type="button">Отмена</button>
+<button class="action" id="ocrCropReset" type="button">Всё фото</button>
+<button class="action primary" id="ocrCropDone" type="button">Готово</button>
+</div>
 <div class="mini" id="ocrStatus" style="margin-top:10px"></div>
 <div class="ocrProgress" id="ocrProgressWrap" style="display:none"><div class="ocrBar" id="ocrBar"></div></div>
 <div aria-label="Обозначение столбцов" class="importLegend" id="photoImportLegend">
@@ -344,7 +362,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <div aria-labelledby="netTitle" aria-modal="true" class="sheet confirmSheet" role="dialog">
 <button aria-label="Закрыть" class="closex" id="netClose" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
 <h2 id="netTitle">Включите сеть и VPN</h2>
-<div class="duplicateMessage" id="netMessage">Для импорта с камеры и фото нужны интернет и VPN: снимок распознаётся сервисом OCR.space. Остальные функции работают без сети.</div>
+<div class="duplicateMessage" id="netMessage">Включён тумблер OCR.space: снимок отправится на распознавание в интернет, нужны сеть и VPN. Без сети выключите тумблер — фото распознается на телефоне.</div>
 <div class="actions">
 <button class="action" id="netCancel" type="button">Отмена</button>
 <button class="action primary" id="netOk" type="button">OK</button>

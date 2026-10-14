@@ -1230,9 +1230,13 @@ async function sharePageReport(pageId){
   await shareTextPayload(`${pageTitleForReport(page)}`,buildPageTextReport(page,"all"));
 }
 
+// v101: русские буквы, похожие на латинские (Р, Т, Е, А…), внутри тега переводятся в латиницу:
+// распознавание и ручной ввод часто дают «2131-РТ-102» вместо 2131-PT-102.
+const OCR_HOMOGLYPHS={"А":"A","В":"B","Е":"E","К":"K","М":"M","Н":"H","Р":"P","С":"C","Т":"T","У":"Y","Х":"X"};
 function normalizeOcrText(text){
   return String(text||'').toUpperCase()
     .replace(/[–—−_]/g,"-")
+    .replace(/[АВЕКМНРСТУХ]/g,ch=>OCR_HOMOGLYPHS[ch])
     .replace(/[ОO]/g,"O")
     .replace(/[ІI]/g,"I")
     .replace(/[Ё]/g,"E")
@@ -1252,11 +1256,11 @@ function canonicalTag(s){
 function knownTags(){ return data.map(x=>x.tag).filter(Boolean); }
 
 function updateOcrConfigStatus(){
-  const key=safeGetStorage('kipOcrSpaceKey','helloworld')||'helloworld';
-  const backend=safeGetStorage('kipOcrApiUrl','')||'';
-  if(backend) $("ocrConfigStatus").textContent='OCR.space Engine 3 → Engine 2 • используется настроенный backend';
-  else if(key==='helloworld') $("ocrConfigStatus").textContent='OCR.space Engine 3 → Engine 2';
-  else $("ocrConfigStatus").textContent='OCR.space Engine 3 → Engine 2 • API-ключ сохранён';
+  const online=ocrEngine()==="online",t=$("ocrOnlineToggle");
+  if(t)t.checked=online;
+  document.querySelector(".ocrEngineRow")?.classList.toggle("online",online);
+  $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":"На телефоне, без интернета";
+  $("ocrConfigStatus").textContent=online?"Нужны интернет и VPN, фото уходит на сервер":"Фото не покидает устройство";
 }
 
 function setProgress(v){ $('ocrBar').style.width=Math.max(0,Math.min(100,v))+'%'; }
@@ -1286,7 +1290,7 @@ function fuzzyKnownTag(tag){
 function extractTagsSmart(text){
   const norm=normalizeOcrText(text).replace(/[—–_]/g,'-');
   const found=new Set();
-  const re=/\b(\d{4})\s*-?\s*([A-Z]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})\s*([A-Z0-9]?)\b/g;
+  const re=/\b(\d{4})\s*-?\s*([A-Z]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})([A-Z0-9]?)\b/g;
   let m;
   while((m=re.exec(norm))){
     let num=m[3].replace(/O/g,'0').replace(/Q/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/Z/g,'2');
@@ -1377,7 +1381,7 @@ function normalizeDoneMark(value){
 
 function stripTagFromContext(text){
   let t=String(text||'');
-  t=t.replace(/\b\d{4}\s*-?\s*[A-ZА-ЯЁ]{2,8}\s*-?\s*[0-9OQILSZ]{2,4}\s*[A-ZА-ЯЁ]?\b/gi,' ');
+  t=t.replace(/\b\d{4}\s*-?\s*[A-ZА-ЯЁ]{2,8}\s*-?\s*[0-9OQILSZ]{2,4}[A-ZА-ЯЁ]?\b/gi,' ');
   return cleanImportedTask(t);
 }
 
@@ -1427,7 +1431,8 @@ function extractTagRecordsFromText(text){
   }
   const lines=String(text||'').replace(/\r/g,'').split('\n');
   const records=[];
-  const tagRe=/\b(\d{4})\s*-?\s*([A-ZА-ЯЁ]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})\s*([A-ZА-ЯЁ]?)\b/gi;
+  // v101: буква-суффикс (…-061A) только вплотную к номеру: отметка «v» через пробел — не часть тега.
+  const tagRe=/\b(\d{4})\s*-?\s*([A-ZА-ЯЁ]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})([A-ZА-ЯЁ]?)\b/gi;
   let current=null;
   for(const rawLine of lines){
     const line=String(rawLine||'').trim();
@@ -1442,7 +1447,9 @@ function extractTagRecordsFromText(text){
         const start=m.index+m[0].length;
         const end=i+1<matches.length?matches[i+1].index:line.length;
         const after=line.slice(start,end);
-        const before=i===0?line.slice(0,m.index):'';
+        // v101: номер строки таблицы («556», «12.») перед тегом — не задание.
+        const beforeRaw=i===0?line.slice(0,m.index):'';
+        const before=/^[\s\d.)№#|]*$/.test(beforeRaw)?'':beforeRaw;
         const context=stripTagFromContext(`${before} ${after}`);
         const markContext=`${before} ${after}`;
         const done=/(^|[\s|;,:\t])(✓|✔|☑|☒|✕|✖|×|\+|v|да|yes|true|done|выполнено|готово)(?=[\s|;,:\t]|$)/i.test(markContext)
@@ -1505,7 +1512,8 @@ function openAdd(){
   $("fileProgressWrap").style.display="none";
   setFileProgress(0);
   overlay.classList.add("show");
-  probeOcrNetwork(); // v99: заранее узнать, доступно ли распознавание фото
+  resetOcrPhoto();updateOcrConfigStatus();
+  if(ocrEngine()==="online")probeOcrNetwork(); // заранее узнать, доступен ли OCR.space
   setTimeout(()=>tagInput.focus(),50);
 }
 
@@ -1871,6 +1879,193 @@ async function runOCR(file){
     console.error(e);
     setProgress(0);
     $("ocrStatus").textContent=`Ошибка распознавания: ${e.message||e}. Проверь интернет и VPN — нужен доступ к OCR.space.`;
+  }
+}
+
+// ---------------------------------------------------------------- v101: фото — превью, обрезка, локальное распознавание
+// По умолчанию фото распознаётся на телефоне (js/ocr-local.js, без интернета).
+// Тумблер «OCR.space» в окне фото включает прежнее онлайн-распознавание (Engine 3 → 2, нужны сеть и VPN).
+const OCR_ENGINE_KEY="kipOcrEngine";
+function ocrEngine(){return safeGetStorage(OCR_ENGINE_KEY,"local")==="online"?"online":"local";}
+let ocrPhoto=null; // {name, source: ImageBitmap, crop: {x,y,w,h}|null}
+let ocrCropMode=false,ocrCropEdit=null,ocrCropGesture=null;const ocrCropPtrs=new Map();
+
+let localOcrPromise=null;
+function loadLocalOcr(){
+  if(window.LocalOCR)return Promise.resolve();
+  if(localOcrPromise)return localOcrPromise;
+  localOcrPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement("script");s.async=true;s.src=new URL("./js/ocr-local.js",document.baseURI).href;
+    s.onload=()=>resolve();s.onerror=()=>{s.remove();reject(new Error("Не найден модуль распознавания js/ocr-local.js"));};
+    document.head.appendChild(s);
+  }).catch(err=>{localOcrPromise=null;throw err;});
+  return localOcrPromise;
+}
+
+function resetOcrPhoto(){
+  ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();
+  ++ocrRunToken;updateOcrPhotoUi();
+}
+async function showOcrPhoto(file){
+  try{
+    let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"});}catch(_){bmp=await createImageBitmap(file);}
+    ++ocrRunToken;
+    ocrPhoto={name:file.name||"Фото",source:bmp,crop:null};ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
+    ocrCandidates=[];ocrCandidateMeta=new Map();
+    $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
+    $("ocrProgressWrap").style.display="none";setProgress(0);
+    $("ocrStatus").textContent="При необходимости выделите участок, затем нажмите «Распознать».";
+    updateOcrPhotoUi();drawOcrPhoto();
+    // Пока человек смотрит на фото, движок уже загружается.
+    if(ocrEngine()==="local")loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
+  }catch(e){$("ocrStatus").textContent="Не удалось открыть фото: "+(e.message||e);}
+}
+function ocrFullRect(){return{x:0,y:0,w:ocrPhoto.source.width,h:ocrPhoto.source.height};}
+function ocrRegion(){return ocrPhoto.crop||ocrFullRect();}
+function updateOcrPhotoUi(){
+  const has=!!ocrPhoto,canvas=$("ocrCanvas"),box=$("ocrPreview");
+  canvas.hidden=!has;$("ocrPickBtn").hidden=has;
+  $("ocrCropBtn").hidden=!has||ocrCropMode;
+  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;
+  $("ocrRunBtn").disabled=!has;
+  box.classList.toggle("cropping",ocrCropMode);
+  box.classList.toggle("compact",!ocrCropMode&&!!$("importList").children.length);
+  const hint=$("ocrCropHint");
+  if(ocrCropMode){hint.hidden=false;hint.textContent="Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.";}
+  else if(has&&ocrPhoto.crop){hint.hidden=false;hint.textContent="Распознаётся выделенный участок.";}
+  else hint.hidden=true;
+}
+function drawOcrPhoto(){
+  if(!ocrPhoto)return;
+  const src=ocrPhoto.source,c=$("ocrCanvas"),s=Math.min(1,1400/Math.max(src.width,src.height));
+  const W=Math.round(src.width*s),H=Math.round(src.height*s);
+  if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
+  const g=c.getContext("2d");g.drawImage(src,0,0,W,H);
+  const r=ocrCropMode?ocrCropEdit:ocrPhoto.crop;if(!r)return;
+  const k=c.width/Math.max(1,c.getBoundingClientRect().width||c.width);
+  const x=r.x*s,y=r.y*s,w=r.w*s,h=r.h*s;
+  g.save();g.fillStyle=ocrCropMode?"rgba(10,14,22,.62)":"rgba(10,14,22,.5)";g.beginPath();g.rect(0,0,W,H);g.rect(x,y,w,h);g.fill("evenodd");
+  if(!ocrCropMode){g.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#1d5fc4";g.lineWidth=Math.max(2,2*k);g.strokeRect(x,y,w,h);g.restore();return;}
+  g.shadowColor="rgba(0,0,0,.6)";g.shadowBlur=3*k;
+  g.strokeStyle="rgba(255,255,255,.55)";g.lineWidth=1*k;g.setLineDash([5*k,4*k]);
+  for(let i=1;i<3;i++){g.beginPath();g.moveTo(x+w*i/3,y);g.lineTo(x+w*i/3,y+h);g.moveTo(x,y+h*i/3);g.lineTo(x+w,y+h*i/3);g.stroke();}
+  g.setLineDash([]);g.strokeStyle="#fff";g.lineWidth=1.5*k;g.strokeRect(x,y,w,h);
+  const L=Math.min(24*k,w/2.5,h/2.5),T=4*k,M=Math.min(14*k,w/4,h/4);g.lineWidth=T;g.lineCap="square";g.beginPath();
+  for(const [cx,cy,sx,sy] of [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]){g.moveTo(cx+sx*L,cy+sy*T/2);g.lineTo(cx+sx*T/2,cy+sy*T/2);g.lineTo(cx+sx*T/2,cy+sy*L);}
+  g.moveTo(x+w/2-M,y+T/2);g.lineTo(x+w/2+M,y+T/2);g.moveTo(x+w/2-M,y+h-T/2);g.lineTo(x+w/2+M,y+h-T/2);
+  g.moveTo(x+T/2,y+h/2-M);g.lineTo(x+T/2,y+h/2+M);g.moveTo(x+w-T/2,y+h/2-M);g.lineTo(x+w-T/2,y+h/2+M);
+  g.stroke();g.restore();
+}
+// Обрезка как в галерее телефона: рамка сразу по всему фото, углы и стороны тянутся,
+// рамка двигается пальцем, двумя пальцами раздвигается; каждое касание продолжает с текущей рамки.
+function startOcrCrop(){if(!ocrPhoto)return;ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();requestAnimationFrame(drawOcrPhoto);}
+function applyOcrCrop(){
+  if(!ocrCropMode)return;const src=ocrPhoto.source,r=ocrCropEdit;
+  const full=r.x<=1&&r.y<=1&&r.w>=src.width-2&&r.h>=src.height-2;
+  ocrPhoto.crop=full?null:{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.w),h:Math.round(r.h)};
+  ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();drawOcrPhoto();
+}
+function cancelOcrCrop(){ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();drawOcrPhoto();}
+function ocrCssPerSrc(){return Math.max(1e-6,$("ocrCanvas").getBoundingClientRect().width/ocrPhoto.source.width);}
+function ocrToSrc(e){const b=$("ocrCanvas").getBoundingClientRect(),src=ocrPhoto.source;return{x:(e.clientX-b.left)/b.width*src.width,y:(e.clientY-b.top)/b.height*src.height};}
+const clampN=(v,a,b)=>Math.max(a,Math.min(b,v));
+function ocrCropHit(p){
+  // Снаружи рамки зона захвата 26 px, внутри — не больше четверти стороны: в узкой рамке середина остаётся для сдвига.
+  const k=ocrCssPerSrc(),r=ocrCropEdit,out=26/k,inX=Math.min(26,r.w*k/4)/k,inY=Math.min(26,r.h*k/4)/k;
+  const L=r.x,R=r.x+r.w,T=r.y,B=r.y+r.h,spanX=p.x>=L-out&&p.x<=R+out,spanY=p.y>=T-out&&p.y<=B+out;
+  const nT=spanX&&p.y>=T-out&&p.y<=T+inY,nB=spanX&&p.y<=B+out&&p.y>=B-inY,nL=spanY&&p.x>=L-out&&p.x<=L+inX,nR=spanY&&p.x<=R+out&&p.x>=R-inX;
+  const h=nT&&(!nB||Math.abs(p.y-T)<=Math.abs(p.y-B))?"n":nB?"s":"",v=nL&&(!nR||Math.abs(p.x-L)<=Math.abs(p.x-R))?"w":nR?"e":"";
+  if(h||v)return h+v;
+  return p.x>L&&p.x<R&&p.y>T&&p.y<B?"move":null;
+}
+function ocrCropMin(){return Math.max(12,30/ocrCssPerSrc());}
+function ocrCropSingle(p){
+  const g=ocrCropGesture,r0=g.r0,src=ocrPhoto.source,dx=p.x-g.start.x,dy=p.y-g.start.y,mn=ocrCropMin();
+  if(g.type==="move"){ocrCropEdit={...r0,x:clampN(r0.x+dx,0,src.width-r0.w),y:clampN(r0.y+dy,0,src.height-r0.h)};return;}
+  let L=r0.x,R=r0.x+r0.w,T=r0.y,B=r0.y+r0.h;
+  if(g.type.includes("w"))L=clampN(L+dx,0,R-mn);
+  if(g.type.includes("e"))R=clampN(R+dx,L+mn,src.width);
+  if(g.type.includes("n"))T=clampN(T+dy,0,B-mn);
+  if(g.type.includes("s"))B=clampN(B+dy,T+mn,src.height);
+  ocrCropEdit={x:L,y:T,w:R-L,h:B-T};
+}
+function ocrCropPinch(){
+  const g=ocrCropGesture,[a,b]=[...ocrCropPtrs.values()],src=ocrPhoto.source,mn=ocrCropMin(),floor=60/ocrCssPerSrc();
+  const sx=Math.max(Math.abs(a.x-b.x),floor)/Math.max(Math.abs(g.a0.x-g.b0.x),floor),sy=Math.max(Math.abs(a.y-b.y),floor)/Math.max(Math.abs(g.a0.y-g.b0.y),floor);
+  const w=clampN(g.r0.w*sx,mn,src.width),h=clampN(g.r0.h*sy,mn,src.height);
+  const cx=g.r0.x+g.r0.w/2+((a.x+b.x)-(g.a0.x+g.b0.x))/2,cy=g.r0.y+g.r0.h/2+((a.y+b.y)-(g.a0.y+g.b0.y))/2;
+  ocrCropEdit={x:clampN(cx-w/2,0,src.width-w),y:clampN(cy-h/2,0,src.height-h),w,h};
+}
+function wireOcrCrop(){
+  const box=$("ocrPreview");
+  box.addEventListener("pointerdown",e=>{
+    if(!ocrCropMode||!ocrPhoto)return;e.preventDefault();
+    try{box.setPointerCapture(e.pointerId);}catch(_){}
+    ocrCropPtrs.set(e.pointerId,ocrToSrc(e));
+    if(ocrCropPtrs.size===2){const [a0,b0]=[...ocrCropPtrs.values()];ocrCropGesture={type:"pinch",r0:{...ocrCropEdit},a0,b0};}
+    else if(ocrCropPtrs.size===1){const p=ocrToSrc(e),t=ocrCropHit(p);ocrCropGesture=t?{type:t,start:p,r0:{...ocrCropEdit}}:null;}
+  });
+  box.addEventListener("pointermove",e=>{
+    if(!ocrCropMode||!ocrCropPtrs.has(e.pointerId))return;e.preventDefault();
+    ocrCropPtrs.set(e.pointerId,ocrToSrc(e));
+    if(!ocrCropGesture)return;
+    if(ocrCropGesture.type==="pinch"){if(ocrCropPtrs.size>=2)ocrCropPinch();}else ocrCropSingle(ocrCropPtrs.get(e.pointerId));
+    drawOcrPhoto();
+  });
+  const end=e=>{
+    if(!ocrCropPtrs.has(e.pointerId))return;ocrCropPtrs.delete(e.pointerId);
+    // После щипка оставшийся палец ничего не двигает, пока его не поднимут.
+    if(ocrCropGesture&&ocrCropGesture.type==="pinch"&&ocrCropPtrs.size===1)ocrCropGesture=null;
+    if(!ocrCropPtrs.size)ocrCropGesture=null;
+  };
+  box.addEventListener("pointerup",end);box.addEventListener("pointercancel",end);
+  window.addEventListener("resize",()=>{if(ocrCropMode)drawOcrPhoto();},{passive:true});
+}
+
+function runSelectedOcr(){
+  if(!ocrPhoto)return;
+  if(ocrCropMode)applyOcrCrop();
+  if(ocrEngine()==="local"){runLocalOcr();return;}
+  if(ocrNetworkKnownUp()){runOnlineOcr();return;}
+  pendingOcrPick=runOnlineOcr;
+  $("netOverlay").classList.add("show");
+  probeOcrNetwork(true);
+}
+function ocrRegionCanvas(maxSide=3200){
+  const r=ocrRegion(),s=Math.min(1,maxSide/Math.max(r.w,r.h));
+  const c=document.createElement("canvas");c.width=Math.max(1,Math.round(r.w*s));c.height=Math.max(1,Math.round(r.h*s));
+  c.getContext("2d").drawImage(ocrPhoto.source,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
+  return c;
+}
+async function runOnlineOcr(){
+  if(!ocrPhoto)return;
+  const blob=await new Promise(res=>ocrRegionCanvas().toBlob(res,"image/jpeg",.92));
+  if(!blob){$("ocrStatus").textContent="Не удалось подготовить фото";return;}
+  await runOCR(blob);
+  updateOcrPhotoUi();
+}
+async function runLocalOcr(){
+  const runToken=++ocrRunToken,btn=$("ocrRunBtn");btn.disabled=true;
+  $("ocrProgressWrap").style.display="block";setProgress(3);
+  $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
+  const status=t=>{if(runToken===ocrRunToken)$("ocrStatus").textContent=t;};
+  status("Запускаю распознавание…");
+  try{
+    await loadLocalOcr();
+    const res=await window.LocalOCR.recognize(ocrPhoto.source,ocrRegion(),{stage:status,progress:v=>{if(runToken===ocrRunToken)setProgress(6+92*v);}});
+    if(runToken!==ocrRunToken)return;
+    const records=extractTagRecordsFromText(res.text);
+    ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(res.text);
+    ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
+    setProgress(100);
+    status(`На телефоне: найдено кандидатов ${ocrCandidates.length} за ${(res.ms/1000).toFixed(1).replace(".",",")} с. Проверь отметки и задания перед добавлением.`);
+    renderImportCandidates();
+  }catch(e){
+    if(runToken!==ocrRunToken)return;
+    console.error(e);setProgress(0);
+    status(`Не удалось распознать на телефоне: ${e.message||e}. Если есть интернет и VPN, включите тумблер OCR.space.`);
+  }finally{
+    if(runToken===ocrRunToken){btn.disabled=!ocrPhoto;updateOcrPhotoUi();}
   }
 }
 
@@ -2311,7 +2506,7 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото уменьшается и отправляется на распознавание в OCR.space (Engine 3, при сбое Engine 2) — нужны интернет и VPN. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото распознаётся прямо на телефоне, без интернета; значком в углу фото можно выделить нужный участок. Для сложных снимков есть тумблер <b>OCR.space</b> — онлайн-распознавание (Engine 3, при сбое Engine 2), нужны интернет и VPN. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — текст из буфера обмена: из письма, таблицы или мессенджера.")}
 </ul>
@@ -2464,10 +2659,10 @@ document.addEventListener("pointerdown",e=>{
 document.addEventListener("scroll",closePageContextMenu,{passive:true});
 $("closeBtn").onclick=closeModal;
 
-// v99: распознавание фото идёт через интернет (api.ocr.space, обычно — через VPN).
+// v101: онлайн-распознавание (api.ocr.space, обычно — через VPN) включается тумблером OCR.space.
 // Сам VPN страница увидеть не может, поэтому проверяем, отвечает ли сервис распознавания:
-// отвечает — камера/фото открываются сразу; нет или ещё неизвестно — сначала окно
-// «Включите сеть и VPN», камера/фото открываются по «OK» (касание — нужно для выбора файла).
+// отвечает — «Распознать» сразу отправляет фото; нет или ещё неизвестно — сначала окно
+// «Включите сеть и VPN», отправка по «OK».
 const OCR_PROBE_URL="https://api.ocr.space/parse/image";
 const OCR_PROBE_TTL=120000;
 let ocrNet={up:false,at:0,promise:null},pendingOcrPick=null;
@@ -2486,13 +2681,10 @@ function probeOcrNetwork(force=false){
 }
 function ocrNetworkKnownUp(){return navigator.onLine!==false&&ocrNet.up&&Date.now()-ocrNet.at<OCR_PROBE_TTL;}
 function closeNetWarning(){pendingOcrPick=null;$("netOverlay").classList.remove("show");}
-function openOcrPicker(mode){
+function openPhotoPicker(mode){
   const input=$(mode==="camera"?"cameraInput":"photoInput");
-  const go=()=>{setAddMode(mode);setTimeout(()=>input.click(),50);};
-  if(ocrNetworkKnownUp()){go();return;}
-  pendingOcrPick=go;
-  $("netOverlay").classList.add("show");
-  probeOcrNetwork(true);
+  setAddMode(mode);updateOcrConfigStatus();updateOcrPhotoUi();
+  setTimeout(()=>input.click(),50);
 }
 $("netOk").onclick=()=>{const go=pendingOcrPick;closeNetWarning();if(go)go();};
 $("netCancel").onclick=closeNetWarning;
@@ -2503,13 +2695,29 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&$("netOverlay").classList.contains("show")){closeNetWarning();e.stopImmediatePropagation();}
 },true);
 window.addEventListener("online",()=>{if(overlay.classList.contains("show"))probeOcrNetwork(true);});
-$("cameraChoice").onclick=()=>openOcrPicker("camera");
-$("photoChoice").onclick=()=>openOcrPicker("photo");
+$("cameraChoice").onclick=()=>openPhotoPicker("camera");
+$("photoChoice").onclick=()=>openPhotoPicker("photo");
 $("fileChoice").onclick=()=>setAddMode("file");
+// «Вставить» сразу читает буфер обмена и показывает найденные теги списком.
+$("pasteChoice").onclick=()=>{setAddMode("file");pasteTextImport();};
+$("ocrPickBtn").onclick=()=>$(addMode==="camera"?"cameraInput":"photoInput").click();
+$("ocrRunBtn").onclick=runSelectedOcr;
+$("ocrCropBtn").onclick=startOcrCrop;
+$("ocrCropDone").onclick=applyOcrCrop;
+$("ocrCropCancel").onclick=cancelOcrCrop;
+$("ocrCropReset").onclick=()=>{if(!ocrPhoto)return;ocrCropEdit=ocrFullRect();drawOcrPhoto();};
+wireOcrCrop();
+$("ocrOnlineToggle").addEventListener("change",e=>{
+  safeSetStorage(OCR_ENGINE_KEY,e.target.checked?"online":"local");
+  updateOcrConfigStatus();
+  if(e.target.checked)probeOcrNetwork(true);
+  else if(ocrPhoto)loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
+});
 
 $("ocrBackBtn").onclick=()=>{
   $("importList").innerHTML=""; $("importActions").style.display="none"; ocrCandidateMeta=new Map();
   $("ocrStatus").textContent=""; $("ocrProgressWrap").style.display="none";
+  resetOcrPhoto();
   setAddMode("manual");
 };
 $("fileSelectBtn").onclick=()=>$("importFileInput").click();
@@ -2522,13 +2730,11 @@ $("fileBackBtn").onclick=()=>{
 updateOcrConfigStatus();
 $("cameraInput").addEventListener("change",async e=>{
   const file=e.target.files && e.target.files[0]; e.target.value="";
-  if(!file)return;
-  try{await ensureOcrLoaded(); runOCR(file);}catch(err){showToast(err.message||"Не удалось загрузить OCR");}
+  if(file)showOcrPhoto(file);
 });
 $("photoInput").addEventListener("change",async e=>{
   const file=e.target.files && e.target.files[0]; e.target.value="";
-  if(!file)return;
-  try{await ensureOcrLoaded(); runOCR(file);}catch(err){showToast(err.message||"Не удалось загрузить OCR");}
+  if(file)showOcrPhoto(file);
 });
 $("importFileInput").addEventListener("change",event=>{
   const file=event.target.files&&event.target.files[0];if(file)runFileImport(file);event.target.value="";
@@ -3270,6 +3476,7 @@ if(window.AndroidApp){
       const editorOpen=list.querySelector(".taskEditorWrap.open");
       if(confirmOpen){finishConfirm(false);return true;}
       if($("netOverlay")?.classList.contains("show")){closeNetWarning();return true;}
+      if(ocrCropMode){cancelOcrCrop();return true;}
       if(overlayOpen||selectionMode){
         if(overlayOpen&&overlayOpen.id==="exportOverlay"){closeExportMenu();return true;}
         document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));
