@@ -329,9 +329,13 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 <!-- v102: окно «Отчёт» — страницы, выполненные/невыполненные/всё, задания, исполнители, текст с правкой. -->
 <div class="overlay reportOverlay" id="reportOverlay">
-<div aria-labelledby="reportTitle" aria-modal="true" class="sheet reportSheet" role="dialog">
-<button aria-label="Закрыть" class="closex" id="reportCloseBtn" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
+<div aria-labelledby="reportTitle" aria-modal="true" class="sheet reportSheet" id="reportSheet" role="dialog">
+<div class="rpHead">
 <h2 id="reportTitle">Отчёт</h2>
+<button class="rpEditDone" hidden="" id="reportEditDone" type="button">Готово</button>
+<button aria-label="Закрыть" class="closex" id="reportCloseBtn" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
+</div>
+<div class="rpBody" id="reportBody">
 <div class="rpGroup">
 <div class="rpLabel"><span>Страницы</span><button class="rpLink" id="reportAllPages" type="button">Выбрать все</button></div>
 <div aria-label="Страницы в отчёте" class="rpPages" id="reportPages" role="group"></div>
@@ -347,10 +351,11 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <div class="rpPeople" id="reportPeople"></div>
 </div>
 <div class="rpEdit">
-<textarea aria-label="Текст отчёта" class="rpText" id="reportText" spellcheck="false"></textarea>
+<textarea aria-label="Текст отчёта. Двойное касание — правка" class="rpText" id="reportText" readonly="" spellcheck="false"></textarea>
 <div class="rpEditState" id="reportEditState"></div>
 </div>
-<button class="rpSend" id="reportSend" type="button">Отправить</button>
+</div>
+<div class="rpFoot"><button class="rpSend" id="reportSend" type="button">Отправить</button></div>
 </div>
 </div>
 <div class="overlay reportPickOverlay" id="reportPickOverlay">

@@ -2021,10 +2021,6 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 /* ---------- v102: окно «Отчёт» ---------- */
 .reportOverlay,.reportPickOverlay{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .reportPickOverlay{z-index:56}
-.reportSheet{display:flex;flex-direction:column;gap:12px}
-.reportSheet>h2{margin:0 0 -2px;line-height:44px}
-.reportSheet>.closex{position:absolute;top:16px;right:16px;float:none}
-.reportSheet{position:relative}
 .rpGroup{display:grid;gap:7px;min-width:0}
 .rpLabel{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:calc(11.5px * var(--fontScale));font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
 .rpLink{border:0;background:none;padding:0;cursor:pointer;color:var(--accent);font-size:calc(12.5px * var(--fontScale));font-weight:700;letter-spacing:0;text-transform:none}
@@ -2062,14 +2058,13 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .rpPerson[aria-pressed="true"]{border-color:var(--accent);background:var(--soft);color:var(--text)}
 .rpPerson[aria-pressed="true"] .rpAv{background:var(--accent);color:var(--on-accent,#fff)}
 .rpAdd{border:1px dashed var(--line);background:transparent;color:var(--accent);border-radius:999px;padding:5px 11px;font-size:calc(13px * var(--fontScale));font-weight:700;cursor:pointer}
-.rpEdit{display:grid;gap:6px}
 /* 16 px и больше: иначе iPhone приближает экран при вводе и не возвращает масштаб. */
-.rpText{width:100%;min-height:220px;max-height:min(46dvh,440px);resize:none;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:11px 12px;font:500 max(16px,calc(15px * var(--fontScale)))/1.4 var(--appFont);-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;overscroll-behavior:contain}
+.rpText{width:100%;flex:1 1 auto;min-height:0;max-height:none;resize:none;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:11px 12px;font:500 max(16px,calc(15px * var(--fontScale)))/1.4 var(--appFont);-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;overscroll-behavior:contain}
 .rpText.edited{border-color:var(--amp,#b26a00)}
-.rpText:focus{outline:none;border-color:var(--accent)}
+.rpText:focus{outline:none}
+.rpText[readonly]{cursor:default}
 .rpEditState{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:calc(12px * var(--fontScale));color:var(--muted);min-height:18px}
 .rpEditState .rpWarn{color:var(--amp,#b26a00);font-weight:700}
-.rpSend{min-height:50px;border:0;border-radius:14px;background:var(--accent);color:var(--on-accent,#fff);font-size:16px;font-weight:800;cursor:pointer}
 .rpSend:disabled{opacity:.45;cursor:default}
 .reportPickSheet{display:grid;gap:10px}
 .reportPickSheet>h2{margin:0}
@@ -2086,3 +2081,28 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .rpManual button{border:0;border-radius:10px;background:var(--soft);color:var(--accent);font-weight:800;font-size:14px;padding:8px 12px;cursor:pointer}
 .rpDone{min-height:46px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent,#fff);font-weight:800;font-size:15px;cursor:pointer}
 .rpEmpty{color:var(--muted);font-size:13px;padding:4px 0}
+
+/* ---------- v103: «Отчёт» на весь экран ----------
+   Шапка · прокручиваемые настройки и большое поле текста · кнопка «Отправить», закреплённая внизу.
+   Окно повторяет видимую область экрана (visualViewport): с клавиатурой на iPhone «Отправить»
+   стоит прямо над ней, а не уходит под клавиатуру. */
+#reportOverlay{top:var(--rp-top,0px);bottom:auto;height:var(--rp-vh,100%)}
+#reportOverlay .reportSheet{height:calc(100% - env(safe-area-inset-top,0px) - 8px);max-height:none;overflow:hidden;
+  display:flex;flex-direction:column;padding:0;gap:0;position:relative}
+.rpHead{flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+.rpHead h2{flex:1;min-width:0;margin:0!important;line-height:1.25}
+.rpHead .closex{float:none;flex:none}
+.rpEditDone{flex:none;min-height:40px;padding:0 16px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent,#fff);font-size:15px;font-weight:800;cursor:pointer}
+.rpEditDone[hidden]{display:none}
+.rpBody{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  display:flex;flex-direction:column;gap:12px;padding:4px 16px 10px}
+/* Поле текста забирает всё свободное место; на маленьком экране — не меньше ~300 px, настройки прокручиваются. */
+.rpEdit{flex:1 0 auto;min-height:min(300px,55dvh);display:flex;flex-direction:column;gap:6px}
+.rpFoot{flex:none;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--card);border-top:1px solid var(--line)}
+.reportOverlay.kb .rpFoot{padding-bottom:10px}
+.rpSend{display:block;width:100%;min-height:50px;border:0;border-radius:14px;background:var(--accent);color:var(--on-accent,#fff);font-size:16px;font-weight:800;cursor:pointer}
+/* Правка: настройки прячутся, поле текста — на всё окно. */
+.reportSheet.editing .rpGroup,.reportSheet.editing .rpTiles,.reportSheet.editing .rpSwitch,.reportSheet.editing .closex{display:none}
+.reportSheet.editing .rpEdit{min-height:0}
+.reportSheet.editing .rpBody{padding-top:0}
+.reportSheet.editing .rpText,.reportSheet.editing .rpText.edited{border-color:var(--accent);background:var(--card)}
