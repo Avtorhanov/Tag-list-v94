@@ -76,7 +76,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
   var seen=false;try{seen=sessionStorage.getItem("tl-splash")==="1";}catch(_){}
   if(seen)return;
   document.documentElement.classList.add("tl-splash");
-  var m=document.getElementById("themeColorMeta");if(m)m.setAttribute("content","#0b1728");
+  var m=document.getElementById("themeColorMeta");if(m)m.setAttribute("content","#0c1c3b");
 }catch(_){}})();
 </script>
 </head>
@@ -97,7 +97,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
   var d=document.documentElement,splash=document.getElementById("tlSplash");
   if(!d.classList.contains("tl-splash")){if(splash)splash.parentNode.removeChild(splash);return;}
   try{sessionStorage.setItem("tl-splash","1");}catch(_){}
-  var NAVY="#0b1728",reduce=false;
+  var NAVY="#0c1c3b",reduce=false; // v102: цвет верхнего края заставки — строка состояния без полосы
   try{reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(_){}
   var MIN=reduce?700:1700,MAX=4000,t0=Date.now(),done=false;
   d.style.setProperty("--tl-bar",(MIN-200)+"ms");
@@ -165,6 +165,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-label="Сохранить или отправить" class="utilityBtn primaryAction" id="exportAction" title="Сохранить / отправить" type="button"><svg aria-hidden="true" class="uiIcon sendIcon" viewBox="0 0 24 24"><path d="M22 2 11 13"></path><path d="m22 2-7 20-4-9-9-4Z"></path></svg></button>
 <button aria-label="Уменьшить размер текста" class="utilityBtn" id="fontMinus" title="Уменьшить размер текста" type="button">A−</button>
 <button aria-label="Увеличить размер текста" class="utilityBtn" id="fontPlus" title="Увеличить размер текста" type="button">A+</button>
+<button aria-label="Отчёт" class="utilityBtn reportAction" id="reportBtn" title="Отчёт" type="button"><svg aria-hidden="true" class="uiIcon reportIcon" viewBox="0 0 24 24"><rect height="17" rx="2.5" width="14" x="5" y="4.5"></rect><path d="M9 3h6v3.2H9z"></path><path d="m8.6 12.4 1.8 1.8 3.4-3.6"></path><path d="M8.6 17.4h6.8"></path></svg></button>
 <button aria-label="Поиск" class="utilityBtn" id="searchBtn" title="Поиск" type="button"><svg aria-hidden="true" class="uiIcon searchIcon" viewbox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.2"></circle><path d="m16 16 5 5"></path></svg></button>
 <button aria-label="Установить" class="utilityBtn installIconBtn" id="installApp" title="Установить" type="button">↓</button>
 </div>
@@ -324,6 +325,41 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button class="choice" id="exportTodoBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.6V12l2.9 1.8"></path></svg></span><span class="choiceText">Невыполненные</span></button>
 <button class="choice" id="exportTaskBtn" type="button"><span class="ico"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><path d="M4.5 19.5h4L19 9a2.8 2.8 0 0 0-4-4L4.5 15.5Z"></path><path d="m13.5 6.5 4 4"></path></svg></span><span class="choiceText">Задания</span></button>
 </div>
+</div>
+</div>
+<!-- v102: окно «Отчёт» — страницы, выполненные/невыполненные/всё, задания, исполнители, текст с правкой. -->
+<div class="overlay reportOverlay" id="reportOverlay">
+<div aria-labelledby="reportTitle" aria-modal="true" class="sheet reportSheet" role="dialog">
+<button aria-label="Закрыть" class="closex" id="reportCloseBtn" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
+<h2 id="reportTitle">Отчёт</h2>
+<div class="rpGroup">
+<div class="rpLabel"><span>Страницы</span><button class="rpLink" id="reportAllPages" type="button">Выбрать все</button></div>
+<div aria-label="Страницы в отчёте" class="rpPages" id="reportPages" role="group"></div>
+</div>
+<div aria-label="Что отправить" class="rpTiles" role="group">
+<button aria-pressed="false" class="rpTile done" data-report-kind="done" type="button"><span class="rpNum">0</span><span class="rpCap">Выполненные</span></button>
+<button aria-pressed="false" class="rpTile todo" data-report-kind="todo" type="button"><span class="rpNum">0</span><span class="rpCap">Невыполненные</span></button>
+<button aria-pressed="false" class="rpTile all" data-report-kind="all" type="button"><span class="rpNum">0</span><span class="rpCap">Всё</span></button>
+</div>
+<label class="rpSwitch" for="reportWithTasks"><span class="rpSwitchText">С заданиями<small>Текст задания после тега</small></span><input id="reportWithTasks" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span></label>
+<div class="rpGroup">
+<div class="rpLabel"><span>Исполнители</span></div>
+<div class="rpPeople" id="reportPeople"></div>
+</div>
+<div class="rpEdit">
+<textarea aria-label="Текст отчёта" class="rpText" id="reportText" spellcheck="false"></textarea>
+<div class="rpEditState" id="reportEditState"></div>
+</div>
+<button class="rpSend" id="reportSend" type="button">Отправить</button>
+</div>
+</div>
+<div class="overlay reportPickOverlay" id="reportPickOverlay">
+<div aria-labelledby="reportPickTitle" aria-modal="true" class="sheet reportPickSheet" role="dialog">
+<h2 id="reportPickTitle">Добавить исполнителей</h2>
+<button class="rpContacts" hidden="" id="reportContactsBtn" type="button"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"></circle><path d="M4.8 20c.9-3.8 3.7-5.8 7.2-5.8s6.3 2 7.2 5.8"></path></svg><span>Выбрать в контактах телефона</span></button>
+<div class="rpPickList" id="reportPickList"></div>
+<div class="rpManual"><input aria-label="Имя вручную" autocomplete="off" id="reportManualName" placeholder="Фамилия И.О." type="text"/><button id="reportManualAdd" type="button">Добавить</button></div>
+<button class="rpDone" id="reportPickDone" type="button">Готово</button>
 </div>
 </div>
 <div class="overlay compactOverlay" id="dryListOverlay">
