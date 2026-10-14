@@ -1991,3 +1991,98 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
 #overlay.import-mode.reviewing .sheet.dragging{transition:none}
 #overlay.reviewing.sheetHalf #photoForm .ocrEngineRow,#overlay.reviewing.sheetHalf #ocrPreview,#overlay.reviewing.sheetHalf #ocrCropHint,#overlay.reviewing.sheetHalf #ocrRunRow{display:none!important}
 #overlay.import-mode .importList{align-content:start}
+
+/* ---------- v102: смена темы без анимации цвета каждой карточки (скорость на длинных списках) ---------- */
+html.theme-switching *,html.theme-switching *::before,html.theme-switching *::after{transition:none!important}
+
+/* ---------- v102: строка кнопок — восемь кнопок вместо семи, значки и надписи на ~20 % меньше ---------- */
+.utilityRow{gap:5px}
+.utilityBtn{font-size:17px}
+.fontFamilyBtn{font-size:15px}
+.uiIcon{width:22px;height:22px}
+.eyeIcon{width:23px;height:23px}
+.searchIcon{width:24px;height:24px}
+.sendIcon{width:21px;height:21px}
+.reportIcon{width:22px;height:22px;stroke-width:1.9}
+@media (max-width:420px){
+  .utilityRow{gap:4px}
+  .utilityBtn{font-size:clamp(14px,calc(15px * var(--fontScale)),19px)}
+  .fontFamilyBtn{font-size:14px}
+  .uiIcon{width:21px;height:21px}
+  .eyeIcon{width:22px;height:22px}
+  .searchIcon{width:23px;height:23px}
+  .sendIcon{width:20px;height:20px}
+  .reportIcon{width:21px;height:21px}
+}
+/* Точка «новое» на кнопке «Отчёт» — до первого открытия. */
+.reportAction{position:relative}
+.reportAction.isNew::after{content:"";position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--card)}
+
+/* ---------- v102: окно «Отчёт» ---------- */
+.reportOverlay,.reportPickOverlay{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.reportPickOverlay{z-index:56}
+.reportSheet{display:flex;flex-direction:column;gap:12px}
+.reportSheet>h2{margin:0 0 -2px;line-height:44px}
+.reportSheet>.closex{position:absolute;top:16px;right:16px;float:none}
+.reportSheet{position:relative}
+.rpGroup{display:grid;gap:7px;min-width:0}
+.rpLabel{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:calc(11.5px * var(--fontScale));font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.rpLink{border:0;background:none;padding:0;cursor:pointer;color:var(--accent);font-size:calc(12.5px * var(--fontScale));font-weight:700;letter-spacing:0;text-transform:none}
+.rpPages{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:1px 16px;overscroll-behavior-x:contain;touch-action:pan-x}
+.rpPages::-webkit-scrollbar{display:none}
+.rpPage{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;max-width:240px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:calc(13px * var(--fontScale));font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap}
+.rpPage .rpPageName{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rpPage .rpPageCount{font-weight:600;opacity:.75;font-variant-numeric:tabular-nums}
+.rpPage .rpCheck{display:none;font-size:12px}
+.rpPage[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}
+.rpPage[aria-pressed="true"] .rpCheck{display:inline}
+.rpTiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.rpTile{display:grid;gap:2px;justify-items:start;text-align:left;padding:10px 11px;border-radius:14px;border:1.5px solid var(--line);background:var(--control,#f7f9fc);color:var(--text);cursor:pointer;min-width:0}
+.rpTile .rpNum{font-size:calc(24px * var(--fontScale));font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.rpTile .rpCap{font-size:calc(12.5px * var(--fontScale));font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.rpTile.done .rpNum{color:var(--ok,#1d8a4e)}
+.rpTile.todo .rpNum{color:var(--amp,#b26a00)}
+.rpTile[aria-pressed="true"]{border-color:var(--accent);background:var(--soft)}
+.rpTile[aria-pressed="true"] .rpCap{color:var(--text)}
+.rpTile *,.rpPage *,.rpPerson *,.rpSwitch *{-webkit-user-select:none;user-select:none}
+.reportOverlay ::selection,.reportPickOverlay ::selection{background:transparent;color:inherit}
+.reportOverlay textarea::selection,.reportPickOverlay input::selection{background:color-mix(in srgb,var(--accent) 35%,transparent);color:var(--text)}
+.rpSwitch{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;font-weight:700;font-size:calc(15px * var(--fontScale));padding:2px 0;position:relative}
+.rpSwitchText small{display:block;color:var(--muted);font-weight:500;font-size:calc(12px * var(--fontScale))}
+.rpSwitch input{position:absolute;right:0;top:50%;width:44px;height:26px;margin:-13px 0 0;opacity:0;pointer-events:none}
+.rpTrack{flex:0 0 auto;width:44px;height:26px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.rpTrack::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
+.rpSwitch input:checked+.rpTrack{background:var(--accent)}
+.rpSwitch input:checked+.rpTrack::after{transform:translateX(18px)}
+.rpSwitch input:focus-visible+.rpTrack{outline:2px solid var(--accent);outline-offset:2px}
+.rpPeople{display:flex;flex-wrap:wrap;gap:6px}
+.rpPerson{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--control,#f7f9fc);color:var(--muted);border-radius:999px;padding:5px 10px 5px 5px;font-size:calc(13px * var(--fontScale));font-weight:600;cursor:pointer;max-width:100%}
+.rpPerson .rpAv{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--muted);display:grid;place-items:center;font-size:10.5px;font-weight:800}
+.rpPerson .rpName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.rpPerson[aria-pressed="true"]{border-color:var(--accent);background:var(--soft);color:var(--text)}
+.rpPerson[aria-pressed="true"] .rpAv{background:var(--accent);color:var(--on-accent,#fff)}
+.rpAdd{border:1px dashed var(--line);background:transparent;color:var(--accent);border-radius:999px;padding:5px 11px;font-size:calc(13px * var(--fontScale));font-weight:700;cursor:pointer}
+.rpEdit{display:grid;gap:6px}
+/* 16 px и больше: иначе iPhone приближает экран при вводе и не возвращает масштаб. */
+.rpText{width:100%;min-height:220px;max-height:min(46dvh,440px);resize:none;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:11px 12px;font:500 max(16px,calc(15px * var(--fontScale)))/1.4 var(--appFont);-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;overscroll-behavior:contain}
+.rpText.edited{border-color:var(--amp,#b26a00)}
+.rpText:focus{outline:none;border-color:var(--accent)}
+.rpEditState{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:calc(12px * var(--fontScale));color:var(--muted);min-height:18px}
+.rpEditState .rpWarn{color:var(--amp,#b26a00);font-weight:700}
+.rpSend{min-height:50px;border:0;border-radius:14px;background:var(--accent);color:var(--on-accent,#fff);font-size:16px;font-weight:800;cursor:pointer}
+.rpSend:disabled{opacity:.45;cursor:default}
+.reportPickSheet{display:grid;gap:10px}
+.reportPickSheet>h2{margin:0}
+.rpContacts{display:flex;align-items:center;gap:10px;min-height:46px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--accent);font-weight:800;font-size:15px;cursor:pointer}
+.rpContacts[hidden]{display:none}
+.rpPickList{display:grid}
+.rpPick{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer}
+.rpPick:last-child{border-bottom:0}
+.rpPick input{width:20px;height:20px;accent-color:var(--accent);flex:0 0 auto}
+.rpPick .rpPickName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rpPick .rpForget{flex:0 0 auto;width:34px;height:34px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+.rpManual{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.rpManual input{min-width:0;border:1px solid var(--line);background:var(--control,#f7f9fc);color:var(--text);border-radius:10px;padding:9px 11px;font:500 16px var(--appFont);-webkit-user-select:text;user-select:text}
+.rpManual button{border:0;border-radius:10px;background:var(--soft);color:var(--accent);font-weight:800;font-size:14px;padding:8px 12px;cursor:pointer}
+.rpDone{min-height:46px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent,#fff);font-weight:800;font-size:15px;cursor:pointer}
+.rpEmpty{color:var(--muted);font-size:13px;padding:4px 0}

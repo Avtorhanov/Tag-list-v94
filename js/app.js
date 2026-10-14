@@ -426,7 +426,9 @@ function renderTabs(animate=true){
     frag.appendChild(b);
   });
   tabs.replaceChildren(frag);
-  updateTabsFade();
+  // v102: замер ширины — в следующем кадре, а не сразу: иначе браузер пересчитывал
+  // раскладку всей страницы посреди отрисовки списка.
+  if(!renderTabs.fadeFrame)renderTabs.fadeFrame=requestAnimationFrame(()=>{renderTabs.fadeFrame=0;updateTabsFade();});
   // v81: анимация вкладок только при смене фильтра/данных пользователем,
   // а не при каждой отметке/сохранении (раньше полоса вкладок «мигала»).
   if(!animate)return;
@@ -478,64 +480,113 @@ function renderList(){
     list.replaceChildren(frag);
     return;
   }
-  rows.forEach(item=>{
-    const row=document.createElement("div");
-    row.className="row"+(item.done?" done":"");
-    row.dataset.id=item.id;
-
-    const check=document.createElement("button");
-    check.type="button";
-    check.className="check"+(item.done?" on":"");
-    check.setAttribute("aria-label",item.done?"Отметить как невыполненное":"Отметить как выполненное");
-
-    const num=document.createElement("div");num.className="num";num.textContent=item.id;
-    const info=document.createElement("div");info.className="info";
-    const tag=document.createElement("div");tag.className="tag";tag.textContent=item.tag;
-
-    const taskLine=document.createElement("div");taskLine.className="taskLine";
-    const taskToggle=document.createElement("button");
-    taskToggle.type="button";
-    taskToggle.className="taskToggle"+(item.task?" hasTask":"");
-    taskToggle.textContent="Задание";
-    taskToggle.setAttribute("aria-expanded","false");
-    const saveTask=document.createElement("button");
-    saveTask.type="button";saveTask.className="taskSave";saveTask.textContent="Сохранить";
-    const editorWrap=document.createElement("div");editorWrap.className="taskEditorWrap";
-    const box=document.createElement("div");box.className="taskBox";
-    const ta=document.createElement("textarea");
-    ta.placeholder="Например: проверить питание 24 В, прозвонить линию, выполнить ПНР…";
-    ta.value=item.task||"";
-    box.appendChild(ta);editorWrap.appendChild(box);
-    taskLine.append(taskToggle,saveTask);
-    info.append(tag,taskLine,editorWrap);
-    const actions=document.createElement("div");
-    actions.className="rowActions";
-
-    const cancelBtn=document.createElement("button");
-    cancelBtn.type="button";cancelBtn.className="rowAction rowCancel";cancelBtn.textContent="×";
-    cancelBtn.title="Отменить выбор";cancelBtn.setAttribute("aria-label","Отменить выбор тегов");
-
-    const selectBtn=document.createElement("button");
-    selectBtn.type="button";selectBtn.className="rowAction rowSelect";
-    selectBtn.classList.toggle("selected",selectedTagIds.has(item.id));
-    selectBtn.title=selectedTagIds.has(item.id)?"Снять выбор":"Выбрать тег";
-    selectBtn.setAttribute("aria-label",selectedTagIds.has(item.id)?`Снять выбор ${item.tag}`:`Выбрать ${item.tag}`);
-
-    const copyBtn=document.createElement("button");
-    copyBtn.type="button";copyBtn.className="rowAction rowCopy";copyBtn.textContent="⧉";
-    copyBtn.title="Скопировать тег";copyBtn.setAttribute("aria-label",`Скопировать ${item.tag}`);
-
-    const editBtn=document.createElement("button");
-    editBtn.type="button";editBtn.className="rowAction rowEdit";editBtn.textContent="✎";
-    editBtn.title="Изменить тег";editBtn.setAttribute("aria-label",`Изменить ${item.tag}`);
-
-    actions.append(cancelBtn,selectBtn,copyBtn,editBtn);
-    row.classList.toggle("selection-mode",selectionMode);
-    row.append(check,num,info,actions);
-    frag.appendChild(row);
+  // v102: карточка тега создаётся один раз и дальше переиспользуется (вкладки, поиск,
+  // выбор, отметки только переставляют и подправляют готовые карточки). Раньше весь
+  // список собирался заново при каждом действии — на 250+ тегах это и тормозило.
+  const rowEls=rows.map(item=>{
+    let row=rowCache.get(item);
+    if(!row){row=buildRow(item);rowCache.set(item,row);}
+    syncRow(row,item);
+    // Поле задания, открытое до ухода карточки из списка, как и раньше, возвращается закрытым.
+    if(row.classList.contains("taskOpen")&&!openEditors.has(item.id))setTaskEditor(row,item,false,false,{instant:true});
+    return row;
   });
-  list.replaceChildren(frag);
+  const current=list.children;
+  let same=current.length===rowEls.length;
+  for(let i=0;same&&i<rowEls.length;i++)if(current[i]!==rowEls[i])same=false;
+  if(!same){rowEls.forEach(row=>frag.appendChild(row));list.replaceChildren(frag);}
   restoreOpenTaskEditors(openEditors);
+}
+
+// item → карточка. WeakMap: карточки удалённых тегов и закрытых страниц уходят сами.
+let rowCache=new WeakMap();
+const TASK_PLACEHOLDER="Например: проверить питание 24 В, прозвонить линию, выполнить ПНР…";
+
+function buildRow(item){
+  const row=document.createElement("div");
+  row.className="row";
+
+  const check=document.createElement("button");
+  check.type="button";
+  check.className="check";
+
+  const num=document.createElement("div");num.className="num";
+  const info=document.createElement("div");info.className="info";
+  const tag=document.createElement("div");tag.className="tag";
+
+  const taskLine=document.createElement("div");taskLine.className="taskLine";
+  const taskToggle=document.createElement("button");
+  taskToggle.type="button";
+  taskToggle.className="taskToggle";
+  taskToggle.textContent="Задание";
+  taskToggle.setAttribute("aria-expanded","false");
+  const saveTask=document.createElement("button");
+  saveTask.type="button";saveTask.className="taskSave";saveTask.textContent="Сохранить";
+  taskLine.append(taskToggle,saveTask);
+  // v102: поле задания (textarea) создаётся при первом открытии — ensureTaskEditor().
+  info.append(tag,taskLine);
+  const actions=document.createElement("div");
+  actions.className="rowActions";
+
+  const cancelBtn=document.createElement("button");
+  cancelBtn.type="button";cancelBtn.className="rowAction rowCancel";cancelBtn.textContent="×";
+  cancelBtn.title="Отменить выбор";cancelBtn.setAttribute("aria-label","Отменить выбор тегов");
+
+  const selectBtn=document.createElement("button");
+  selectBtn.type="button";selectBtn.className="rowAction rowSelect";
+
+  const copyBtn=document.createElement("button");
+  copyBtn.type="button";copyBtn.className="rowAction rowCopy";copyBtn.textContent="⧉";
+  copyBtn.title="Скопировать тег";
+
+  const editBtn=document.createElement("button");
+  editBtn.type="button";editBtn.className="rowAction rowEdit";editBtn.textContent="✎";
+  editBtn.title="Изменить тег";
+
+  actions.append(cancelBtn,selectBtn,copyBtn,editBtn);
+  row.append(check,num,info,actions);
+  row._ui={check,num,tag,taskToggle,selectBtn,copyBtn,editBtn,state:""};
+  return row;
+}
+
+// Подправляет готовую карточку под текущие данные; ничего не трогает, если состояние то же.
+function syncRow(row,item){
+  const ui=row._ui,selected=selectedTagIds.has(item.id);
+  // Текст задания мог измениться в другом месте (правка тега, «В задание» из конвертора).
+  if(ui.ta&&document.activeElement!==ui.ta&&ui.ta.value!==(item.task||""))ui.ta.value=item.task||"";
+  const state=`${item.id}\u0001${item.tag}\u0001${item.done?1:0}\u0001${item.task?1:0}\u0001${selectionMode?1:0}\u0001${selected?1:0}`;
+  if(ui.state===state)return;
+  ui.state=state;
+  row.dataset.id=item.id;
+  row.classList.toggle("done",!!item.done);
+  row.classList.toggle("selection-mode",selectionMode);
+  ui.check.classList.toggle("on",!!item.done);
+  ui.check.setAttribute("aria-label",item.done?"Отметить как невыполненное":"Отметить как выполненное");
+  if(ui.num.textContent!==String(item.id))ui.num.textContent=item.id;
+  if(ui.tag.textContent!==item.tag)ui.tag.textContent=item.tag;
+  ui.taskToggle.classList.toggle("hasTask",!!item.task);
+  ui.selectBtn.classList.toggle("selected",selected);
+  ui.selectBtn.title=selected?"Снять выбор":"Выбрать тег";
+  ui.selectBtn.setAttribute("aria-label",selected?`Снять выбор ${item.tag}`:`Выбрать ${item.tag}`);
+  ui.copyBtn.setAttribute("aria-label",`Скопировать ${item.tag}`);
+  ui.editBtn.setAttribute("aria-label",`Изменить ${item.tag}`);
+}
+
+function ensureTaskEditor(row,item){
+  let editor=row.querySelector(".taskEditorWrap");
+  if(editor)return editor;
+  editor=document.createElement("div");editor.className="taskEditorWrap";
+  const box=document.createElement("div");box.className="taskBox";
+  const ta=document.createElement("textarea");
+  ta.placeholder=TASK_PLACEHOLDER;
+  ta.value=item?.task||"";
+  box.appendChild(ta);editor.appendChild(box);
+  row.querySelector(".info").appendChild(editor);
+  if(row._ui)row._ui.ta=ta;
+  // Закрытое состояние должно попасть в стили до открытия — иначе нет плавного раскрытия.
+  // Читаем стиль, а не размер: пересчёт стилей без раскладки всей страницы.
+  void getComputedStyle(editor).gridTemplateRows;
+  return editor;
 }
 
 function renderSummary(){
@@ -627,8 +678,15 @@ function autosizeTaskTextarea(ta,maxPx){
 }
 
 function setTaskEditor(row,item,open,focus=false,opts={}){
+  if(open)ensureTaskEditor(row,item);
   const editor=row.querySelector(".taskEditorWrap"),toggle=row.querySelector(".taskToggle"),saveBtn=row.querySelector(".taskSave"),ta=row.querySelector(".taskBox textarea");
-  if(!editor||!toggle||!saveBtn)return;
+  if(!toggle||!saveBtn)return;
+  if(!editor){
+    // Поле ещё не создавалось — закрывать нечего, только кнопки.
+    row.classList.remove("taskOpen");toggle.classList.remove("open");saveBtn.classList.remove("show");
+    toggle.setAttribute("aria-expanded","false");
+    return;
+  }
   const editing=!!(focus||opts.editing);
   if(opts.instant){editor.classList.add("instant");requestAnimationFrame(()=>requestAnimationFrame(()=>editor.classList.remove("instant")));}
   editor.classList.toggle("open",open);
@@ -1230,6 +1288,343 @@ async function sharePageReport(pageId){
   await shareTextPayload(`${pageTitleForReport(page)}`,buildPageTextReport(page,"all"));
 }
 
+// ---------------------------------------------------------------- v102: окно «Отчёт»
+// Страницы (можно несколько) · Выполненные / Невыполненные / Всё · «С заданиями» ·
+// исполнители · текст, который можно поправить перед отправкой.
+// Ручные правки не пропадают при смене выбора: отчёт собирается из строк с ключами
+// (тег, заголовок раздела, установка), правки хранятся как «изменено / удалено /
+// добавлено после строки» и накладываются на новый отчёт; нумерация пересчитывается.
+const REPORT_KEY="kip-report-v1";
+const REPORT_SEEN_KEY="kip-report-seen-v1";
+const REPORT_NUM=/^\s*\d+\.\s*/;
+let reportState=null;
+let reportOps={rep:{},del:{},ins:{}};
+let reportAutoLines=[];
+let reportPeopleSig="";
+
+function reportStrings(list){return Array.isArray(list)?list.map(x=>cleanReportField(x)).filter(Boolean):[];}
+function loadReportState(){
+  let st={};
+  try{st=JSON.parse(safeGetStorage(REPORT_KEY,"{}")||"{}")||{};}catch(_){st={};}
+  const people=[...new Set(reportStrings(st.people))].slice(0,60);
+  return {
+    pages:reportStrings(st.pages),
+    kind:["done","todo","all"].includes(st.kind)?st.kind:"done",
+    withTasks:st.withTasks!==false,
+    people,
+    on:reportStrings(st.on).filter(n=>people.includes(n))
+  };
+}
+function saveReportState(){if(reportState)safeSetStorage(REPORT_KEY,JSON.stringify(reportState));}
+function reportValidatePages(){
+  const ids=new Set(pages.map(p=>String(p.id)));
+  reportState.pages=reportState.pages.filter(id=>ids.has(id));
+}
+function reportChosenPages(){
+  const wanted=new Set(reportState.pages);
+  return pages.filter(p=>wanted.has(String(p.id)));
+}
+const reportHasOps=()=>Object.keys(reportOps.rep).length+Object.keys(reportOps.del).length+Object.keys(reportOps.ins).length>0;
+
+function buildReportLines(){
+  const chosen=reportChosenPages(),multi=chosen.length>1,L=[];
+  if(!chosen.length)return L;
+  const push=(t,k,num=false)=>L.push({t,k,num});
+  if(!multi)push(pageTitleForReport(chosen[0]),"p:"+chosen[0].id);
+  const who=reportState.people.filter(n=>reportState.on.includes(n));
+  if(who.length)push("Исполнители: "+who.join(", "),"who");
+  chosen.forEach(page=>{
+    const items=page.data||[],pid=String(page.id);
+    const done=items.filter(x=>x.done),todo=items.filter(x=>!x.done);
+    if(L.length)push("","b:"+pid+":0");
+    if(multi)push(pageTitleForReport(page),"p:"+pid);
+    const pct=items.length?Math.round(done.length/items.length*100):0;
+    push(`Выполнено ${done.length} из ${items.length} (${pct} %)`,"stat:"+pid);
+    const section=(head,list,kind)=>{
+      push("","b:"+pid+":"+kind);
+      push(`${head} (${list.length})`,"sec:"+pid+":"+kind);
+      if(!list.length){push("—","dash:"+pid+":"+kind);return;}
+      const groups=new Map();
+      list.forEach(x=>{const u=cleanReportField(x.unit)||unitFromTag(x.tag)||"Без установки";if(!groups.has(u))groups.set(u,[]);groups.get(u).push(x);});
+      let n=0;
+      groups.forEach((group,unit)=>{
+        if(groups.size>1)push(`▸ ${unit}`,"u:"+pid+":"+kind+":"+unit);
+        group.forEach(x=>{
+          const tag=cleanReportField(x.tag)||"Без тега",task=cleanReportField(x.task);
+          push(`${++n}. ${tag}${reportState.withTasks&&task?` — ${task}`:""}`,"t:"+pid+":"+x.id+":"+tag,true);
+        });
+      });
+    };
+    if(reportState.kind!=="todo")section("✅ Выполнено",done,"done");
+    if(reportState.kind!=="done")section("⏳ Не выполнено",todo,"todo");
+  });
+  return L;
+}
+
+function reportTagOf(key){const i=key.lastIndexOf(":");return key.startsWith("t:")&&i>0?key.slice(i+1):"";}
+function diffReportOps(auto,userText){
+  const a=auto.map(l=>l.t),b=userText.split("\n"),n=a.length,m=b.length;
+  const out={rep:{},del:{},ins:{}};
+  // Длинные отчёты: таблица сравнения строк n×m — до ~4 млн ячеек, иначе только начало/конец.
+  let pre=0;while(pre<n&&pre<m&&a[pre]===b[pre])pre++;
+  let suf=0;while(suf<n-pre&&suf<m-pre&&a[n-1-suf]===b[m-1-suf])suf++;
+  const A=a.slice(pre,n-suf),B=b.slice(pre,m-suf),an=A.length,bm=B.length;
+  let dp=null;
+  if(an*bm<=4e6){
+    dp=Array.from({length:an+1},()=>new Uint16Array(bm+1));
+    for(let i=an-1;i>=0;i--)for(let j=bm-1;j>=0;j--)dp[i][j]=A[i]===B[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  }
+  let anchor=pre>0?auto[pre-1].k:"^",R=[],I=[];
+  const flush=()=>{
+    if(!R.length&&!I.length)return;
+    const pair=new Map(),used=new Set();
+    R.forEach(ri=>{const tag=reportTagOf(auto[ri].k);if(tag){const j=I.findIndex((u,x)=>!used.has(x)&&u.includes(tag));if(j>=0){used.add(j);pair.set(j,ri);}}});
+    const pairedR=new Set(pair.values());
+    const restR=R.filter(ri=>!pairedR.has(ri));
+    // Строка тега считается исправленной, только если новая строка тоже с номером;
+    // иначе это удалённый тег и добавленная заметка.
+    I.forEach((u,x)=>{
+      if(used.has(x)||!restR.length)return;
+      const isNum=REPORT_NUM.test(u);
+      const k=restR.findIndex(r=>auto[r].k.startsWith("t:")===isNum);
+      if(k>=0){used.add(x);pair.set(x,restR.splice(k,1)[0]);}
+    });
+    const paired=new Set(pair.values());
+    R.forEach(ri=>{if(!paired.has(ri))out.del[auto[ri].k]=1;});
+    let anc=anchor;
+    I.forEach((u,x)=>{
+      if(pair.has(x)){
+        const L=auto[pair.get(x)];anc=L.k;
+        const same=L.num?u.replace(REPORT_NUM,"")===L.t.replace(REPORT_NUM,""):u===L.t;
+        if(!same)out.rep[L.k]=L.num?u.replace(REPORT_NUM,""):u;
+      }else (out.ins[anc]=out.ins[anc]||[]).push(u);
+    });
+    if(R.length)anchor=auto[R[R.length-1]].k;
+    R=[];I=[];
+  };
+  if(dp){
+    let i=0,j=0;
+    while(i<an||j<bm){
+      if(i<an&&j<bm&&A[i]===B[j]){flush();anchor=auto[pre+i].k;i++;j++;}
+      else if(j<bm&&(i>=an||dp[i][j+1]>=dp[i+1][j])){I.push(B[j]);j++;}
+      else{R.push(pre+i);i++;}
+    }
+  }else{
+    for(let i=0;i<an;i++)R.push(pre+i);
+    I.push(...B);
+  }
+  flush();
+  return out;
+}
+function applyReportOps(auto){
+  const out=[];
+  (reportOps.ins["^"]||[]).forEach(t=>out.push({t,num:false}));
+  auto.forEach(L=>{
+    if(!reportOps.del[L.k])out.push({t:L.k in reportOps.rep?reportOps.rep[L.k]:(L.num?L.t.replace(REPORT_NUM,""):L.t),num:L.num});
+    (reportOps.ins[L.k]||[]).forEach(t=>out.push({t,num:false}));
+  });
+  let n=0;
+  return out.map(o=>{if(/^(✅|⏳)/.test(o.t))n=0;return o.num?`${++n}. ${o.t}`:o.t;}).join("\n");
+}
+
+function regenerateReport(){
+  reportAutoLines=buildReportLines();
+  const text=applyReportOps(reportAutoLines),ta=$("reportText");
+  if(ta.value!==text)ta.value=text;
+  paintReportEditState();
+}
+function paintReportEditState(){
+  const edited=reportHasOps(),ta=$("reportText");
+  ta.classList.toggle("edited",edited);
+  const box=$("reportEditState");
+  box.replaceChildren();
+  if(edited){
+    const warn=document.createElement("span");warn.className="rpWarn";warn.textContent="Изменено вручную";
+    const reset=document.createElement("button");reset.type="button";reset.className="rpLink";reset.id="reportResetEdit";reset.textContent="Вернуть исходный";
+    box.append(warn,reset);
+  }else{
+    const hint=document.createElement("span");hint.textContent="Текст можно дополнить и исправить перед отправкой";
+    box.append(hint);
+  }
+  const has=!!ta.value.trim();
+  $("reportSend").disabled=!has;
+  $("reportSend").textContent=has?"Отправить":"Выберите страницу";
+}
+
+function renderReportPages(){
+  const box=$("reportPages");
+  const sig=pages.map(p=>`${p.id}\u0001${p.name}\u0001${p.data.length}`).join("\u0002");
+  if(box.dataset.sig!==sig){
+    box.dataset.sig=sig;
+    box.replaceChildren(...pages.map(page=>{
+      const b=document.createElement("button");
+      b.type="button";b.className="rpPage";b.dataset.pageId=String(page.id);
+      const ck=document.createElement("span");ck.className="rpCheck";ck.textContent="✓";ck.setAttribute("aria-hidden","true");
+      const nm=document.createElement("span");nm.className="rpPageName";nm.textContent=pageTitleForReport(page);
+      const ct=document.createElement("span");ct.className="rpPageCount";ct.textContent=String(page.data.length);
+      b.append(ck,nm,ct);
+      return b;
+    }));
+  }
+  const chosen=new Set(reportState.pages);
+  box.querySelectorAll(".rpPage").forEach(b=>b.setAttribute("aria-pressed",String(chosen.has(b.dataset.pageId))));
+  $("reportAllPages").textContent=reportState.pages.length===pages.length?"Снять все":"Выбрать все";
+}
+function renderReportTiles(){
+  let done=0,todo=0;
+  reportChosenPages().forEach(p=>(p.data||[]).forEach(x=>{if(x.done)done++;else todo++;}));
+  const counts={done,todo,all:done+todo};
+  document.querySelectorAll(".rpTile").forEach(t=>{
+    const k=t.dataset.reportKind;
+    t.setAttribute("aria-pressed",String(reportState.kind===k));
+    const num=t.querySelector(".rpNum");
+    if(num.textContent!==String(counts[k]))num.textContent=String(counts[k]);
+  });
+}
+function reportInitials(name){return name.split(/\s+/).filter(Boolean).map(w=>w[0]).join("").slice(0,2).toUpperCase();}
+function renderReportPeople(){
+  const box=$("reportPeople");
+  const sig=reportState.people.join("\u0001");
+  if(box.dataset.sig!==sig||!box.querySelector(".rpAdd")){
+    box.dataset.sig=sig;
+    const items=reportState.people.map(name=>{
+      const b=document.createElement("button");
+      b.type="button";b.className="rpPerson";b.dataset.person=name;
+      const av=document.createElement("span");av.className="rpAv";av.textContent=reportInitials(name);av.setAttribute("aria-hidden","true");
+      const nm=document.createElement("span");nm.className="rpName";nm.textContent=name;
+      b.append(av,nm);
+      return b;
+    });
+    const add=document.createElement("button");add.type="button";add.className="rpAdd";add.id="reportAddPeople";add.textContent="+ Из контактов";
+    box.replaceChildren(...items,add);
+  }
+  const on=new Set(reportState.on);
+  box.querySelectorAll(".rpPerson").forEach(b=>{
+    const active=on.has(b.dataset.person);
+    b.setAttribute("aria-pressed",String(active));
+    b.title=active?"Убрать из отчёта":"Добавить в отчёт";
+  });
+}
+function renderReport(){
+  renderReportPages();
+  renderReportTiles();
+  $("reportWithTasks").checked=!!reportState.withTasks;
+  renderReportPeople();
+  regenerateReport();
+}
+
+function openReport(){
+  flushSave();
+  if(!reportState)reportState=loadReportState();
+  reportValidatePages();
+  if(!reportState.pages.length)reportState.pages=[String(activePageId)];
+  safeSetStorage(REPORT_SEEN_KEY,"1");
+  $("reportBtn")?.classList.remove("isNew");
+  renderReport();
+  const sheet=document.querySelector("#reportOverlay .sheet");
+  if(sheet)sheet.scrollTop=0;
+  $("reportOverlay").classList.add("show");
+}
+function closeReport(){
+  const ta=$("reportText");
+  if(document.activeElement===ta)ta.blur();
+  closeReportPick();
+  $("reportOverlay").classList.remove("show");
+}
+function reportChanged(){saveReportState();renderReport();}
+
+function reportAddPerson(name,enable=true){
+  const clean=cleanReportField(name).slice(0,60);
+  if(!clean)return false;
+  if(!reportState.people.includes(clean))reportState.people.push(clean);
+  if(enable&&!reportState.on.includes(clean))reportState.on.push(clean);
+  return true;
+}
+function reportContactsAvailable(){
+  return typeof window.AndroidApp?.pickContact==="function"||("contacts" in navigator&&typeof navigator.contacts?.select==="function");
+}
+function renderReportPickList(){
+  const list=$("reportPickList");
+  if(!reportState.people.length){
+    const e=document.createElement("div");e.className="rpEmpty";e.textContent="Пока никого нет — выберите в контактах или впишите имя.";
+    list.replaceChildren(e);return;
+  }
+  const on=new Set(reportState.on);
+  list.replaceChildren(...reportState.people.map((name,i)=>{
+    const row=document.createElement("label");row.className="rpPick";row.htmlFor=`reportPick${i}`;
+    const cb=document.createElement("input");cb.type="checkbox";cb.id=`reportPick${i}`;cb.checked=on.has(name);cb.dataset.person=name;
+    const nm=document.createElement("span");nm.className="rpPickName";nm.textContent=name;
+    const forget=document.createElement("button");forget.type="button";forget.className="rpForget";forget.textContent="×";
+    forget.dataset.forget=name;forget.title="Убрать из списка";forget.setAttribute("aria-label",`Убрать ${name} из списка`);
+    row.append(cb,nm,forget);
+    return row;
+  }));
+}
+function reportPickCommitChecks(){
+  $("reportPickList").querySelectorAll("input[type=checkbox]").forEach(cb=>{
+    const name=cb.dataset.person;
+    if(cb.checked){if(!reportState.on.includes(name))reportState.on.push(name);}
+    else reportState.on=reportState.on.filter(x=>x!==name);
+  });
+}
+function openReportPick(){
+  $("reportContactsBtn").hidden=!reportContactsAvailable();
+  $("reportManualName").value="";
+  renderReportPickList();
+  $("reportPickOverlay").classList.add("show");
+}
+function closeReportPick(apply=true){
+  const ov=$("reportPickOverlay");
+  if(!ov?.classList.contains("show"))return;
+  if(apply)reportPickCommitChecks();
+  const inp=$("reportManualName");
+  if(document.activeElement===inp)inp.blur();
+  ov.classList.remove("show");
+  reportChanged();
+}
+function reportManualAdd(){
+  const inp=$("reportManualName");
+  reportPickCommitChecks();
+  if(reportAddPerson(inp.value)){inp.value="";saveReportState();renderReportPickList();}
+}
+async function reportPickFromContacts(){
+  reportPickCommitChecks();
+  const bridge=window.AndroidApp;
+  if(typeof bridge?.pickContact==="function"){try{bridge.pickContact();}catch(_){showToast("Не удалось открыть контакты");}return;}
+  try{
+    const picked=await navigator.contacts.select(["name"],{multiple:true});
+    let added=0;
+    (picked||[]).forEach(c=>{if(reportAddPerson(Array.isArray(c?.name)?c.name[0]:c?.name))added++;});
+    if(added){saveReportState();renderReportPickList();}
+  }catch(e){if(e?.name!=="AbortError"&&e?.name!=="InvalidStateError")showToast("Контакты недоступны — впишите имя вручную");}
+}
+// APK: имя выбранного в системных контактах человека (MainActivity → RC_CONTACT).
+window.__tagListContactPicked=name=>{
+  if(!reportState)reportState=loadReportState();
+  if(!reportAddPerson(name))return;
+  saveReportState();
+  if($("reportPickOverlay")?.classList.contains("show"))renderReportPickList();
+  else if($("reportOverlay")?.classList.contains("show"))renderReport();
+};
+
+async function sendReport(){
+  const ta=$("reportText");
+  const text=ta.value.replace(/\s+$/,"");
+  if(!text.trim())return;
+  const chosen=reportChosenPages();
+  const title=chosen.length===1?pageTitleForReport(chosen[0]):`${cleanReportField(docTitle)||"Tag list"} — отчёт`;
+  if(document.activeElement===ta)ta.blur();
+  try{
+    if(navigator.share){await navigator.share({title,text});closeReport();showToast("Отчёт передан");return;}
+    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);closeReport();showToast("Текст отчёта скопирован");return;}
+    throw new Error("share-unavailable");
+  }catch(e){
+    if(e?.name==="AbortError")return;
+    try{ta.focus({preventScroll:true});ta.select();}catch(_){}
+    showToast("Не удалось передать — текст выделен, скопируйте его");
+  }
+}
+
 // v101: русские буквы, похожие на латинские (Р, Т, Е, А…), внутри тега переводятся в латиницу:
 // распознавание и ручной ввод часто дают «2131-РТ-102» вместо 2131-PT-102.
 const OCR_HOMOGLYPHS={"А":"A","В":"B","Е":"E","К":"K","М":"M","Н":"H","Р":"P","С":"C","Т":"T","У":"Y","Х":"X"};
@@ -1759,16 +2154,54 @@ function finishConfirm(result){$("confirmOverlay").classList.remove("show");cons
 
 function applyTheme(theme){
   const selected=THEME_ORDER.includes(theme)?theme:"light";
+  // v102: при смене темы переходы цвета выключаются на два кадра. Иначе браузер заводил
+  // отдельную анимацию цвета на каждую карточку и кнопку — на длинном списке смена темы
+  // занимала до секунды.
+  const root=document.documentElement;
+  if(root.dataset.theme&&root.dataset.theme!==selected){
+    root.classList.add("theme-switching");
+    clearTimeout(applyTheme.timer);
+    applyTheme.timer=setTimeout(()=>requestAnimationFrame(()=>root.classList.remove("theme-switching")),60);
+  }
   document.documentElement.dataset.theme=selected;
   safeSetStorage(THEME_KEY,selected);
-  const meta=document.querySelector('meta[name="theme-color"]');
-  if(meta)meta.content={light:"#eceff2",dark:"#000000",navy:"#07101b",green:"#071713"}[selected];
+  syncSystemBars();
   const icon=$("themeIcon");
   if(icon)icon.textContent=THEME_ICON[selected];
-  // APK: цвет системной строки состояния под тему.
-  try{window.AndroidApp?.setThemeColor?.(meta?.content||"#eceff2",selected==="light");}catch(_){}
   const btn=$("themeBtn");
   if(btn){btn.title=`Тема: ${selected}. Нажми для смены`;btn.setAttribute("aria-label",`Сменить тему. Сейчас: ${selected}`);}
+}
+
+// v102: строка состояния (iPhone — theme-color, APK — системная строка) красится ровно
+// в цвет верха страницы, а при открытом окне — в тот же затемнённый цвет, что и страница
+// под окном. Раньше полоса над шапкой оставалась светлой/яркой, когда всё под ней
+// затемнялось, и выглядела пустой незаполненной полосой.
+let systemBarColor="";
+function parseCssColor(value){
+  const m=String(value||"").match(/rgba?\(([^)]+)\)/);
+  if(!m)return null;
+  const p=m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+  return {r:p[0]||0,g:p[1]||0,b:p[2]||0,a:p.length>3&&Number.isFinite(p[3])?p[3]:1};
+}
+function syncSystemBars(){
+  const root=document.documentElement;
+  // Пока идёт заставка, строка состояния — в цвет заставки (index.html).
+  if(root.classList.contains("tl-splash")&&!root.classList.contains("tl-splash-out"))return;
+  const base=parseCssColor(getComputedStyle(document.body).backgroundColor)||{r:236,g:239,b:242,a:1};
+  let c={r:base.r,g:base.g,b:base.b};
+  document.querySelectorAll(".overlay.show").forEach(el=>{
+    const o=parseCssColor(getComputedStyle(el).backgroundColor);
+    if(!o||o.a<=0)return;
+    c={r:o.r*o.a+c.r*(1-o.a),g:o.g*o.a+c.g*(1-o.a),b:o.b*o.a+c.b*(1-o.a)};
+  });
+  const hex="#"+[c.r,c.g,c.b].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,"0")).join("");
+  if(hex===systemBarColor)return;
+  systemBarColor=hex;
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta)meta.content=hex;
+  // APK: цвет системной строки и тёмные/светлые значки на ней.
+  const light=(0.2126*c.r+0.7152*c.g+0.0722*c.b)/255>0.6;
+  try{window.AndroidApp?.setThemeColor?.(hex,light);}catch(_){}
 }
 
 function cycleTheme(){
@@ -2292,6 +2725,7 @@ const $ = id => document.getElementById(id);
 let modalScrollY = 0;
 let modalLocked = false;
 function updateModalScrollLock(){
+  syncSystemBars();
   const open = !!document.querySelector(".overlay.show");
   if(open && !modalLocked){
     modalScrollY = window.scrollY || window.pageYOffset || 0;
@@ -2504,6 +2938,7 @@ const HELP_SVG={
   eye:'<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle>',
   send:'<path d="M21.5 2.5 10.8 13.2"></path><path d="m21.5 2.5-6.8 19-3.9-8.3-8.3-3.9Z"></path>',
   search:'<circle cx="10.8" cy="10.8" r="6.2"></circle><path d="m16 16 5 5"></path>',
+  report:'<rect x="5" y="4.5" width="14" height="17" rx="2.5"></rect><path d="M9 3h6v3.2H9z"></path><path d="m8.6 12.4 1.8 1.8 3.4-3.6"></path><path d="M8.6 17.4h6.8"></path>',
   install:'<path d="M12 4v11"></path><path d="m7 10.5 5 5 5-5"></path><path d="M5 20h14"></path>',
   open:'<path d="M3.5 17.5v-11a2 2 0 0 1 2-2h3.7l2 2.5h7.3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"></path><path d="M12 16.5v-6"></path><path d="m9.3 13.2 2.7-2.7 2.7 2.7"></path>',
   save:'<path d="M12 3.5v11"></path><path d="m7.5 10 4.5 4.5 4.5-4.5"></path><path d="M4.5 15.5v1.8A2.7 2.7 0 0 0 7.2 20h9.6a2.7 2.7 0 0 0 2.7-2.7v-1.8"></path>',
@@ -2530,6 +2965,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без, исполнители. Текст можно поправить перед отправкой — правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -2722,6 +3158,72 @@ $("exportStateJsonShareBtn").onclick=shareCurrentStateJson;
 $("exportStateJsonOpenBtn").onclick=openJsonStatePicker;
 $("exportStateJsonSaveBtn").onclick=saveCurrentStateJson;
 $("exportStateTextBtn").onclick=shareFullStateText;
+// v102: окно «Отчёт».
+if(!safeGetStorage(REPORT_SEEN_KEY,""))$("reportBtn").classList.add("isNew");
+$("reportBtn").onclick=openReport;
+$("reportCloseBtn").onclick=closeReport;
+$("reportOverlay").addEventListener("click",e=>{if(e.target===$("reportOverlay"))closeReport();});
+$("reportPages").addEventListener("click",e=>{
+  const b=e.target.closest(".rpPage");if(!b)return;
+  const id=b.dataset.pageId;
+  reportState.pages=reportState.pages.includes(id)?reportState.pages.filter(x=>x!==id):[...reportState.pages,id];
+  reportChanged();
+});
+$("reportAllPages").onclick=()=>{
+  reportState.pages=reportState.pages.length===pages.length?[]:pages.map(p=>String(p.id));
+  reportChanged();
+};
+document.querySelectorAll(".rpTile").forEach(t=>t.addEventListener("click",()=>{reportState.kind=t.dataset.reportKind;reportChanged();}));
+$("reportWithTasks").addEventListener("change",e=>{reportState.withTasks=e.target.checked;reportChanged();});
+$("reportPeople").addEventListener("click",e=>{
+  if(e.target.closest("#reportAddPeople")){openReportPick();return;}
+  const b=e.target.closest(".rpPerson");if(!b)return;
+  const name=b.dataset.person;
+  reportState.on=reportState.on.includes(name)?reportState.on.filter(x=>x!==name):[...reportState.on,name];
+  reportChanged();
+});
+$("reportText").addEventListener("input",()=>{
+  const fresh=diffReportOps(reportAutoLines,$("reportText").value);
+  const keys=new Set(reportAutoLines.map(l=>l.k));keys.add("^");
+  ["rep","del","ins"].forEach(kind=>{
+    Object.keys(reportOps[kind]).forEach(k=>{if(keys.has(k))delete reportOps[kind][k];});
+    Object.assign(reportOps[kind],fresh[kind]);
+  });
+  paintReportEditState();
+});
+$("reportEditState").addEventListener("click",e=>{
+  if(!e.target.closest("#reportResetEdit"))return;
+  reportOps={rep:{},del:{},ins:{}};
+  regenerateReport();
+});
+$("reportSend").onclick=sendReport;
+$("reportPickDone").onclick=()=>closeReportPick(true);
+$("reportPickOverlay").addEventListener("click",e=>{if(e.target===$("reportPickOverlay"))closeReportPick(true);});
+$("reportManualAdd").onclick=reportManualAdd;
+$("reportManualName").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();reportManualAdd();}});
+$("reportContactsBtn").onclick=reportPickFromContacts;
+$("reportPickList").addEventListener("click",e=>{
+  const f=e.target.closest(".rpForget");if(!f)return;
+  e.preventDefault();
+  reportPickCommitChecks();
+  const name=f.dataset.forget;
+  reportState.people=reportState.people.filter(x=>x!==name);
+  reportState.on=reportState.on.filter(x=>x!==name);
+  saveReportState();renderReportPickList();
+});
+// Случайное выделение вне полей ввода в окне отчёта снимается сразу (иначе iOS «заливает» плитку).
+document.addEventListener("selectionchange",()=>{
+  if(!$("reportOverlay").classList.contains("show"))return;
+  try{
+    const sel=getSelection();
+    if(!sel||sel.isCollapsed||!sel.rangeCount)return;
+    const n=sel.anchorNode,el=n&&(n.nodeType===1?n:n.parentElement);
+    if(el&&el.closest("textarea,input"))return;
+    const a=document.activeElement;
+    if(a&&a.matches?.("textarea,input"))return;
+    sel.removeAllRanges();
+  }catch(_){}
+});
 $("exportAllBtn").onclick=()=>shareTextReport("all");
 $("exportDoneBtn").onclick=()=>shareTextReport("done");
 $("exportTodoBtn").onclick=()=>shareTextReport("todo");
@@ -2916,7 +3418,7 @@ document.addEventListener("selectstart",e=>{
   if(el.closest("input,textarea,select,[contenteditable=true]")) return;
   if(el.closest("button,.pageChip,.tab,.row,.utilityRow,.footer,.fab,.searchClose")) e.preventDefault();
 });
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeDuplicateDialog();closeExportMenu();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if($("reportPickOverlay")?.classList.contains("show")){closeReportPick(true);return;}closeReport();closeModal();closeDuplicateDialog();closeExportMenu();if(selectionMode){setSelectionMode(false);}$("dryListOverlay").classList.remove("show");closeDryReport();if(confirmResolver)finishConfirm(false);}});
 
 // Enter в поле тега сохраняет запись и закрывает клавиатуру;
 // в многострочном задании сохранение выполняется по Ctrl/Cmd+Enter.
@@ -3556,6 +4058,7 @@ if(window.AndroidApp){
       const menuOpen=$("pageContextMenu")?.classList.contains("show");
       const editorOpen=list.querySelector(".taskEditorWrap.open");
       if(confirmOpen){finishConfirm(false);return true;}
+      if($("reportPickOverlay")?.classList.contains("show")){closeReportPick(true);return true;}
       if($("netOverlay")?.classList.contains("show")){closeNetWarning();return true;}
       if(ocrCropMode){cancelOcrCrop();return true;}
       if(overlayOpen||selectionMode){

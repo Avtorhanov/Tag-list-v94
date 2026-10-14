@@ -15,6 +15,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
+import android.provider.ContactsContract;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
@@ -69,6 +70,7 @@ public class MainActivity extends Activity {
     static final int RC_FILE = 101;
     static final int RC_CAMERA = 102;
     static final int RC_SAVE = 103;
+    static final int RC_CONTACT = 104; // v102: выбор исполнителя для отчёта из контактов
     static final long MAX_OPEN_BYTES = 10L * 1024 * 1024;
 
     static final String STATE_PENDING_SAVE = "taglist.pendingSavePath";
@@ -432,6 +434,21 @@ public class MainActivity extends Activity {
                 }
             }
             finishFileChooser(result);
+        } else if (requestCode == RC_CONTACT) {
+            // v102: имя выбранного контакта уходит в окно «Отчёт» (исполнители).
+            // ACTION_PICK даёт временный доступ только к выбранному контакту — разрешение READ_CONTACTS не нужно.
+            final Uri contact = (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+            if (contact == null || web == null) return;
+            String name = null;
+            try (Cursor c = getContentResolver().query(contact, new String[]{ContactsContract.Contacts.DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst() && !c.isNull(0)) name = c.getString(0);
+            } catch (Exception ignored) {
+            }
+            if (name == null || name.trim().isEmpty()) {
+                jsToast("Не удалось прочитать имя контакта");
+                return;
+            }
+            web.evaluateJavascript("window.__tagListContactPicked&&window.__tagListContactPicked(" + JSONObject.quote(name.trim()) + ")", null);
         } else if (requestCode == RC_SAVE) {
             final byte[] memory = pendingSaveBytes;
             final File stored = pendingSaveFile;
@@ -590,6 +607,19 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "";
             }
+        }
+
+        // v102: системный выбор контакта (окно «Отчёт» → «+ Из контактов»).
+        @JavascriptInterface
+        public boolean pickContact() {
+            runOnUiThread(() -> {
+                try {
+                    startActivityForResult(new Intent(Intent.ACTION_PICK, ContactsContract.Contacts.CONTENT_URI), RC_CONTACT);
+                } catch (ActivityNotFoundException e) {
+                    jsToast("На телефоне нет приложения «Контакты» — впишите имя вручную");
+                }
+            });
+            return true;
         }
 
         @JavascriptInterface
