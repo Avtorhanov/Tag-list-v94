@@ -99,7 +99,11 @@
     for(const br of b.rows){
       const tags=rowTags(br.text);if(!tags.length)continue;
       let best=-1,bd=1e9;rows.forEach((r,i)=>{const d=Math.abs(r.cy-br.cy);if(d<bd){bd=d;best=i;}});
-      if(best>=0&&bd<=tol){if(used.has(best))continue;used.add(best);const r=rows[best];if(!rowTags(r.text).length)r.text=tags.join(' ')+' '+r.text;}
+      if(best>=0&&bd<=tol){
+        if(used.has(best))continue;used.add(best);const r=rows[best];
+        // Первый проход тег не прочитал: убираем его искажённую копию («2631-111-304») и номер строки, чтобы они не попали в задание.
+        if(!rowTags(r.text).length)r.text=tags.join(' ')+' '+r.text.replace(/(^|\s)[|\[(]?\d{4}[-–—]\S*/g,' ').replace(/^\s*[|\[(]?\d{1,4}[|\])]?\s+/,'');
+      }
       else rows.push({cy:br.cy,text:tags.join(' ')});
     }
     rows.sort((x,y)=>x.cy-y.cy);

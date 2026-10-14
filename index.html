@@ -208,9 +208,15 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-label="Добавить прибор" class="fab" id="addBtn">+</button>
 <div class="overlay" id="overlay">
 <div aria-labelledby="modalTitle" aria-modal="true" class="sheet hasHelp" role="dialog">
+<button aria-label="Свернуть до половины экрана" class="sheetGrip" id="sheetGrip" type="button"></button>
 <button aria-label="Справка: добавление приборов" class="helpBtn sheetHelp" data-help="add" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button>
 <button aria-label="Закрыть" class="closex" id="closeBtn" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
 <h2 id="modalTitle">Добавить прибор</h2>
+<label class="headOcr" for="headOcrToggle" id="headOcr" title="Распознавание фото через OCR.space: нужны интернет и VPN">
+<span class="headOcrName"><span class="long">OCR.space</span><span class="short">OCR</span></span>
+<input aria-label="Распознавание фото через OCR.space" id="headOcrToggle" role="switch" type="checkbox"/><span aria-hidden="true" class="switchTrack sm"></span>
+</label>
+<div aria-live="polite" class="netStrip" id="netStrip"><span aria-hidden="true" class="netDot"></span><span class="netText"><strong>Включите сеть и VPN</strong> <span id="netStripState">· проверяю связь…</span></span></div>
 <div aria-label="Импорт тегов" class="addChoice" id="addChoice">
 <button class="choice" id="cameraChoice" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><path d="M3.5 8.5A2 2 0 0 1 5.5 6.5h2l1.6-2.2h5.8l1.6 2.2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"></path><circle cx="12" cy="13" r="3.6"></circle></svg><span>Камера</span></button>
 <button class="choice" id="photoChoice" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><circle cx="9" cy="9.5" r="1.7"></circle><path d="m20.5 15.5-5-5-8.5 9"></path></svg><span>Фото</span></button>
@@ -273,14 +279,9 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 </div>
 <div id="fileForm" style="display:none">
-<div class="fileSourceHint mini">Импортируйте теги из <strong>XLSX, XLS, CSV, TSV, TXT</strong>. Файлы читаются полностью локально, на устройстве — интернет не нужен.</div>
 <input accept=".xlsx,.xls,.csv,.tsv,.txt,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="importFileInput" style="display:none" type="file"/>
 <input accept=".json,.txt,application/json,text/plain" id="stateJsonInput" style="display:none" type="file"/>
-<div class="actions" style="margin-top:4px">
-<button class="action primary iconAction" id="fileSelectBtn" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><path d="M13.5 3.5H7A2.5 2.5 0 0 0 4.5 6v12A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5V9.5Z"></path><path d="M13.5 3.5v6h6"></path><path d="M8.5 13.5h7M8.5 17h5"></path></svg><span>Файл</span></button>
-<button class="action iconAction" id="filePasteBtn" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15.5" rx="2.5"></rect><path d="M9 5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v1"></path><path d="M9 11h6M9 14.5h6M9 18h3.5"></path></svg><span>Вставить</span></button>
-</div>
-<button class="action" id="fileBackBtn" style="width:100%;margin-top:8px" type="button">← Назад</button>
+<button class="action" id="fileBackBtn" style="width:100%;margin-top:8px;display:none" type="button">← Назад</button>
 <div class="mini" id="fileImportStatus" style="margin-top:10px"></div>
 <div class="ocrProgress" id="fileProgressWrap" style="display:none"><div class="ocrBar" id="fileBar"></div></div>
 <div aria-label="Обозначение столбцов" class="importLegend" id="fileImportLegend">

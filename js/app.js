@@ -1256,11 +1256,34 @@ function canonicalTag(s){
 function knownTags(){ return data.map(x=>x.tag).filter(Boolean); }
 
 function updateOcrConfigStatus(){
-  const online=ocrEngine()==="online",t=$("ocrOnlineToggle");
-  if(t)t.checked=online;
+  const online=ocrEngine()==="online";
+  for(const id of ["ocrOnlineToggle","headOcrToggle"]){const t=$(id);if(t)t.checked=online;}
   document.querySelector(".ocrEngineRow")?.classList.toggle("online",online);
+  $("headOcr")?.classList.toggle("on",online);
   $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":"На телефоне, без интернета";
   $("ocrConfigStatus").textContent=online?"Нужны интернет и VPN, фото уходит на сервер":"Фото не покидает устройство";
+  updateNetStrip();
+}
+// Строка под заголовком меню: при включённом OCR.space напоминает про сеть и VPN и показывает, отвечает ли сервис.
+let netStripCheck=0;
+function updateNetStrip(state){
+  const strip=$("netStrip");if(!strip)return;
+  const show=ocrEngine()==="online"&&overlay.classList.contains("addMenu");
+  strip.classList.toggle("open",show);
+  if(!show)return;
+  const st=state||(ocrNetworkKnownUp()?"up":"check");
+  strip.classList.toggle("up",st==="up");strip.classList.toggle("down",st==="down");
+  $("netStripState").textContent=st==="up"?"· OCR.space на связи":st==="down"?"· OCR.space пока не отвечает":"· проверяю связь…";
+  if(!state&&st==="check"){
+    const n=++netStripCheck;
+    probeOcrNetwork(true).then(up=>{if(n===netStripCheck)updateNetStrip(up?"up":"down");});
+  }
+}
+function setOcrEngine(online){
+  safeSetStorage(OCR_ENGINE_KEY,online?"online":"local");
+  updateOcrConfigStatus();
+  if(online)probeOcrNetwork(true);
+  else if(ocrPhoto)loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
 }
 
 function setProgress(v){ $('ocrBar').style.width=Math.max(0,Math.min(100,v))+'%'; }
@@ -1490,6 +1513,10 @@ function setAddMode(mode){
   $("manualForm").style.display=mode==="manual"?"block":"none";
   $("photoForm").style.display=photoMode?"flex":"none";
   $("fileForm").style.display=fileMode?"flex":"none";
+  // v101: тумблер OCR.space у заголовка — только в меню «Добавить прибор» (не при редактировании).
+  overlay.classList.toggle("addMenu",mode==="manual"&&editId===null);
+  setReviewing(false);
+  updateOcrConfigStatus();
 }
 
 function openAdd(){
@@ -1539,6 +1566,8 @@ function renderFileCandidates(){
   const box=$("fileImportList"),actions=$("fileImportActions");
   box.innerHTML="";
   $("fileImportLegend").classList.remove("ready");
+  $("fileBackBtn").style.display=fileCandidates.length?"none":"block";
+  setReviewing(fileCandidates.length>0);
   if(!fileCandidates.length){
     box.innerHTML='<div class="mini">Подходящих КИП-тегов не найдено. Проверь формат вида 2131-PZT-414A.</div>';
     actions.style.display="none";return;
@@ -1573,17 +1602,26 @@ async function processTextImport(text,label="Текст",startProgress=35){
   setFileProgress(100);setTimeout(()=>{$("fileProgressWrap").style.display="none"},450);
 }
 
+// v101: «Вставить» в меню сразу читает буфер обмена (в APK — через приложение) и показывает найденные теги.
 async function pasteTextImport(){
+  let text="",label="Буфер обмена",unreadable=false;
   try{
     if(!navigator.clipboard?.readText)throw new Error("clipboard");
-    const text=await navigator.clipboard.readText();
-    if(!text.trim())throw new Error("empty");
-    await processTextImport(text,"Буфер обмена");
-  }catch(e){
-    const text=prompt("Вставь сюда скопированный текст со списком тегов и заданий:","");
-    if(text&&text.trim())await processTextImport(text,"Вставленный текст");
-    else if(e.message==="clipboard")showToast("Не удалось прочитать буфер. Вставь текст вручную в появившееся поле.");
+    text=await navigator.clipboard.readText();
+  }catch(e){unreadable=true;}
+  if(!String(text||"").trim()){
+    const typed=prompt(unreadable?"Вставь сюда скопированный текст со списком тегов и заданий:":"Буфер обмена пуст. Вставь сюда текст со списком тегов и заданий:","");
+    if(!typed||!typed.trim()){if(unreadable)showToast("Не удалось прочитать буфер обмена. Скопируй список тегов и нажми «Вставить» ещё раз.");return;}
+    text=typed;label="Вставленный текст";
   }
+  openFileReview();
+  await processTextImport(text,label);
+}
+// Окно результатов импорта из файла или буфера — без подсказок и кнопок выбора.
+function openFileReview(){
+  setAddMode("file");
+  $("fileImportList").innerHTML="";$("fileImportActions").style.display="none";$("fileImportLegend").classList.remove("ready");
+  $("fileImportStatus").textContent="";$("fileBackBtn").style.display="none";fileCandidates=[];
 }
 
 async function runFileImport(file){
@@ -1618,6 +1656,7 @@ async function runFileImport(file){
     setTimeout(()=>{$("fileProgressWrap").style.display="none"},500);
   }catch(error){
     console.error(error);setFileProgress(0);status.textContent=`Не удалось импортировать: ${error.message||error}`;
+    $("fileBackBtn").style.display="block";
   }
 }
 
@@ -1903,6 +1942,7 @@ function loadLocalOcr(){
 }
 
 function resetOcrPhoto(){
+  setReviewing(false);
   ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();
   ++ocrRunToken;updateOcrPhotoUi();
 }
@@ -1911,7 +1951,7 @@ async function showOcrPhoto(file){
     let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"});}catch(_){bmp=await createImageBitmap(file);}
     ++ocrRunToken;
     ocrPhoto={name:file.name||"Фото",source:bmp,crop:null};ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
-    ocrCandidates=[];ocrCandidateMeta=new Map();
+    ocrCandidates=[];ocrCandidateMeta=new Map();setReviewing(false);
     $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
     $("ocrProgressWrap").style.display="none";setProgress(0);
     $("ocrStatus").textContent="При необходимости выделите участок, затем нажмите «Распознать».";
@@ -1958,7 +1998,7 @@ function drawOcrPhoto(){
 }
 // Обрезка как в галерее телефона: рамка сразу по всему фото, углы и стороны тянутся,
 // рамка двигается пальцем, двумя пальцами раздвигается; каждое касание продолжает с текущей рамки.
-function startOcrCrop(){if(!ocrPhoto)return;ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();requestAnimationFrame(drawOcrPhoto);}
+function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();requestAnimationFrame(drawOcrPhoto);}
 function applyOcrCrop(){
   if(!ocrCropMode)return;const src=ocrPhoto.source,r=ocrCropEdit;
   const full=r.x<=1&&r.y<=1&&r.w>=src.width-2&&r.h>=src.height-2;
@@ -2069,8 +2109,53 @@ async function runLocalOcr(){
   }
 }
 
+// v101: окно просмотра найденных тегов тянется за ручку (или заголовок) — на весь экран или на половину.
+// Отпускание ближе к одному из положений или быстрый жест вверх/вниз выбирает положение; касание ручки — переключает.
+const REVIEW_KEY="kipReviewSheet";
+let reviewSnap=safeGetStorage(REVIEW_KEY,"full")==="half"?"half":"full";
+function setReviewing(on){overlay.classList.toggle("reviewing",!!on);applyReviewSnap();}
+function applyReviewSnap(){
+  overlay.classList.toggle("sheetHalf",overlay.classList.contains("reviewing")&&reviewSnap==="half");
+  $("sheetGrip")?.setAttribute("aria-label",reviewSnap==="half"?"Развернуть на весь экран":"Свернуть до половины экрана");
+}
+function wireSheetGrip(){
+  const sheet=overlay.querySelector(".sheet"),grip=$("sheetGrip"),title=$("modalTitle");
+  let drag=null;
+  const fullH=()=>window.innerHeight-8,minH=()=>window.innerHeight*.3;
+  const start=e=>{
+    if(!overlay.classList.contains("reviewing")||ocrCropMode||(e.pointerType==="mouse"&&e.button!==0))return;
+    const now=performance.now();
+    drag={id:e.pointerId,el:e.currentTarget,y0:e.clientY,h0:sheet.getBoundingClientRect().height,moved:false,lastY:e.clientY,lastT:now,v:0};
+    try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}
+  };
+  const move=e=>{
+    if(!drag||e.pointerId!==drag.id)return;
+    const dy=e.clientY-drag.y0;
+    if(!drag.moved&&Math.abs(dy)<6)return;
+    if(!drag.moved){drag.moved=true;sheet.classList.add("dragging");}
+    e.preventDefault();
+    sheet.style.height=Math.max(minH(),Math.min(fullH(),drag.h0-dy))+"px";
+    const now=performance.now();drag.v=(e.clientY-drag.lastY)/Math.max(1,now-drag.lastT);drag.lastY=e.clientY;drag.lastT=now;
+  };
+  const end=e=>{
+    if(!drag||e.pointerId!==drag.id)return;
+    const d=drag;drag=null;
+    if(!d.moved){if(d.el===grip)reviewSnap=reviewSnap==="half"?"full":"half";}
+    else{
+      const h=sheet.getBoundingClientRect().height,mid=(window.innerHeight*.56+fullH())/2;
+      reviewSnap=d.v>.5?"half":d.v<-.5?"full":(h>=mid?"full":"half");
+    }
+    sheet.classList.remove("dragging");sheet.style.height="";
+    safeSetStorage(REVIEW_KEY,reviewSnap);applyReviewSnap();
+  };
+  for(const el of [grip,title]){
+    el.addEventListener("pointerdown",start);el.addEventListener("pointermove",move);
+    el.addEventListener("pointerup",end);el.addEventListener("pointercancel",end);
+  }
+}
 function renderImportCandidates(){
   const box=$('importList'),actions=$('importActions');
+  setReviewing(ocrCandidates.length>0);
   box.innerHTML='';
   $("photoImportLegend").classList.remove("ready");
   if(!ocrCandidates.length){
@@ -2506,9 +2591,9 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото распознаётся прямо на телефоне, без интернета; значком в углу фото можно выделить нужный участок. Для сложных снимков есть тумблер <b>OCR.space</b> — онлайн-распознавание (Engine 3, при сбое Engine 2), нужны интернет и VPN. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
-${hLi(hS("text"),"<b>Файл</b> — XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
-${hLi(hS("paste"),"<b>Вставить</b> — текст из буфера обмена: из письма, таблицы или мессенджера.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото распознаётся прямо на телефоне, без интернета; значком в углу фото можно выделить нужный участок. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
+${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
 </ul>
 <h3>Вручную</h3>
 <p>Тег, задание и статус. Тег начинается с номера установки из четырёх цифр — например, <span class="nw">2131-PZT-414A</span>: по нему работают фильтры по установкам.</p>
@@ -2682,9 +2767,8 @@ function probeOcrNetwork(force=false){
 function ocrNetworkKnownUp(){return navigator.onLine!==false&&ocrNet.up&&Date.now()-ocrNet.at<OCR_PROBE_TTL;}
 function closeNetWarning(){pendingOcrPick=null;$("netOverlay").classList.remove("show");}
 function openPhotoPicker(mode){
-  const input=$(mode==="camera"?"cameraInput":"photoInput");
-  setAddMode(mode);updateOcrConfigStatus();updateOcrPhotoUi();
-  setTimeout(()=>input.click(),50);
+  pendingPhotoMode=mode;
+  $(mode==="camera"?"cameraInput":"photoInput").click();
 }
 $("netOk").onclick=()=>{const go=pendingOcrPick;closeNetWarning();if(go)go();};
 $("netCancel").onclick=closeNetWarning;
@@ -2695,24 +2779,21 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&$("netOverlay").classList.contains("show")){closeNetWarning();e.stopImmediatePropagation();}
 },true);
 window.addEventListener("online",()=>{if(overlay.classList.contains("show"))probeOcrNetwork(true);});
+let pendingPhotoMode="photo";
 $("cameraChoice").onclick=()=>openPhotoPicker("camera");
 $("photoChoice").onclick=()=>openPhotoPicker("photo");
-$("fileChoice").onclick=()=>setAddMode("file");
-// «Вставить» сразу читает буфер обмена и показывает найденные теги списком.
-$("pasteChoice").onclick=()=>{setAddMode("file");pasteTextImport();};
-$("ocrPickBtn").onclick=()=>$(addMode==="camera"?"cameraInput":"photoInput").click();
+// v101: «Файл» сразу открывает выбор файла, «Вставить» сразу вставляет из буфера обмена.
+$("fileChoice").onclick=()=>$("importFileInput").click();
+$("pasteChoice").onclick=pasteTextImport;
+$("headOcrToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
+$("ocrPickBtn").onclick=()=>openPhotoPicker(addMode==="camera"?"camera":"photo");
 $("ocrRunBtn").onclick=runSelectedOcr;
 $("ocrCropBtn").onclick=startOcrCrop;
 $("ocrCropDone").onclick=applyOcrCrop;
 $("ocrCropCancel").onclick=cancelOcrCrop;
 $("ocrCropReset").onclick=()=>{if(!ocrPhoto)return;ocrCropEdit=ocrFullRect();drawOcrPhoto();};
 wireOcrCrop();
-$("ocrOnlineToggle").addEventListener("change",e=>{
-  safeSetStorage(OCR_ENGINE_KEY,e.target.checked?"online":"local");
-  updateOcrConfigStatus();
-  if(e.target.checked)probeOcrNetwork(true);
-  else if(ocrPhoto)loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
-});
+$("ocrOnlineToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
 
 $("ocrBackBtn").onclick=()=>{
   $("importList").innerHTML=""; $("importActions").style.display="none"; ocrCandidateMeta=new Map();
@@ -2720,8 +2801,6 @@ $("ocrBackBtn").onclick=()=>{
   resetOcrPhoto();
   setAddMode("manual");
 };
-$("fileSelectBtn").onclick=()=>$("importFileInput").click();
-$("filePasteBtn").onclick=pasteTextImport;
 $("fileBackBtn").onclick=()=>{
   $("fileImportList").innerHTML="";$("fileImportActions").style.display="none";$("fileImportStatus").textContent="";
   $("fileProgressWrap").style.display="none";setFileProgress(0);
@@ -2730,15 +2809,17 @@ $("fileBackBtn").onclick=()=>{
 updateOcrConfigStatus();
 $("cameraInput").addEventListener("change",async e=>{
   const file=e.target.files && e.target.files[0]; e.target.value="";
-  if(file)showOcrPhoto(file);
+  if(file){setAddMode("camera");showOcrPhoto(file);}
 });
 $("photoInput").addEventListener("change",async e=>{
   const file=e.target.files && e.target.files[0]; e.target.value="";
-  if(file)showOcrPhoto(file);
+  if(file){setAddMode("photo");showOcrPhoto(file);}
 });
 $("importFileInput").addEventListener("change",event=>{
-  const file=event.target.files&&event.target.files[0];if(file)runFileImport(file);event.target.value="";
+  const file=event.target.files&&event.target.files[0];event.target.value="";
+  if(file){openFileReview();runFileImport(file);}
 });
+wireSheetGrip();
 $("stateJsonInput").addEventListener("change",backupAndOpenJsonState);
 // Android Chromium PWAs can receive .json files opened from the Files app.
 // iOS Safari does not currently expose the same File Handling API; use the
