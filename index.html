@@ -363,7 +363,8 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <h2 id="reportPickTitle">Добавить исполнителей</h2>
 <button class="rpContacts" hidden="" id="reportContactsBtn" type="button"><svg aria-hidden="true" class="menuIcon" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"></circle><path d="M4.8 20c.9-3.8 3.7-5.8 7.2-5.8s6.3 2 7.2 5.8"></path></svg><span>Выбрать в контактах телефона</span></button>
 <div class="rpPickList" id="reportPickList"></div>
-<div class="rpManual"><input aria-label="Имя вручную" autocomplete="off" id="reportManualName" placeholder="Фамилия И.О." type="text"/><button id="reportManualAdd" type="button">Добавить</button></div>
+<form action="#" autocomplete="on" class="rpManual" id="reportManualForm"><input aria-label="Имя вручную" autocapitalize="words" autocomplete="name" enterkeyhint="done" id="reportManualName" name="name" placeholder="Фамилия И.О." type="text"/><button id="reportManualAdd" type="submit">Добавить</button></form>
+<div class="rpPickHint" hidden="" id="reportPickHint">iPhone не открывает сайтам телефонную книгу. Начните вводить имя — iPhone может подсказать его из контактов над клавиатурой. Чтобы эта кнопка открывала контакты, включите на iPhone: Настройки → Safari (в iOS 18 и новее — Приложения → Safari) → Дополнения → Feature Flags → <b>Contact Picker API</b>.</div>
 <button class="rpDone" id="reportPickDone" type="button">Готово</button>
 </div>
 </div>
