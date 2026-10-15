@@ -7,6 +7,7 @@
      TT  ГОСТ 6651-2009 / IEC 60751, Каллендар–Ван Дюзен:
          t ≥ 0:  R = R0·(1 + A·t + B·t²);  t < 0: + C·(t − 100)·t³
          медь α 0,00428: t ≥ 0: R = R0·(1 + α·t); t < 0: R0·(1 + A·t + B·t·(t + 6,7) + C·t³)
+         v108: шкала и значения — в °C или °F (t°F = t°C · 9/5 + 32); НСХ всегда считается в °C
      PT  линейная шкала, перевод единиц давления
      FT  по перепаду: Q = Qmax·√(ΔP/ΔPmax); корень в преобразователе или в РСУ
      LT  гидростатика: ΔP = ρ·g·h + смещение
@@ -30,11 +31,13 @@ const PU=[["МПа",1e6],["кПа",1e3],["бар",1e5],["кгс/см²",98066.5]
 const PUK=new Map(PU);
 const Q_UNITS=["м³/ч","нм³/ч","т/ч","кг/ч","л/мин","кг/с"];
 const TT_PRE=[[0,50],[0,100],[0,150],[0,200],[-50,50],[-50,100],[-50,150],[-50,200],[0,300],[0,400],[-100,100],[-200,600]];
+// v108: типовые шкалы в °F (американские и ближневосточные проекты).
+const TT_PRE_F=[[0,100],[0,200],[0,250],[0,300],[0,500],[32,212],[-50,150],[-20,250],[0,600],[0,1000],[-100,400],[-320,1100]];
 const PT_PRE=[[0,0.6],[0,1],[0,1.6],[0,2.5],[0,4],[0,6],[0,10],[0,16],[0,25],[-0.1,0.5],[-0.1,0.9]];
 const KINDS=[["TT","температура"],["PT","давление"],["FT","расход"],["LT","уровень"]];
 const KIND_NAME={TT:"температура",PT:"давление",FT:"расход",LT:"уровень"};
 const DEF={
-  TT:{mat:"pt385",r0:100,lrv:0,urv:150,lin:"T"},
+  TT:{mat:"pt385",r0:100,lrv:0,urv:150,lin:"T",tu:"C"},
   PT:{unit:"МПа",lrv:0,urv:1.6},
   FT:{kind:"dp",qunit:"м³/ч",qmin:0,qmax:100,dpmax:25,root:"tx"},
   LT:{kind:"direct",unit:"мм",lrv:0,urv:2000,rho:1000,off:0}
@@ -70,19 +73,31 @@ function Rt(t,c){
   let r=1+m.A*t+m.B*t*t;if(t<0)r+=m.C*(t-100)*t*t*t;return R0*r;
 }
 function Tr(r,c){let lo=-273,hi=1200;for(let k=0;k<80;k++){const mid=(lo+hi)/2;if(Rt(mid,c)<r)lo=mid;else hi=mid;}return (lo+hi)/2;}
-function ttP(t,c){if(c.lin==="T")return (t-c.lrv)/(c.urv-c.lrv);const a=Rt(c.lrv,c),b=Rt(c.urv,c);return (Rt(t,c)-a)/(b-a);}
-function ttT(p,c){if(c.lin==="T")return c.lrv+p*(c.urv-c.lrv);const a=Rt(c.lrv,c),b=Rt(c.urv,c);return Tr(a+p*(b-a),c);}
+// v108: единицы температуры шкалы. lrv/urv хранятся в выбранных единицах (tu: "C" | "F"),
+// Rt/Tr, ttP/ttT работают в °C.
+const isF=c=>c.tu==="F";
+const TU=c=>isF(c)?"°F":"°C";
+const toC=(t,c)=>isF(c)?(t-32)*5/9:t;
+const fromC=(t,c)=>isF(c)?t*9/5+32:t;
+const cToF=t=>t*9/5+32,fToC=t=>(t-32)*5/9;
+function ttP(t,c){const lo=toC(c.lrv,c),hi=toC(c.urv,c);if(c.lin==="T")return (t-lo)/(hi-lo);const a=Rt(lo,c),b=Rt(hi,c);return (Rt(t,c)-a)/(b-a);}
+function ttT(p,c){const lo=toC(c.lrv,c),hi=toC(c.urv,c);if(c.lin==="T")return lo+p*(hi-lo);const a=Rt(lo,c),b=Rt(hi,c);return Tr(a+p*(b-a),c);}
 const dPh=(h,c)=>c.rho*G*h/1e6+c.off;
 
 const MODES={
   TT:{
-    fields:c=>[{k:"t",l:"Температура",u:"°C",d:2,sign:true},{k:"r",l:"Сопротивление",u:"Ом",d:3}],
-    vals:(p,c)=>{const t=ttT(p,c);return {t,r:Rt(t,c)};},
-    toP:(k,v,c)=>k==="t"?ttP(v,c):(v>0?ttP(Tr(v,c),c):NaN),
-    notes:(v,c)=>{const m=MAT[c.mat];return {
-      t:(v.t<m.min||v.t>m.max)?`<b class="loopBad">${TX("Вне диапазона НСХ {0}: {1}…{2} °C",TX(m.lbl),fr(m.min),fr(m.max))}</b>`:TX("Диапазон НСХ {0}: {1}…{2} °C",TX(m.lbl),fr(m.min),fr(m.max)),
-      r:TX("R₀ = {0} Ом · крутизна ≈ {1} Ом/°C",fx(c.r0,2),fx(Rt(v.t+0.5,c)-Rt(v.t-0.5,c),4))};},
-    sum:c=>`${TX(MAT[c.mat].lbl)}${c.r0} · ${fr(c.lrv)}…${fr(c.urv)} °C${c.lin==="R"?TX(" · лин. по R"):""}`,
+    fields:c=>[{k:"t",l:"Температура",u:TU(c),d:2,sign:true},{k:"r",l:"Сопротивление",u:"Ом",d:3}],
+    vals:(p,c)=>{const tc=ttT(p,c);return {t:fromC(tc,c),r:Rt(tc,c),tc};},
+    toP:(k,v,c)=>k==="t"?ttP(toC(v,c),c):(v>0?ttP(Tr(v,c),c):NaN),
+    notes:(v,c)=>{const m=MAT[c.mat],u=TU(c),out=v.tc<m.min||v.tc>m.max;
+      const rng=TX(out?"Вне диапазона НСХ {0}: {1}…{2} {3}":"Диапазон НСХ {0}: {1}…{2} {3}",TX(m.lbl),fr(+fromC(m.min,c).toFixed(1)),fr(+fromC(m.max,c).toFixed(1)),u);
+      // Второе значение — в других единицах: 150 °C = 302 °F.
+      const alt=`= ${fx(isF(c)?v.tc:cToF(v.tc),2)} ${isF(c)?"°C":"°F"}`;
+      const slope=(Rt(v.tc+0.5,c)-Rt(v.tc-0.5,c))/(isF(c)?1.8:1);
+      return {
+      t:(out?`<b class="loopBad">${rng}</b>`:rng)+` · ${alt}`,
+      r:TX("R₀ = {0} Ом · крутизна ≈ {1} Ом/{2}",fx(c.r0,2),fx(slope,4),u)};},
+    sum:c=>`${TX(MAT[c.mat].lbl)}${c.r0} · ${fr(c.lrv)}…${fr(c.urv)} ${TU(c)}${c.lin==="R"?TX(" · лин. по R"):""}`,
     cal:"Выставьте сопротивление на магазине вместо датчика и сравните ток."
   },
   PT:{
@@ -211,7 +226,8 @@ function template(){
   const matOpts=Object.entries(MAT).map(([id,m])=>`<option value="${id}">${esc(isEn()?TX(m.name):m.name)}</option>`).join("");
   const puOpts=PU.map(([u])=>`<option value="${esc(u)}">${esc(U(u))}</option>`).join("");
   const quOpts=Q_UNITS.map(u=>`<option value="${esc(u)}">${esc(U(u))}</option>`).join("");
-  const ttPre=TT_PRE.map(([l,u])=>`<button type="button" class="tab" data-pre="TT" data-l="${l}" data-u="${u}">${fr(l)}…${fr(u)}</button>`).join("");
+  const ttPre=TT_PRE.map(([l,u])=>`<button type="button" class="tab" data-pre="TT" data-tu="C" data-l="${l}" data-u="${u}">${fr(l)}…${fr(u)}</button>`).join("")
+    +TT_PRE_F.map(([l,u])=>`<button type="button" class="tab" data-pre="TT" data-tu="F" data-l="${l}" data-u="${u}">${fr(l)}…${fr(u)}</button>`).join("");
   const ptPre=PT_PRE.map(([l,u])=>`<button type="button" class="tab" data-pre="PT" data-l="${l}" data-u="${u}">${fr(l)}…${fr(u)}</button>`).join("");
   return `
 <div class="gasGrid loopGrid">
@@ -262,10 +278,12 @@ function template(){
       <div class="loopBlock" data-block="TT">
         <div class="gasScaleRow">
           <div class="field"><label for="loopC_TT_mat">${TX("НСХ")}</label><select id="loopC_TT_mat" data-cfg="TT.mat">${matOpts}</select></div>
-          <div class="field"><label for="loopC_TT_r0">${TX("R₀ при 0 °C, Ом")}</label><select id="loopC_TT_r0" data-cfg="TT.r0"><option>50</option><option>100</option><option>500</option><option>1000</option></select></div>
+          <div class="field"><label for="loopC_TT_r0" id="loopTTr0Lbl">${TX("R₀ при 0 °C, Ом")}</label><select id="loopC_TT_r0" data-cfg="TT.r0"><option>50</option><option>100</option><option>500</option><option>1000</option></select></div>
         </div>
+        <div class="loopLabel">${TX("Единицы температуры")}</div>
+        ${seg("TT.tu",["C","°C · Цельсий"],["F","°F · Фаренгейт"])}
         <div class="gasScaleRow">${signedField("TT.lrv","НПИ (4 мА), °C")}${numField("TT.urv","ВПИ (20 мА), °C")}</div>
-        <div class="gasChips loopPresets" role="group" aria-label="${TX("Типовые шкалы, °C")}">${ttPre}</div>
+        <div class="gasChips loopPresets" id="loopTTPre" role="group" aria-label="${TX("Типовые шкалы, °C")}">${ttPre}</div>
         <div class="loopLabel">${TX("Выход линеен по")}</div>
         ${seg("TT.lin",["T","температуре"],["R","сопротивлению"])}
         <div class="mini">${TX("HART-преобразователи линейны по температуре. По сопротивлению — нормирующие преобразователи без линеаризации.")}</div>
@@ -329,6 +347,9 @@ const SOURCES_HTML=`
 <p><b>Медь М</b>, α 0,00428:</p>
 <div class="hF">t ≥ 0: R = R₀ · (1 + α·t)<br>t &lt; 0: R = R₀ · (1 + A·t + B·t·(t + 6,7) + C·t³)</div>
 <p class="mini">A = 4,28·10⁻³, B = −6,2032·10⁻⁷, C = 8,5154·10⁻¹⁰.</p>
+<p><b>Градусы Фаренгейта</b> — шкала и значения пересчитываются, НСХ считается в °C:</p>
+<div class="hF">t°F = t°C · 9/5 + 32<br>t°C = (t°F − 32) · 5/9</div>
+<p class="mini">0 °C = 32 °F · 100 °C = 212 °F · −40 °C = −40 °F. Крутизна на 1 °F в 1,8 раза меньше, чем на 1 °C.</p>
 <p><b>Расход по перепаду</b> (сужающее устройство):</p>
 <div class="hF">Q = Q<sub>max</sub> · √(ΔP / ΔP<sub>max</sub>)</div>
 <p><b>Уровень гидростатикой</b>, g = 9,80665 м/с²:</p>
@@ -355,6 +376,9 @@ const SOURCES_HTML_EN=`
 <p><b>Copper Cu (M)</b>, α 0.00428:</p>
 <div class="hF">t ≥ 0: R = R₀ · (1 + α·t)<br>t &lt; 0: R = R₀ · (1 + A·t + B·t·(t + 6.7) + C·t³)</div>
 <p class="mini">A = 4.28·10⁻³, B = −6.2032·10⁻⁷, C = 8.5154·10⁻¹⁰.</p>
+<p><b>Degrees Fahrenheit</b> — range and values are converted, the RTD curve is computed in °C:</p>
+<div class="hF">t°F = t°C · 9/5 + 32<br>t°C = (t°F − 32) · 5/9</div>
+<p class="mini">0 °C = 32 °F · 100 °C = 212 °F · −40 °C = −40 °F. Slope per 1 °F is 1.8 times smaller than per 1 °C.</p>
 <p><b>DP flow</b> (primary element, e.g. orifice):</p>
 <div class="hF">Q = Q<sub>max</sub> · √(ΔP / ΔP<sub>max</sub>)</div>
 <p><b>Hydrostatic level</b>, g = 9.80665 m/s²:</p>
@@ -428,6 +452,14 @@ function render(skip){
     const on=Math.abs(+b.dataset.l*f-cc.lrv)<1e-9&&Math.abs(+b.dataset.u*f-cc.urv)<1e-9;
     b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));
   });
+  // v108: подписи шкалы TT и типовые шкалы — в выбранных единицах температуры.
+  const tt=state.cfg.TT,tu=TU(tt);
+  const ttL=root.querySelector('label[for="loopC_TT_lrv"]'),ttU=root.querySelector('label[for="loopC_TT_urv"]');
+  if(ttL)ttL.textContent=TX("НПИ (4 мА), {0}",tu);
+  if(ttU)ttU.textContent=TX("ВПИ (20 мА), {0}",tu);
+  $("loopTTr0Lbl").textContent=isF(tt)?TX("R₀ при 0 °C (32 °F), Ом"):TX("R₀ при 0 °C, Ом");
+  $("loopTTPre").setAttribute("aria-label",TX("Типовые шкалы, {0}",tu));
+  root.querySelectorAll('[data-pre="TT"]').forEach(b=>{b.hidden=b.dataset.tu!==(tt.tu||"C");});
   const lt=state.cfg.LT;
   $("loopHydro").innerHTML=TX("Настроить преобразователь: НПИ <b>{0}</b> кПа, ВПИ <b>{1}</b> кПа",sig(dPh(lt.lrv,lt)),sig(dPh(lt.urv,lt)));
   const ltLbl=root.querySelector('label[for="loopC_LT_lrv"]'),ltLbl2=root.querySelector('label[for="loopC_LT_urv"]');
@@ -586,6 +618,11 @@ function bind(){
     if(t.dataset.sign){toggleSign(t.dataset.sign);return;}
     if(t.dataset.set){
       const [path,val]=t.dataset.set.split("=");const [md,k]=path.split(".");const c=state.cfg[md];
+      // v108: смена °C ⇄ °F — физическая шкала сохраняется (0…150 °C → 32…302 °F).
+      if(md==="TT"&&k==="tu"&&val!==(c.tu||"C")){
+        const cv=val==="F"?cToF:fToC;
+        c.lrv=+cv(c.lrv).toFixed(4);c.urv=+cv(c.urv).toFixed(4);
+      }
       if(md==="LT"&&k==="kind"&&val==="hydro"&&c.kind!=="hydro"){
         if(c.unit==="м"){c.lrv*=1000;c.urv*=1000;}else if(c.unit==="%"){c.lrv=0;c.urv=2000;}
         c.unit="мм";
@@ -674,11 +711,11 @@ window.addEventListener("pagehide",flush);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flush();});
 
 window.TagListLoop={
-  version:"100",
+  version:"108",
   mount,
   onShow(){refreshTagList();syncCfgInputs();render();},
   onHide(){flush();},
   // Для тестов и отладки.
-  _api:{Rt,Tr,detectKind,namur,MODES,DEF,summaryText,get state(){return state;}}
+  _api:{Rt,Tr,ttP,ttT,detectKind,namur,MODES,DEF,summaryText,get state(){return state;}}
 };
 })();

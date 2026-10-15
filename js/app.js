@@ -3148,7 +3148,7 @@ ${hLi(hT("✎"),"<b>Изменить</b> — тег, задание, стату�
 <h3>Значение</h3>
 <p>Введи любое поле — величину, сопротивление или перепад, ток или % шкалы, — остальные пересчитаются. Полоса показывает ток в петле, состояние — по NAMUR NE 43. Копировать, «В задание» и «Отправить» — как в «Газе».</p>
 <h3>Шкала</h3>
-<p>НПИ (4 мА), ВПИ (20 мА) и настройки типа: НСХ и R₀ термосопротивления, единицы давления, расход по перепаду (где извлекается корень), уровень прямой или гидростатикой (плотность и смещение). Кнопки — типовые шкалы.</p>
+<p>НПИ (4 мА), ВПИ (20 мА) и настройки типа: НСХ и R₀ термосопротивления, °C или °F, единицы давления, расход по перепаду (где извлекается корень), уровень прямой или гидростатикой (плотность и смещение). Кнопки — типовые шкалы.</p>
 <h3>Точки поверки</h3>
 <p>0, 25, 50, 75 и 100 % шкалы с ожидаемым током. Нажми строку — значения перейдут в «Значение».</p>
 <p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>`},
@@ -3284,7 +3284,7 @@ ${hLi(hT("✎"),"<b>Edit</b> — tag, task, status, or delete the instrument.")}
 <h3>Value</h3>
 <p>Enter any field — process value, resistance or differential pressure, current or % of span — the rest is recalculated. The bar shows the loop current, the status follows NAMUR NE 43. Copy, “To task” and “Send” — as in “Gas”.</p>
 <h3>Scale</h3>
-<p>LRV (4 mA), URV (20 mA) and the type settings: RTD curve and R₀, pressure units, DP flow (where the square root is taken), level direct or hydrostatic (density and offset). Buttons — typical ranges.</p>
+<p>LRV (4 mA), URV (20 mA) and the type settings: RTD curve and R₀, °C or °F, pressure units, DP flow (where the square root is taken), level direct or hydrostatic (density and offset). Buttons — typical ranges.</p>
 <h3>Calibration points</h3>
 <p>0, 25, 50, 75 and 100 % of span with the expected current. Tap a row to move the values to “Value”.</p>
 <p class="helpNote">Formulas and standards — the “Sources and formulas” button at the bottom of the page.</p>`},
