@@ -14,6 +14,11 @@
 (function(){
 "use strict";
 
+// v107: язык интерфейса — js/i18n.js (TX). Единицы в состоянии хранятся по-русски («МПа»), на экран — через TX.
+const TX=typeof window.TX==="function"?window.TX:(s,...a)=>String(s??"").replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
+const DEC=()=>window.I18N?window.I18N.dec:",";
+const isEn=()=>!!window.I18N?.en;
+
 const STORE_KEY="kip-loop-converter-v1";
 const G=9.80665;
 const MAT={
@@ -45,13 +50,14 @@ function parseNum(v){
 }
 // Округление «как в таблицах»: 138,5055 → 138,506 (без двоичной погрешности 138,50549…).
 const rnd=(v,d)=>{const f=10**d,r=Math.round(Math.abs(v)*f*(1+1e-12))/f*Math.sign(v);return (Object.is(r,-0)?0:r).toFixed(d);};
-// Для полей ввода: запятая и обычный минус (его удобно править).
-const fin=(v,d)=>Number.isFinite(v)?rnd(v,d).replace(".",","):"";
+// Для полей ввода: запятая (в английском — точка) и обычный минус (его удобно править).
+const fin=(v,d)=>Number.isFinite(v)?rnd(v,d).replace(".",DEC()):"";
 // Для текста: запятая и типографский минус.
-const fx=(v,d)=>Number.isFinite(v)?rnd(v,d).replace(".",",").replace("-","−"):"—";
-const fr=v=>Number.isFinite(v)?String(+v.toFixed(4)).replace(".",",").replace("-","−"):"—";
-const frIn=v=>Number.isFinite(v)?String(+v.toFixed(4)).replace(".",","):"";
-const sig=v=>Number.isFinite(v)?String(+v.toPrecision(4)).replace(".",",").replace("-","−"):"—";
+const fx=(v,d)=>Number.isFinite(v)?rnd(v,d).replace(".",DEC()).replace("-","−"):"—";
+const fr=v=>Number.isFinite(v)?String(+v.toFixed(4)).replace(".",DEC()).replace("-","−"):"—";
+const frIn=v=>Number.isFinite(v)?String(+v.toFixed(4)).replace(".",DEC()):"";
+const sig=v=>Number.isFinite(v)?String(+v.toPrecision(4)).replace(".",DEC()).replace("-","−"):"—";
+const U=u=>TX(u); // подпись единицы
 const dg=span=>{span=Math.abs(span);return span<0.5?4:span<5?3:span<500?2:1;};
 const ssq=x=>Math.sign(x)*Math.sqrt(Math.abs(x));
 const plain=s=>String(s).replace(/−/g,"-");
@@ -74,9 +80,9 @@ const MODES={
     vals:(p,c)=>{const t=ttT(p,c);return {t,r:Rt(t,c)};},
     toP:(k,v,c)=>k==="t"?ttP(v,c):(v>0?ttP(Tr(v,c),c):NaN),
     notes:(v,c)=>{const m=MAT[c.mat];return {
-      t:(v.t<m.min||v.t>m.max)?`<b class="loopBad">Вне диапазона НСХ ${m.lbl}: ${fr(m.min)}…${fr(m.max)} °C</b>`:`Диапазон НСХ ${m.lbl}: ${fr(m.min)}…${fr(m.max)} °C`,
-      r:`R₀ = ${fx(c.r0,2)} Ом · крутизна ≈ ${fx(Rt(v.t+0.5,c)-Rt(v.t-0.5,c),4)} Ом/°C`};},
-    sum:c=>`${MAT[c.mat].lbl}${c.r0} · ${fr(c.lrv)}…${fr(c.urv)} °C${c.lin==="R"?" · лин. по R":""}`,
+      t:(v.t<m.min||v.t>m.max)?`<b class="loopBad">${TX("Вне диапазона НСХ {0}: {1}…{2} °C",TX(m.lbl),fr(m.min),fr(m.max))}</b>`:TX("Диапазон НСХ {0}: {1}…{2} °C",TX(m.lbl),fr(m.min),fr(m.max)),
+      r:TX("R₀ = {0} Ом · крутизна ≈ {1} Ом/°C",fx(c.r0,2),fx(Rt(v.t+0.5,c)-Rt(v.t-0.5,c),4))};},
+    sum:c=>`${TX(MAT[c.mat].lbl)}${c.r0} · ${fr(c.lrv)}…${fr(c.urv)} °C${c.lin==="R"?TX(" · лин. по R"):""}`,
     cal:"Выставьте сопротивление на магазине вместо датчика и сравните ток."
   },
   PT:{
@@ -84,8 +90,8 @@ const MODES={
     vals:(p,c)=>({P:c.lrv+p*(c.urv-c.lrv)}),
     toP:(k,v,c)=>(v-c.lrv)/(c.urv-c.lrv),
     notes:(v,c)=>{const pa=v.P*PUK.get(c.unit);const show=["МПа","кгс/см²","бар","кПа"].filter(u=>u!==c.unit).slice(0,3);
-      return {P:"= "+show.map(u=>`${sig(pa/PUK.get(u))} ${u}`).join(" · ")};},
-    sum:c=>`${fr(c.lrv)}…${fr(c.urv)} ${c.unit}`,
+      return {P:"= "+show.map(u=>`${sig(pa/PUK.get(u))} ${U(u)}`).join(" · ")};},
+    sum:c=>`${fr(c.lrv)}…${fr(c.urv)} ${U(c.unit)}`,
     cal:"Задайте давление калибратором или грузопоршневым манометром и сравните ток."
   },
   FT:{
@@ -103,14 +109,14 @@ const MODES={
       const d=v/c.dpmax;return c.root==="tx"?ssq(d):d;
     },
     notes:(v,c)=>{
-      if(c.kind!=="dp")return {q:`Шкала ${fr(c.qmin)}…${fr(c.qmax)} ${c.qunit}`};
+      if(c.kind!=="dp")return {q:TX("Шкала {0}",`${fr(c.qmin)}…${fr(c.qmax)} ${U(c.qunit)}`)};
       const qf=v.q/c.qmax;
       return {
-        q:(qf>0&&qf<0.1)?`<b class="loopWarn">Ниже 10 % Qmax корень усиливает шум — обычно включают отсечку</b>`:`${fx(qf*100,1)} % Qmax`,
-        d:`${fx(v.d/c.dpmax*100,1)} % ΔPmax · ток линеен по ${c.root==="tx"?"расходу":"перепаду"}`
+        q:(qf>0&&qf<0.1)?`<b class="loopWarn">${TX("Ниже 10 % Qmax корень усиливает шум — обычно включают отсечку")}</b>`:`${fx(qf*100,1)} % Qmax`,
+        d:`${fx(v.d/c.dpmax*100,1)} % ΔPmax · ${c.root==="tx"?TX("ток линеен по расходу"):TX("ток линеен по перепаду")}`
       };
     },
-    sum:c=>c.kind==="dp"?`ΔP 0…${fr(c.dpmax)} кПа → 0…${fr(c.qmax)} ${c.qunit} · √ в ${c.root==="tx"?"ПП":"РСУ"}`:`${fr(c.qmin)}…${fr(c.qmax)} ${c.qunit}`,
+    sum:c=>c.kind==="dp"?`ΔP 0…${fr(c.dpmax)} ${U("кПа")} → 0…${fr(c.qmax)} ${U(c.qunit)} · ${c.root==="tx"?TX("√ в ПП"):TX("√ в РСУ")}`:`${fr(c.qmin)}…${fr(c.qmax)} ${U(c.qunit)}`,
     cal:"Для СУ задайте перепад калибратором на плюсовую камеру (минусовая — на атмосферу) и сравните ток."
   },
   LT:{
@@ -120,22 +126,22 @@ const MODES={
     vals:(p,c)=>{const h=c.lrv+p*(c.urv-c.lrv);return c.kind==="hydro"?{h,d:dPh(h,c)}:{h};},
     toP:(k,v,c)=>{if(k==="h")return (v-c.lrv)/(c.urv-c.lrv);const a=dPh(c.lrv,c),b=dPh(c.urv,c);return (v-a)/(b-a);},
     notes:(v,c)=>c.kind==="hydro"
-      ?{h:`Шкала ${fr(c.lrv)}…${fr(c.urv)} мм от оси нижнего отбора`,d:`ρ = ${fr(c.rho)} кг/м³${c.off?` · смещение ${fr(c.off)} кПа`:""}`}
-      :{h:`Шкала ${fr(c.lrv)}…${fr(c.urv)} ${c.unit}`},
-    sum:c=>c.kind==="hydro"?`${fr(c.lrv)}…${fr(c.urv)} мм · ρ ${fr(c.rho)} · ΔP ${sig(dPh(c.lrv,c))}…${sig(dPh(c.urv,c))} кПа`:`${fr(c.lrv)}…${fr(c.urv)} ${c.unit}`,
+      ?{h:TX("Шкала {0}…{1} мм от оси нижнего отбора",fr(c.lrv),fr(c.urv)),d:`ρ = ${fr(c.rho)} ${U("кг/м³")}${c.off?TX(" · смещение {0} кПа",fr(c.off)):""}`}
+      :{h:TX("Шкала {0}",`${fr(c.lrv)}…${fr(c.urv)} ${U(c.unit)}`)},
+    sum:c=>c.kind==="hydro"?`${fr(c.lrv)}…${fr(c.urv)} ${U("мм")} · ρ ${fr(c.rho)} · ΔP ${sig(dPh(c.lrv,c))}…${sig(dPh(c.urv,c))} ${U("кПа")}`:`${fr(c.lrv)}…${fr(c.urv)} ${U(c.unit)}`,
     cal:"Для гидростатики задайте перепад из столбца «кПа» калибратором и сравните ток."
   }
 };
 
 function namur(mA){
-  if(!Number.isFinite(mA))return {cls:"gasBad",text:"Нет значения"};
-  if(mA<=3.6)return {cls:"gasBad",text:"Сигнал отказа: ≤ 3,6 мА (NAMUR NE 43)"};
-  if(mA<3.8)return {cls:"gasBad",text:"Ниже диапазона измерения (< 3,8 мА)"};
-  if(mA<4)return {cls:"gasWarnText",text:"Ниже нуля шкалы — в пределах 3,8–4 мА"};
-  if(mA<=20)return {cls:"gasOk",text:"В диапазоне шкалы 4–20 мА"};
-  if(mA<=20.5)return {cls:"gasWarnText",text:"Выше шкалы — в пределах 20–20,5 мА"};
-  if(mA<21)return {cls:"gasBad",text:"Выше диапазона измерения (> 20,5 мА)"};
-  return {cls:"gasBad",text:"Сигнал отказа: ≥ 21 мА (NAMUR NE 43)"};
+  if(!Number.isFinite(mA))return {cls:"gasBad",text:TX("Нет значения")};
+  if(mA<=3.6)return {cls:"gasBad",text:TX("Сигнал отказа: ≤ 3,6 мА (NAMUR NE 43)")};
+  if(mA<3.8)return {cls:"gasBad",text:TX("Ниже диапазона измерения (< 3,8 мА)")};
+  if(mA<4)return {cls:"gasWarnText",text:TX("Ниже нуля шкалы — в пределах 3,8–4 мА")};
+  if(mA<=20)return {cls:"gasOk",text:TX("В диапазоне шкалы 4–20 мА")};
+  if(mA<=20.5)return {cls:"gasWarnText",text:TX("Выше шкалы — в пределах 20–20,5 мА")};
+  if(mA<21)return {cls:"gasBad",text:TX("Выше диапазона измерения (> 20,5 мА)")};
+  return {cls:"gasBad",text:TX("Сигнал отказа: ≥ 21 мА (NAMUR NE 43)")};
 }
 
 // Тип прибора по буквам тега: 2131-TT-434 → TT, 2132-PDT-402 → PT, FT101A → FT.
@@ -191,33 +197,33 @@ let root=null,els={},getTags=null;
 function $(id){return els[id]||(els[id]=root.querySelector("#"+id));}
 
 function seg(id,a,b){
-  return `<div class="loopSeg" role="group">${[a,b].map(([val,label])=>`<button type="button" class="tab" data-set="${id}=${val}">${label}</button>`).join("")}</div>`;
+  return `<div class="loopSeg" role="group">${[a,b].map(([val,label])=>`<button type="button" class="tab" data-set="${id}=${val}">${TX(label)}</button>`).join("")}</div>`;
 }
 function numField(id,label,attrs=""){
-  return `<div class="field"${attrs}><label for="loopC_${id.replace(".","_")}">${label}</label><input id="loopC_${id.replace(".","_")}" data-cfg="${id}" inputmode="decimal" autocomplete="off"/></div>`;
+  return `<div class="field"${attrs}><label for="loopC_${id.replace(".","_")}">${TX(label)}</label><input id="loopC_${id.replace(".","_")}" data-cfg="${id}" inputmode="decimal" autocomplete="off"/></div>`;
 }
 function signedField(id,label,attrs=""){
   const fid=`loopC_${id.replace(".","_")}`;
-  return `<div class="field"${attrs}><label for="${fid}">${label}</label><div class="gasJoin"><input id="${fid}" data-cfg="${id}" inputmode="decimal" autocomplete="off"/><button type="button" class="gasSign" data-sign="${fid}" aria-label="Сменить знак" title="Плюс / минус">±</button></div></div>`;
+  return `<div class="field"${attrs}><label for="${fid}">${TX(label)}</label><div class="gasJoin"><input id="${fid}" data-cfg="${id}" inputmode="decimal" autocomplete="off"/><button type="button" class="gasSign" data-sign="${fid}" aria-label="${TX("Сменить знак")}" title="${TX("Плюс / минус")}">±</button></div></div>`;
 }
 function template(){
-  const kinds=KINDS.map(([k,n])=>`<button type="button" class="tab loopKind" data-kind="${k}" role="tab" aria-selected="false"><b>${k}</b><small>${n}</small></button>`).join("");
-  const matOpts=Object.entries(MAT).map(([id,m])=>`<option value="${id}">${esc(m.name)}</option>`).join("");
-  const puOpts=PU.map(([u])=>`<option>${esc(u)}</option>`).join("");
-  const quOpts=Q_UNITS.map(u=>`<option>${esc(u)}</option>`).join("");
+  const kinds=KINDS.map(([k,n])=>`<button type="button" class="tab loopKind" data-kind="${k}" role="tab" aria-selected="false"><b>${k}</b><small>${TX(n)}</small></button>`).join("");
+  const matOpts=Object.entries(MAT).map(([id,m])=>`<option value="${id}">${esc(isEn()?TX(m.name):m.name)}</option>`).join("");
+  const puOpts=PU.map(([u])=>`<option value="${esc(u)}">${esc(U(u))}</option>`).join("");
+  const quOpts=Q_UNITS.map(u=>`<option value="${esc(u)}">${esc(U(u))}</option>`).join("");
   const ttPre=TT_PRE.map(([l,u])=>`<button type="button" class="tab" data-pre="TT" data-l="${l}" data-u="${u}">${fr(l)}…${fr(u)}</button>`).join("");
   const ptPre=PT_PRE.map(([l,u])=>`<button type="button" class="tab" data-pre="PT" data-l="${l}" data-u="${u}">${fr(l)}…${fr(u)}</button>`).join("");
   return `
 <div class="gasGrid loopGrid">
   <div class="gasCol">
     <section class="gasCard gasO1" aria-labelledby="loopDevTitle">
-      <div class="gasCardHead"><h2 id="loopDevTitle">Прибор</h2><span class="gasHeadNote" id="loopCfgLine"></span></div>
-      <div class="loopKinds" role="tablist" aria-label="Тип прибора">${kinds}</div>
+      <div class="gasCardHead"><h2 id="loopDevTitle">${TX("Прибор")}</h2><span class="gasHeadNote" id="loopCfgLine"></span></div>
+      <div class="loopKinds" role="tablist" aria-label="${TX("Тип прибора")}">${kinds}</div>
       <div class="field loopTagField">
-        <label for="loopTag">Тэг</label>
+        <label for="loopTag">${TX("Тэг")}</label>
         <div class="gasJoin">
           <input id="loopTag" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="2131-TT-434"/>
-          <button type="button" class="action loopSaveBtn" id="loopSave" title="Сохранить шкалу для этого тега">${ICON.pin}<span>Сохранить</span></button>
+          <button type="button" class="action loopSaveBtn" id="loopSave" title="${TX("Сохранить шкалу для этого тега")}">${ICON.pin}<span>${TX("Сохранить")}</span></button>
         </div>
       </div>
       <div class="mini loopTagInfo" id="loopTagInfo"></div>
@@ -225,15 +231,15 @@ function template(){
     </section>
 
     <section class="gasCard gasInputCard gasO2" aria-labelledby="loopValTitle">
-      <div class="gasCardHead"><h2 id="loopValTitle">Значение</h2><span class="gasHeadNote" id="loopValNote"></span></div>
+      <div class="gasCardHead"><h2 id="loopValTitle">${TX("Значение")}</h2><span class="gasHeadNote" id="loopValNote"></span></div>
       <div class="loopFields" id="loopFields"></div>
       <div class="loopPair">
         <div class="loopReadout loopCurrent">
-          <label for="loopF_mA">Ток</label>
-          <div class="gasValueRow"><input id="loopF_mA" class="gasValueInput" data-field="mA" inputmode="decimal" autocomplete="off" enterkeyhint="done"/><span class="gasValueUnit">мА</span></div>
+          <label for="loopF_mA">${TX("Ток")}</label>
+          <div class="gasValueRow"><input id="loopF_mA" class="gasValueInput" data-field="mA" inputmode="decimal" autocomplete="off" enterkeyhint="done"/><span class="gasValueUnit">${U("мА")}</span></div>
         </div>
         <div class="loopReadout">
-          <label for="loopF_pct">Шкала</label>
+          <label for="loopF_pct">${TX("Шкала")}</label>
           <div class="gasValueRow"><input id="loopF_pct" class="gasValueInput" data-field="pct" inputmode="decimal" autocomplete="off" enterkeyhint="done"/><span class="gasValueUnit">%</span></div>
         </div>
       </div>
@@ -242,34 +248,34 @@ function template(){
       <div class="gasMaStatus" id="loopStatus" role="status"></div>
       <div class="mini loopClamp" id="loopClamp"></div>
       <div class="gasActions gasActions3">
-        <button type="button" class="action iconOnly" id="loopCopy" aria-label="Копировать результат" title="Копировать результат">${ICON.copy}</button>
-        <button type="button" class="action" id="loopTask" title="Дописать результат в задание тега (поле «Тег» выше)">${ICON.task}<span>В задание</span></button>
-        <button type="button" class="action primary" id="loopShare">${ICON.send}<span>Отправить</span></button>
+        <button type="button" class="action iconOnly" id="loopCopy" aria-label="${TX("Копировать результат")}" title="${TX("Копировать результат")}">${ICON.copy}</button>
+        <button type="button" class="action" id="loopTask" title="${TX("Дописать результат в задание тега (поле «Тег» выше)")}">${ICON.task}<span>${TX("В задание")}</span></button>
+        <button type="button" class="action primary" id="loopShare">${ICON.send}<span>${TX("Отправить")}</span></button>
       </div>
     </section>
   </div>
 
   <div class="gasCol">
     <section class="gasCard gasO3" aria-labelledby="loopScaleTitle">
-      <div class="gasCardHead"><h2 id="loopScaleTitle">Шкала</h2><span class="gasHeadNote" id="loopScaleNote"></span></div>
+      <div class="gasCardHead"><h2 id="loopScaleTitle">${TX("Шкала")}</h2><span class="gasHeadNote" id="loopScaleNote"></span></div>
 
       <div class="loopBlock" data-block="TT">
         <div class="gasScaleRow">
-          <div class="field"><label for="loopC_TT_mat">НСХ</label><select id="loopC_TT_mat" data-cfg="TT.mat">${matOpts}</select></div>
-          <div class="field"><label for="loopC_TT_r0">R₀ при 0 °C, Ом</label><select id="loopC_TT_r0" data-cfg="TT.r0"><option>50</option><option>100</option><option>500</option><option>1000</option></select></div>
+          <div class="field"><label for="loopC_TT_mat">${TX("НСХ")}</label><select id="loopC_TT_mat" data-cfg="TT.mat">${matOpts}</select></div>
+          <div class="field"><label for="loopC_TT_r0">${TX("R₀ при 0 °C, Ом")}</label><select id="loopC_TT_r0" data-cfg="TT.r0"><option>50</option><option>100</option><option>500</option><option>1000</option></select></div>
         </div>
         <div class="gasScaleRow">${signedField("TT.lrv","НПИ (4 мА), °C")}${numField("TT.urv","ВПИ (20 мА), °C")}</div>
-        <div class="gasChips loopPresets" role="group" aria-label="Типовые шкалы, °C">${ttPre}</div>
-        <div class="loopLabel">Выход линеен по</div>
+        <div class="gasChips loopPresets" role="group" aria-label="${TX("Типовые шкалы, °C")}">${ttPre}</div>
+        <div class="loopLabel">${TX("Выход линеен по")}</div>
         ${seg("TT.lin",["T","температуре"],["R","сопротивлению"])}
-        <div class="mini">HART-преобразователи линейны по температуре. По сопротивлению — нормирующие преобразователи без линеаризации.</div>
+        <div class="mini">${TX("HART-преобразователи линейны по температуре. По сопротивлению — нормирующие преобразователи без линеаризации.")}</div>
       </div>
 
       <div class="loopBlock" data-block="PT">
-        <div class="field"><label for="loopC_PT_unit">Единицы</label><select id="loopC_PT_unit" data-cfg="PT.unit">${puOpts}</select></div>
+        <div class="field"><label for="loopC_PT_unit">${TX("Единицы")}</label><select id="loopC_PT_unit" data-cfg="PT.unit">${puOpts}</select></div>
         <div class="gasScaleRow">${signedField("PT.lrv","НПИ (4 мА)")}${numField("PT.urv","ВПИ (20 мА)")}</div>
-        <div class="gasChips loopPresets" role="group" aria-label="Типовые шкалы, МПа">${ptPre}</div>
-        <div class="mini">Кнопки — шкалы в МПа, переводятся в выбранные единицы. Отрицательный НПИ — мановакуумметрическая шкала. При смене единиц физический диапазон сохраняется.</div>
+        <div class="gasChips loopPresets" role="group" aria-label="${TX("Типовые шкалы, МПа")}">${ptPre}</div>
+        <div class="mini">${TX("Кнопки — шкалы в МПа, переводятся в выбранные единицы. Отрицательный НПИ — мановакуумметрическая шкала. При смене единиц физический диапазон сохраняется.")}</div>
       </div>
 
       <div class="loopBlock" data-block="FT">
@@ -279,37 +285,37 @@ function template(){
           ${numField("FT.dpmax","ΔPmax (20 мА), кПа",' data-when="FT.kind=dp"')}
           ${numField("FT.qmax","Qmax (20 мА)")}
         </div>
-        <div class="field"><label for="loopC_FT_qunit">Единицы расхода</label><select id="loopC_FT_qunit" data-cfg="FT.qunit">${quOpts}</select></div>
+        <div class="field"><label for="loopC_FT_qunit">${TX("Единицы расхода")}</label><select id="loopC_FT_qunit" data-cfg="FT.qunit">${quOpts}</select></div>
         <div data-when="FT.kind=dp">
-          <div class="loopLabel">Корень извлекается</div>
+          <div class="loopLabel">${TX("Корень извлекается")}</div>
           ${seg("FT.root",["tx","в преобразователе"],["dcs","в РСУ"])}
-          <div class="mini">Если корень в преобразователе — ток линеен по расходу, в РСУ блок SQRT не нужен. Проверьте, что корень не извлекается дважды.</div>
+          <div class="mini">${TX("Если корень в преобразователе — ток линеен по расходу, в РСУ блок SQRT не нужен. Проверьте, что корень не извлекается дважды.")}</div>
         </div>
-        <div class="mini" data-when="FT.kind=lin">Электромагнитные, вихревые, кориолисовы, ультразвуковые: ток линеен по расходу.</div>
+        <div class="mini" data-when="FT.kind=lin">${TX("Электромагнитные, вихревые, кориолисовы, ультразвуковые: ток линеен по расходу.")}</div>
       </div>
 
       <div class="loopBlock" data-block="LT">
         ${seg("LT.kind",["direct","прямой"],["hydro","гидростатика (ΔP)"])}
-        <div class="field" data-when="LT.kind=direct"><label for="loopC_LT_unit">Единицы</label><select id="loopC_LT_unit" data-cfg="LT.unit"><option>мм</option><option>м</option><option>%</option></select></div>
+        <div class="field" data-when="LT.kind=direct"><label for="loopC_LT_unit">${TX("Единицы")}</label><select id="loopC_LT_unit" data-cfg="LT.unit"><option value="мм">${U("мм")}</option><option value="м">${U("м")}</option><option value="%">%</option></select></div>
         <div class="gasScaleRow">${signedField("LT.lrv","Низ шкалы (4 мА)")}${numField("LT.urv","Верх шкалы (20 мА)")}</div>
         <div data-when="LT.kind=hydro">
           <div class="gasScaleRow">${numField("LT.rho","Плотность, кг/м³")}${signedField("LT.off","Смещение ΔP, кПа")}</div>
           <div class="loopResult" id="loopHydro"></div>
-          <div class="mini">Уровень — от оси нижнего отбора, мм. Смещение — ΔP при уровне на оси нижнего отбора: для открытой ёмкости 0, для мокрой опорной ветви или капилляров обычно отрицательное.</div>
+          <div class="mini">${TX("Уровень — от оси нижнего отбора, мм. Смещение — ΔP при уровне на оси нижнего отбора: для открытой ёмкости 0, для мокрой опорной ветви или капилляров обычно отрицательное.")}</div>
         </div>
-        <div class="mini" data-when="LT.kind=direct">Радарные, буйковые, магнитострикционные: ток линеен по уровню.</div>
+        <div class="mini" data-when="LT.kind=direct">${TX("Радарные, буйковые, магнитострикционные: ток линеен по уровню.")}</div>
       </div>
     </section>
 
     <section class="gasCard gasO4" aria-labelledby="loopCalTitle">
-      <div class="gasCardHead"><h2 id="loopCalTitle">Точки поверки</h2><span class="gasHeadNote">0–25–50–75–100 %</span></div>
+      <div class="gasCardHead"><h2 id="loopCalTitle">${TX("Точки поверки")}</h2><span class="gasHeadNote">0–25–50–75–100 %</span></div>
       <div class="loopTableWrap"><table class="loopTable"><thead id="loopCalHead"></thead><tbody id="loopCal"></tbody></table></div>
       <div class="mini" id="loopCalHint"></div>
     </section>
 
   </div>
 </div>
-<div class="convFoot"><button type="button" class="convInfoBtn" id="loopSources">${ICON.book}<span>Источники и формулы</span></button></div>`;
+<div class="convFoot"><button type="button" class="convInfoBtn" id="loopSources">${ICON.book}<span>${TX("Источники и формулы")}</span></button></div>`;
 }
 
 // v98: короткая справка — формулы и откуда взяты данные (кнопка внизу страницы).
@@ -339,6 +345,32 @@ const SOURCES_HTML=`
 <h3>Ограничения</h3>
 <p>Шкалу берите из конфигурации преобразователя (HART) или карты уставок — на ПНР их часто меняют. Расход по перепаду — без поправок на плотность и расширение среды.</p>
 <p class="helpNote">Считается на телефоне, без интернета.</p>`;
+const SOURCES_HTML_EN=`
+<h3>Formulas</h3>
+<div class="hF">I = 4 + 16 · x, mA</div>
+<p class="mini">x — fraction of span from 0 to 1.</p>
+<p><b>Pt and P RTDs</b> (Callendar — Van Dusen):</p>
+<div class="hF">t ≥ 0: R = R₀ · (1 + A·t + B·t²)<br>t &lt; 0: R = R₀ · (1 + A·t + B·t² + C·(t − 100)·t³)</div>
+<p class="mini">α 0.00385: A = 3.9083·10⁻³, B = −5.775·10⁻⁷, C = −4.183·10⁻¹². α 0.00391: A = 3.9690·10⁻³, B = −5.841·10⁻⁷, C = −4.330·10⁻¹².</p>
+<p><b>Copper Cu (M)</b>, α 0.00428:</p>
+<div class="hF">t ≥ 0: R = R₀ · (1 + α·t)<br>t &lt; 0: R = R₀ · (1 + A·t + B·t·(t + 6.7) + C·t³)</div>
+<p class="mini">A = 4.28·10⁻³, B = −6.2032·10⁻⁷, C = 8.5154·10⁻¹⁰.</p>
+<p><b>DP flow</b> (primary element, e.g. orifice):</p>
+<div class="hF">Q = Q<sub>max</sub> · √(ΔP / ΔP<sub>max</sub>)</div>
+<p><b>Hydrostatic level</b>, g = 9.80665 m/s²:</p>
+<div class="hF">ΔP = ρ · g · h + offset</div>
+<p class="mini">1 kgf/cm² = 98.0665 kPa · 1 bar = 100 kPa · 1 mmH₂O = 9.80665 Pa · 1 mmHg = 133.3224 Pa · 1 psi = 6.894757 kPa.</p>
+<h3>Data sources</h3>
+<ul class="hSrc">
+<li>4–20 mA signal — <span class="nw">GOST 26.011-80</span>, <span class="nw">IEC 60381-1</span>.</li>
+<li>Signal status — <span class="nw">NAMUR NE 43</span>: <span class="nw">3.8…20.5 mA</span> — measurement, <span class="nw">≤ 3.6</span> and <span class="nw">≥ 21 mA</span> — failure.</li>
+<li>RTD curves — <span class="nw">GOST 6651-2009</span>, <span class="nw">IEC 60751</span>.</li>
+<li>Flow by differential pressure — <span class="nw">GOST 8.586.1-2005</span> (ISO 5167-1).</li>
+<li>Pressure units — <span class="nw">GOST 8.417-2002</span>.</li>
+</ul>
+<h3>Limitations</h3>
+<p>Take the range from the transmitter configuration (HART) or the setpoint list — it is often changed during commissioning. DP flow — without density and expansibility corrections.</p>
+<p class="helpNote">Calculated on the phone, offline.</p>`;
 
 // ---------------------------------------------------------------- отрисовка
 let fieldSig="";
@@ -349,11 +381,11 @@ function buildFields(){
   fieldSig=s;
   $("loopFields").innerHTML=fs.map((f,i)=>`
     <div class="loopReadout${i===0?" loopMain":""}">
-      <label for="loopF_${f.k}">${esc(f.l)}</label>
+      <label for="loopF_${f.k}">${esc(TX(f.l))}</label>
       <div class="gasValueRow">
         <input id="loopF_${f.k}" class="gasValueInput" data-field="${f.k}" inputmode="decimal" autocomplete="off" enterkeyhint="done"/>
-        <span class="gasValueUnit">${esc(f.u)}</span>
-        ${f.sign?`<button type="button" class="gasClear loopSignBtn" data-sign="loopF_${f.k}" aria-label="Сменить знак" title="Плюс / минус">±</button>`:""}
+        <span class="gasValueUnit">${esc(U(f.u))}</span>
+        ${f.sign?`<button type="button" class="gasClear loopSignBtn" data-sign="loopF_${f.k}" aria-label="${TX("Сменить знак")}" title="${TX("Плюс / минус")}">±</button>`:""}
       </div>
       <div class="loopNote" id="loopN_${f.k}"></div>
     </div>`).join("");
@@ -378,8 +410,8 @@ function render(skip){
     b.classList.toggle("active",on);b.setAttribute("aria-selected",String(on));
   });
   $("loopCfgLine").textContent=m.sum(c);
-  $("loopValNote").textContent=state.tag?state.tag:KIND_NAME[state.kind];
-  $("loopScaleNote").textContent=KIND_NAME[state.kind];
+  $("loopValNote").textContent=state.tag?state.tag:TX(KIND_NAME[state.kind]);
+  $("loopScaleNote").textContent=TX(KIND_NAME[state.kind]);
   root.querySelectorAll("[data-block]").forEach(el=>{el.hidden=el.dataset.block!==state.kind;});
   root.querySelectorAll("[data-when]").forEach(el=>{
     const [md,rest]=el.dataset.when.split(".");const [k,val]=rest.split("=");
@@ -397,10 +429,10 @@ function render(skip){
     b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));
   });
   const lt=state.cfg.LT;
-  $("loopHydro").innerHTML=`Настроить преобразователь: НПИ <b>${sig(dPh(lt.lrv,lt))}</b> кПа, ВПИ <b>${sig(dPh(lt.urv,lt))}</b> кПа`;
+  $("loopHydro").innerHTML=TX("Настроить преобразователь: НПИ <b>{0}</b> кПа, ВПИ <b>{1}</b> кПа",sig(dPh(lt.lrv,lt)),sig(dPh(lt.urv,lt)));
   const ltLbl=root.querySelector('label[for="loopC_LT_lrv"]'),ltLbl2=root.querySelector('label[for="loopC_LT_urv"]');
-  if(ltLbl)ltLbl.textContent=lt.kind==="hydro"?"Низ шкалы (4 мА), мм":"Низ шкалы (4 мА)";
-  if(ltLbl2)ltLbl2.textContent=lt.kind==="hydro"?"Верх шкалы (20 мА), мм":"Верх шкалы (20 мА)";
+  if(ltLbl)ltLbl.textContent=lt.kind==="hydro"?TX("Низ шкалы (4 мА), мм"):TX("Низ шкалы (4 мА)");
+  if(ltLbl2)ltLbl2.textContent=lt.kind==="hydro"?TX("Верх шкалы (20 мА), мм"):TX("Верх шкалы (20 мА)");
 
   // Положение в петле: ось 2…22 мА.
   const pos=x=>((Math.min(22,Math.max(2,x))-2)/20*100);
@@ -410,16 +442,16 @@ function render(skip){
   const n=namur(mA);
   $("loopStatus").className=`gasMaStatus ${n.cls}`;
   $("loopStatus").textContent=n.text;
-  $("loopClamp").textContent=Number.isFinite(mA)&&(mA<3.8||mA>20.5)?`Реальный выход упрётся в насыщение ≈ ${fx(out,1)} мА`:"";
+  $("loopClamp").textContent=Number.isFinite(mA)&&(mA<3.8||mA>20.5)?TX("Реальный выход упрётся в насыщение ≈ {0} мА",fx(out,1)):"";
 
   // Точки поверки.
-  $("loopCalHead").innerHTML=`<tr><th>%</th>${fs.map(f=>`<th>${esc(f.u)}</th>`).join("")}<th>мА</th></tr>`;
+  $("loopCalHead").innerHTML=`<tr><th>%</th>${fs.map(f=>`<th>${esc(U(f.u))}</th>`).join("")}<th>${U("мА")}</th></tr>`;
   $("loopCal").innerHTML=[0,25,50,75,100].map(pc=>{
     const vv=m.vals(pc/100,c);
     const on=Math.abs(state.p-pc/100)<1e-9;
     return `<tr data-p="${pc/100}"${on?' class="active"':""}><td>${pc}</td>${fs.map((f,j)=>`<td${j===0?' class="loopCellMain"':""}>${fx(vv[f.k],f.d)}</td>`).join("")}<td class="loopCellI">${fx(4+16*pc/100,3)}</td></tr>`;
   }).join("");
-  $("loopCalHint").textContent=`${m.cal} Нажмите строку — значения перейдут в «Значение».`;
+  $("loopCalHint").textContent=`${TX(m.cal)} ${TX("Нажмите строку — значения перейдут в «Значение».")}`;
 }
 function syncCfgInputs(){
   root.querySelectorAll("[data-cfg]").forEach(el=>{
@@ -436,7 +468,7 @@ function renderSaved(){
   box.innerHTML=names.map(n=>{
     const r=state.tags[n],cfg={...DEF[r.kind],...r.cfg};
     const on=n===state.tag;
-    return `<span class="loopSavedItem${on?" active":""}"><button type="button" class="loopSavedMain" data-load="${esc(n)}"><b>${esc(n)}</b><span>${esc(MODES[r.kind].sum(cfg))}</span></button><button type="button" class="loopSavedDel" data-del="${esc(n)}" aria-label="Удалить ${esc(n)}" title="Удалить">${ICON.x}</button></span>`;
+    return `<span class="loopSavedItem${on?" active":""}"><button type="button" class="loopSavedMain" data-load="${esc(n)}"><b>${esc(n)}</b><span>${esc(MODES[r.kind].sum(cfg))}</span></button><button type="button" class="loopSavedDel" data-del="${esc(n)}" aria-label="${esc(TX("Удалить {0}",n))}" title="${TX("Удалить")}">${ICON.x}</button></span>`;
   }).join("");
 }
 // v97: подсказки тегов под полем (общий компонент из app.js) вместо <datalist>.
@@ -458,40 +490,40 @@ async function copyText(text,label){
       const ta=document.createElement("textarea");ta.value=text;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";
       document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
     }
-    toast(label||"Скопировано");
-  }catch(_){toast("Не удалось скопировать");}
+    toast(label||TX("Скопировано"));
+  }catch(_){toast(TX("Не удалось скопировать"));}
 }
 function summaryText(){
   const c=C(),m=M(),fs=m.fields(c),v=m.vals(state.p,c),mA=4+16*state.p;
   const head=`${state.tag?state.tag+" — ":""}${state.kind} ${m.sum(c)}`;
-  const vals=fs.map(f=>`${fx(v[f.k],f.d)} ${f.u}`);
-  vals.push(`${fx(mA,3)} мА (${fx(state.p*100,2)} %)`);
+  const vals=fs.map(f=>`${fx(v[f.k],f.d)} ${U(f.u)}`);
+  vals.push(`${fx(mA,3)} ${U("мА")} (${fx(state.p*100,2)} %)`);
   return plain(`${head}\n${vals.join(" = ")}\n${namur(mA).text}`);
 }
 // Короткая строка для задания тега: тип, шкала, значения и ток.
 function taskText(){
   const c=C(),m=M(),fs=m.fields(c),v=m.vals(state.p,c),mA=4+16*state.p;
-  const vals=fs.map(f=>`${fx(v[f.k],f.d)} ${f.u}`);
-  vals.push(`${fx(mA,3)} мА (${fx(state.p*100,2)} %)`);
+  const vals=fs.map(f=>`${fx(v[f.k],f.d)} ${U(f.u)}`);
+  vals.push(`${fx(mA,3)} ${U("мА")} (${fx(state.p*100,2)} %)`);
   const n=namur(mA);
-  return plain(`4–20 мА, ${state.kind} ${m.sum(c)}: ${vals.join(" = ")}${n.cls==="gasOk"?"":` — ${n.text}`}`);
+  return plain(`4–20 ${U("мА")}, ${state.kind} ${m.sum(c)}: ${vals.join(" = ")}${n.cls==="gasOk"?"":` — ${n.text}`}`);
 }
 function saveToTask(){
   const tag=String($("loopTag").value||"").trim();
-  if(!tag){toast("Укажите тег — результат запишется в его задание");$("loopTag").focus();return;}
+  if(!tag){toast(TX("Укажите тег — результат запишется в его задание"));$("loopTag").focus();return;}
   const app=window.TagListApp;
-  if(!app?.addResultToTag){toast("Список тэгов недоступен");return;}
+  if(!app?.addResultToTag){toast(TX("Список тэгов недоступен"));return;}
   const r=app.addResultToTag(tag,taskText());
-  if(!r.ok){toast(r.message||"Не удалось записать");return;}
-  toast(r.created?`Создан тэг ${r.tag} на странице «${r.page}», результат — в задании`:`Записано в задание ${r.tag}`);
+  if(!r.ok){toast(r.message||TX("Не удалось записать"));return;}
+  toast(r.created?TX("Создан тэг {0} на странице «{1}», результат — в задании",r.tag,r.page):TX("Записано в задание {0}",r.tag));
   refreshTagList();
 }
 async function shareSummary(){
   const text=summaryText();
   try{
-    if(typeof navigator.share==="function"){await navigator.share({title:"Сигнал 4–20 мА",text});toast("Результат передан");return;}
+    if(typeof navigator.share==="function"){await navigator.share({title:TX("Сигнал 4–20 мА"),text});toast(TX("Результат передан"));return;}
   }catch(e){if(e?.name==="AbortError")return;}
-  await copyText(text,"Результат скопирован");
+  await copyText(text,TX("Результат скопирован"));
 }
 function setKind(kind){
   if(!MODES[kind]||kind===state.kind)return;
@@ -506,20 +538,20 @@ function applyTag(name,rec){
 function onTagInput(value){
   const n=String(value||"").trim();
   state.tag=n;
-  if(n&&state.tags[n]){applyTag(n,state.tags[n]);renderTagInfo(`Загружена сохранённая шкала ${n}.`);return;}
+  if(n&&state.tags[n]){applyTag(n,state.tags[n]);renderTagInfo(TX("Загружена сохранённая шкала {0}.",n));return;}
   const k=detectKind(n);
-  if(k){if(k!==state.kind)state.kind=k;renderTagInfo(`По тегу: ${KIND_NAME[k]} (${k}). Задайте шкалу и сохраните.`);}
-  else renderTagInfo(n?"Тип по тегу не определён — выберите его выше.":"");
+  if(k){if(k!==state.kind)state.kind=k;renderTagInfo(TX("По тегу: {0} ({1}). Задайте шкалу и сохраните.",TX(KIND_NAME[k]),k));}
+  else renderTagInfo(n?TX("Тип по тегу не определён — выберите его выше."):"");
   persist();render();renderSaved();
 }
 function saveTag(){
   const n=String($("loopTag").value||"").trim();
-  if(!n){$("loopTag").focus();toast("Введите тег");return;}
+  if(!n){$("loopTag").focus();toast(TX("Введите тег"));return;}
   state.tag=n;
   state.tags[n]={kind:state.kind,cfg:clone(C())};
   persist();renderSaved();render();
-  renderTagInfo(`Шкала сохранена: ${n}.`);
-  toast(`Сохранено: ${n}`);
+  renderTagInfo(TX("Шкала сохранена: {0}.",n));
+  toast(TX("Сохранено: {0}",n));
 }
 function setCfgNumber(path,raw){
   const [md,k]=path.split(".");const c=state.cfg[md];const v=parseNum(raw);
@@ -568,18 +600,18 @@ function bind(){
     }
     if(t.dataset.load!=null){
       const n=t.dataset.load,rec=state.tags[n];
-      if(rec){$("loopTag").value=n;applyTag(n,rec);renderTagInfo(`Загружена сохранённая шкала ${n}.`);tagPicker?.refresh();}
+      if(rec){$("loopTag").value=n;applyTag(n,rec);renderTagInfo(TX("Загружена сохранённая шкала {0}.",n));tagPicker?.refresh();}
       return;
     }
     if(t.dataset.del!=null){
-      const n=t.dataset.del;delete state.tags[n];persist();renderSaved();toast(`Удалено: ${n}`);return;
+      const n=t.dataset.del;delete state.tags[n];persist();renderSaved();toast(TX("Удалено: {0}",n));return;
     }
     switch(t.id){
       case "loopSave":saveTag();break;
-      case "loopCopy":copyText(summaryText(),"Результат скопирован");break;
+      case "loopCopy":copyText(summaryText(),TX("Результат скопирован"));break;
       case "loopShare":shareSummary();break;
       case "loopTask":saveToTask();break;
-      case "loopSources":window.TagListApp?.openInfo?.("Источники и формулы",SOURCES_HTML);break;
+      case "loopSources":window.TagListApp?.openInfo?.(TX("Источники и формулы"),isEn()?SOURCES_HTML_EN:SOURCES_HTML);break;
     }
   });
   root.addEventListener("input",e=>{
@@ -619,17 +651,23 @@ function bind(){
   root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.matches("input")){e.preventDefault();e.target.blur();}});
 }
 
+let boundRoot=null;
 function mount(container,opts={}){
   if(typeof opts.getTags==="function")getTags=opts.getTags;
   // v100: раздел уже размечен — обновление делает onShow() сразу после mount().
   if(root&&root===container&&root.firstElementChild)return;
-  root=container;els={};fieldSig="";tagPicker=null;
+  root=container;build();
+}
+function build(){
+  els={};fieldSig="";tagPicker=null;
   root.innerHTML=template();
-  bind();
+  if(boundRoot!==root){bind();boundRoot=root;}
   $("loopTag").value=state.tag||"";
   syncCfgInputs();refreshTagList();renderSaved();render();
-  if(state.tag&&state.tags[state.tag])renderTagInfo(`Шкала ${state.tag} из сохранённых.`);
+  if(state.tag&&state.tags[state.tag])renderTagInfo(TX("Шкала {0} из сохранённых.",state.tag));
 }
+// v107: смена языка — раздел размечается заново на новом языке (состояние сохраняется).
+window.addEventListener("tl-langchange",()=>{if(root&&root.firstElementChild){flush();build();}});
 
 // v100: приложение свернули сразу после ввода — значение не теряется.
 window.addEventListener("pagehide",flush);

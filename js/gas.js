@@ -12,6 +12,13 @@
 (function(){
 "use strict";
 
+// v107: язык интерфейса — js/i18n.js (TX). Без него — русский, как раньше.
+const TX=typeof window.TX==="function"?window.TX:(s,...a)=>String(s??"").replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
+const NUM=s=>window.I18N?window.I18N.num(s):String(s);       // вывод ru-RU форматирования → 1.5 в английском
+const DEC=()=>window.I18N?window.I18N.dec:",";
+const IN=v=>window.I18N?window.I18N.inNum(v):String(v??"");   // значение поля ввода
+const isEn=()=>!!window.I18N?.en;
+
 const STORE_KEY="kip-gas-converter-v1";
 const R=8.314462618;            // Дж/(моль·К)
 const T0=273.15;
@@ -80,6 +87,8 @@ const PRESETS=[
   {id:"t25",label:"25 °C",t:25,p:101.325,title:"25 °C и 101,325 кПа"}
 ];
 
+const uLabel=id=>TX(unitById.get(id).label);
+const pLabel=id=>TX(P_UNITS[id].label);
 const gasById=new Map(GASES.map(g=>[g.id,g]));
 const unitById=new Map(UNITS.map(u=>[u.id,u]));
 
@@ -111,13 +120,13 @@ function fmt(x,sig=5){
   const a=Math.abs(x);
   if(a>=1e9||a<1e-6){
     const [mant,exp]=x.toExponential(Math.max(0,sig-2)).split("e");
-    return `${mant.replace(".",",")}·10${String(Number(exp)).replace(/[-\d]/g,c=>SUP[c])}`;
+    return `${mant.replace(".",DEC())}·10${String(Number(exp)).replace(/[-\d]/g,c=>SUP[c])}`;
   }
-  return nf(sig).format(x);
+  return NUM(nf(sig).format(x));
 }
 // НКПР показываем как в стандарте: с одним знаком после запятой (4,0; 0,8; 15,0).
-function fmtLel(x){return Number.isFinite(x)?x.toLocaleString("ru-RU",{minimumFractionDigits:1,maximumFractionDigits:3}):"—";}
-function fmtFixed(x,d){return Number.isFinite(x)?x.toLocaleString("ru-RU",{minimumFractionDigits:d,maximumFractionDigits:d}):"—";}
+function fmtLel(x){return Number.isFinite(x)?NUM(x.toLocaleString("ru-RU",{minimumFractionDigits:1,maximumFractionDigits:3})):"—";}
+function fmtFixed(x,d){return Number.isFinite(x)?NUM(x.toLocaleString("ru-RU",{minimumFractionDigits:d,maximumFractionDigits:d})):"—";}
 function plain(s){return String(s).replace(/[  ]/g," ");}
 
 // ---------------------------------------------------------------- состояние
@@ -165,14 +174,14 @@ function gasParams(){
   const g=gasById.get(state.gas)||GASES[0];
   if(g.id==="custom"){
     const c=state.custom;
-    return {g,name:String(c.name||"").trim()||"Свой газ",formula:"",M:parseNum(c.M),lel:parseNum(c.lel),pdk:parseNum(c.pdk),edited:false};
+    return {g,name:String(c.name||"").trim()||TX("Свой газ"),formula:"",M:parseNum(c.M),lel:parseNum(c.lel),pdk:parseNum(c.pdk),edited:false};
   }
   const o=state.overrides[g.id]||{};
   const baseM=molarMass(g.f);
   const M=o.M!=null&&o.M!==""?parseNum(o.M):baseM;
   const lel=o.lel!=null&&o.lel!==""?parseNum(o.lel):(g.lel??NaN);
   const pdk=o.pdk!=null&&o.pdk!==""?parseNum(o.pdk):(g.pdk??NaN);
-  return {g,name:g.name,formula:g.display||g.f,M,lel,pdk,baseM,edited:Object.keys(o).some(k=>o[k]!==""&&o[k]!=null)};
+  return {g,name:TX(g.name),formula:g.display||g.f,M,lel,pdk,baseM,edited:Object.keys(o).some(k=>o[k]!==""&&o[k]!=null)};
 }
 function conditions(){
   const t=parseNum(state.t),pRaw=parseNum(state.p),k=P_UNITS[state.pUnit].k;
@@ -214,8 +223,8 @@ function unitAvailable(unit,c){
   return true;
 }
 function unitBlockReason(unit,c){
-  if(unit==="lel")return c.g.id==="custom"?"Укажи НКПР в параметрах газа":"Газ не горючий — НКПР не нормируется";
-  if(unit==="mg"||unit==="g")return !(c.Vm>0)?"Проверь температуру и давление":"Укажи молярную массу";
+  if(unit==="lel")return c.g.id==="custom"?TX("Укажи НКПР в параметрах газа"):TX("Газ не горючий — НКПР не нормируется");
+  if(unit==="mg"||unit==="g")return !(c.Vm>0)?TX("Проверь температуру и давление"):TX("Укажи молярную массу");
   return "";
 }
 
@@ -233,99 +242,99 @@ let root=null,els={},getTags=null;
 function chip(cls,attrs,text){return `<button type="button" class="tab ${cls}" ${attrs}>${text}</button>`;}
 function template(){
   const groups=GROUPS.map(([gid,label])=>{
-    const opts=GASES.filter(g=>g.g===gid).map(g=>`<option value="${g.id}">${esc(g.name)}${g.f?` — ${subText(g.display||g.f)}`:""}</option>`).join("");
-    return `<optgroup label="${esc(label)}">${opts}</optgroup>`;
+    const opts=GASES.filter(g=>g.g===gid).map(g=>`<option value="${g.id}">${esc(TX(g.name))}${g.f?` — ${subText(g.display||g.f)}`:""}</option>`).join("");
+    return `<optgroup label="${esc(TX(label))}">${opts}</optgroup>`;
   }).join("");
-  const quick=QUICK.map(id=>{const g=gasById.get(id);return chip("gasQuickBtn",`data-gas="${id}" title="${esc(g.name)}"`,subHtml(g.display||g.f));}).join("");
-  const units=UNITS.map(u=>chip("gasUnitBtn",`data-unit="${u.id}" role="radio" aria-checked="false" title="${esc(u.title)}"`,esc(u.label))).join("");
-  const presets=PRESETS.map(p=>chip("gasPresetBtn",`data-preset="${p.id}" title="${esc(p.title)}"`,esc(p.label))).join("");
-  const scale=SCALE_UNITS.map(id=>chip("gasScaleBtn",`data-scale="${id}" role="radio" aria-checked="false"`,esc(unitById.get(id).label))).join("");
-  const pUnits=Object.entries(P_UNITS).map(([id,u])=>`<option value="${id}">${esc(u.label)}</option>`).join("");
+  const quick=QUICK.map(id=>{const g=gasById.get(id);return chip("gasQuickBtn",`data-gas="${id}" title="${esc(TX(g.name))}"`,subHtml(g.display||g.f));}).join("");
+  const units=UNITS.map(u=>chip("gasUnitBtn",`data-unit="${u.id}" role="radio" aria-checked="false" title="${esc(TX(u.title))}"`,esc(TX(u.label)))).join("");
+  const presets=PRESETS.map(p=>chip("gasPresetBtn",`data-preset="${p.id}" title="${esc(TX(p.title))}"`,esc(NUM(TX(p.label))))).join("");
+  const scale=SCALE_UNITS.map(id=>chip("gasScaleBtn",`data-scale="${id}" role="radio" aria-checked="false"`,esc(uLabel(id)))).join("");
+  const pUnits=Object.entries(P_UNITS).map(([id,u])=>`<option value="${id}">${esc(TX(u.label))}</option>`).join("");
   return `
 <div class="gasGrid">
   <div class="gasCol">
     <section class="gasCard gasO1" aria-labelledby="gasSubstanceTitle">
       <div class="gasCardHead">
-        <h2 id="gasSubstanceTitle">Вещество</h2>
-        <button type="button" class="gasLink" id="gasParamsToggle" aria-expanded="false" aria-controls="gasParams">Параметры</button>
+        <h2 id="gasSubstanceTitle">${TX("Вещество")}</h2>
+        <button type="button" class="gasLink" id="gasParamsToggle" aria-expanded="false" aria-controls="gasParams">${TX("Параметры")}</button>
       </div>
-      <div class="field gasField"><label class="gasSr" for="gasSelect">Газ или пар</label><select id="gasSelect">${groups}</select></div>
-      <div class="gasChips gasQuick" role="group" aria-label="Быстрый выбор газа">${quick}</div>
+      <div class="field gasField"><label class="gasSr" for="gasSelect">${TX("Газ или пар")}</label><select id="gasSelect">${groups}</select></div>
+      <div class="gasChips gasQuick" role="group" aria-label="${TX("Быстрый выбор газа")}">${quick}</div>
       <div class="gasInfo" id="gasInfo"></div>
       <div class="gasParams" id="gasParams" hidden>
-        <div class="field" id="gasNameField"><label for="gasCustomName">Название</label><input id="gasCustomName" autocomplete="off" placeholder="Например, смесь С3–С4"/></div>
+        <div class="field" id="gasNameField"><label for="gasCustomName">${TX("Название")}</label><input id="gasCustomName" autocomplete="off" placeholder="${TX("Например, смесь С3–С4")}"/></div>
         <div class="gasParamGrid">
-          <div class="field"><label for="gasM">M, г/моль</label><input id="gasM" inputmode="decimal" autocomplete="off"/></div>
-          <div class="field"><label for="gasLel">НКПР, % об.</label><input id="gasLel" inputmode="decimal" autocomplete="off" placeholder="—"/></div>
-          <div class="field"><label for="gasPdk">ПДК, мг/м³</label><input id="gasPdk" inputmode="decimal" autocomplete="off" placeholder="—"/></div>
+          <div class="field"><label for="gasM">${TX("M, г/моль")}</label><input id="gasM" inputmode="decimal" autocomplete="off"/></div>
+          <div class="field"><label for="gasLel">${TX("НКПР, % об.")}</label><input id="gasLel" inputmode="decimal" autocomplete="off" placeholder="—"/></div>
+          <div class="field"><label for="gasPdk">${TX("ПДК, мг/м³")}</label><input id="gasPdk" inputmode="decimal" autocomplete="off" placeholder="—"/></div>
         </div>
         <div class="gasParamFoot">
-          <span class="mini" id="gasParamsNote">НКПР берите из паспорта прибора, если он отличается.</span>
-          <button type="button" class="secondary" id="gasReset">Справочные</button>
+          <span class="mini" id="gasParamsNote">${TX("НКПР берите из паспорта прибора, если он отличается.")}</span>
+          <button type="button" class="secondary" id="gasReset">${TX("Справочные")}</button>
         </div>
       </div>
     </section>
 
     <section class="gasCard gasInputCard gasO2" aria-labelledby="gasValueTitle">
-      <div class="gasCardHead"><h2 id="gasValueTitle">Концентрация</h2><span class="gasHeadNote" id="gasValueGas"></span></div>
+      <div class="gasCardHead"><h2 id="gasValueTitle">${TX("Концентрация")}</h2><span class="gasHeadNote" id="gasValueGas"></span></div>
       <div class="gasValueRow">
-        <input id="gasValue" class="gasValueInput" inputmode="decimal" autocomplete="off" enterkeyhint="done" aria-label="Значение концентрации" placeholder="0"/>
+        <input id="gasValue" class="gasValueInput" inputmode="decimal" autocomplete="off" enterkeyhint="done" aria-label="${TX("Значение концентрации")}" placeholder="0"/>
         <span class="gasValueUnit" id="gasValueUnit" aria-hidden="true">ppm</span>
-        <button type="button" class="gasClear" id="gasClear" aria-label="Очистить значение" title="Очистить">${ICON.x}</button>
+        <button type="button" class="gasClear" id="gasClear" aria-label="${TX("Очистить значение")}" title="${TX("Очистить")}">${ICON.x}</button>
       </div>
-      <div class="gasUnits" role="radiogroup" aria-label="Единица исходного значения">${units}</div>
+      <div class="gasUnits" role="radiogroup" aria-label="${TX("Единица исходного значения")}">${units}</div>
       <div class="gasWarn" id="gasWarn" role="status" hidden></div>
     </section>
 
     <section class="gasCard gasO4" aria-labelledby="gasCondTitle">
-      <div class="gasCardHead"><h2 id="gasCondTitle">Условия пересчёта</h2><span class="gasHeadNote" id="gasVm"></span></div>
-      <div class="gasChips" role="group" aria-label="Типовые условия">${presets}</div>
+      <div class="gasCardHead"><h2 id="gasCondTitle">${TX("Условия пересчёта")}</h2><span class="gasHeadNote" id="gasVm"></span></div>
+      <div class="gasChips" role="group" aria-label="${TX("Типовые условия")}">${presets}</div>
       <div class="gasParamGrid gasCondGrid">
-        <div class="field"><label for="gasT">Температура, °C</label>
-          <div class="gasJoin"><input id="gasT" inputmode="decimal" autocomplete="off"/><button type="button" class="gasSign" id="gasTSign" aria-label="Сменить знак температуры" title="Плюс / минус">±</button></div>
+        <div class="field"><label for="gasT">${TX("Температура, °C")}</label>
+          <div class="gasJoin"><input id="gasT" inputmode="decimal" autocomplete="off"/><button type="button" class="gasSign" id="gasTSign" aria-label="${TX("Сменить знак температуры")}" title="${TX("Плюс / минус")}">±</button></div>
         </div>
-        <div class="field"><label for="gasP">Давление (абс.)</label>
-          <div class="gasJoin"><input id="gasP" inputmode="decimal" autocomplete="off"/><select id="gasPUnit" aria-label="Единица давления">${pUnits}</select></div>
+        <div class="field"><label for="gasP">${TX("Давление (абс.)")}</label>
+          <div class="gasJoin"><input id="gasP" inputmode="decimal" autocomplete="off"/><select id="gasPUnit" aria-label="${TX("Единица давления")}">${pUnits}</select></div>
         </div>
       </div>
-      <div class="mini">мг/м³ и г/м³ зависят от температуры и давления; ppm, % об. и % НКПР — нет.</div>
+      <div class="mini">${TX("мг/м³ и г/м³ зависят от температуры и давления; ppm, % об. и % НКПР — нет.")}</div>
     </section>
   </div>
 
   <div class="gasCol">
     <section class="gasCard gasResultCard gasO3" aria-labelledby="gasResultTitle">
-      <div class="gasCardHead"><h2 id="gasResultTitle">Результат</h2><span class="gasHeadNote" id="gasResultCond"></span></div>
+      <div class="gasCardHead"><h2 id="gasResultTitle">${TX("Результат")}</h2><span class="gasHeadNote" id="gasResultCond"></span></div>
       <div class="gasResults" id="gasResults" aria-live="polite"></div>
-      <div class="field gasTagField"><label for="gasTag">Тэг для задания</label><input id="gasTag" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="Например, 2131-QT-501"/></div>
+      <div class="field gasTagField"><label for="gasTag">${TX("Тэг для задания")}</label><input id="gasTag" autocomplete="off" spellcheck="false" autocapitalize="characters" enterkeyhint="done" placeholder="${TX("Например, 2131-QT-501")}"/></div>
       <div class="gasActions gasActions3">
-        <button type="button" class="action iconOnly" id="gasCopy" aria-label="Копировать результат" title="Копировать результат">${ICON.copy}</button>
-        <button type="button" class="action" id="gasTask" title="Дописать результат в задание тэга">${ICON.task}<span>В задание</span></button>
-        <button type="button" class="action primary" id="gasShare">${ICON.send}<span>Отправить</span></button>
+        <button type="button" class="action iconOnly" id="gasCopy" aria-label="${TX("Копировать результат")}" title="${TX("Копировать результат")}">${ICON.copy}</button>
+        <button type="button" class="action" id="gasTask" title="${TX("Дописать результат в задание тэга")}">${ICON.task}<span>${TX("В задание")}</span></button>
+        <button type="button" class="action primary" id="gasShare">${ICON.send}<span>${TX("Отправить")}</span></button>
       </div>
     </section>
 
     <section class="gasCard gasO5" aria-labelledby="gasMaTitle">
-      <div class="gasCardHead"><h2 id="gasMaTitle">Сигнал 4–20 мА</h2><span class="gasHeadNote">линейная шкала</span></div>
+      <div class="gasCardHead"><h2 id="gasMaTitle">${TX("Сигнал 4–20 мА")}</h2><span class="gasHeadNote">${TX("линейная шкала")}</span></div>
       <div class="gasScaleRow">
-        <div class="field"><label for="gasLo">Начало шкалы</label><input id="gasLo" inputmode="decimal" autocomplete="off"/></div>
-        <div class="field"><label for="gasHi">Конец шкалы</label><input id="gasHi" inputmode="decimal" autocomplete="off"/></div>
+        <div class="field"><label for="gasLo">${TX("Начало шкалы")}</label><input id="gasLo" inputmode="decimal" autocomplete="off"/></div>
+        <div class="field"><label for="gasHi">${TX("Конец шкалы")}</label><input id="gasHi" inputmode="decimal" autocomplete="off"/></div>
       </div>
-      <div class="gasChips gasScaleUnits" role="radiogroup" aria-label="Единица шкалы">${scale}</div>
+      <div class="gasChips gasScaleUnits" role="radiogroup" aria-label="${TX("Единица шкалы")}">${scale}</div>
       <div class="gasMaRow">
-        <div class="field"><label for="gasMa">Ток, мА</label><input id="gasMa" inputmode="decimal" autocomplete="off"/></div>
+        <div class="field"><label for="gasMa">${TX("Ток, мА")}</label><input id="gasMa" inputmode="decimal" autocomplete="off"/></div>
         <span class="gasMaArrow" aria-hidden="true">⇄</span>
-        <div class="field"><label for="gasMaVal" id="gasMaValLabel">Значение</label><input id="gasMaVal" inputmode="decimal" autocomplete="off"/></div>
+        <div class="field"><label for="gasMaVal" id="gasMaValLabel">${TX("Значение")}</label><input id="gasMaVal" inputmode="decimal" autocomplete="off"/></div>
       </div>
       <div class="gasMaStatus" id="gasMaStatus" role="status"></div>
       <div class="gasActions">
-        <button type="button" class="action" id="gasFromMain" title="Подставить значение из результата расчёта">${ICON.down}<span>Из расчёта</span></button>
-        <button type="button" class="action" id="gasToMain" title="Передать значение шкалы в поле «Концентрация»">${ICON.up}<span>В расчёт</span></button>
+        <button type="button" class="action" id="gasFromMain" title="${TX("Подставить значение из результата расчёта")}">${ICON.down}<span>${TX("Из расчёта")}</span></button>
+        <button type="button" class="action" id="gasToMain" title="${TX("Передать значение шкалы в поле «Концентрация»")}">${ICON.up}<span>${TX("В расчёт")}</span></button>
       </div>
     </section>
 
   </div>
 </div>
-<div class="convFoot"><button type="button" class="convInfoBtn" id="gasSources">${ICON.book}<span>Источники и формулы</span></button></div>`;
+<div class="convFoot"><button type="button" class="convInfoBtn" id="gasSources">${ICON.book}<span>${TX("Источники и формулы")}</span></button></div>`;
 }
 
 // v98: короткая справка — формулы и откуда взяты данные (кнопка внизу страницы).
@@ -351,12 +360,35 @@ const SOURCES_HTML=`
 <h3>Ограничения</h3>
 <p>Расчёт для идеального газа, давление абсолютное. Справочные значения — для ориентира: для настройки и проверки газоанализатора берите НКПР и шкалу из паспорта прибора, свидетельства о поверке и проекта.</p>
 <p class="helpNote">Считается на телефоне, без интернета.</p>`;
+const SOURCES_HTML_EN=`
+<h3>Formulas</h3>
+<div class="hF">V<sub>m</sub> = R·T / P, L/mol</div>
+<p>R = 8.314462618 J/(mol·K). At 101.325 kPa: 22.414 L/mol at 0 °C, 24.055 L/mol at 20 °C.</p>
+<div class="hF">mg/m³ = ppm · M / V<sub>m</sub></div>
+<div class="hF">g/m³ = mg/m³ / 1000</div>
+<div class="hF">% vol = ppm / 10 000</div>
+<div class="hF">ppb = ppm · 1000</div>
+<div class="hF">% LEL = % vol / LEL · 100</div>
+<div class="hF">OEL fraction = mg/m³ / OEL</div>
+<div class="hF">I = 4 + 16 · (C − C<sub>lo</sub>) / (C<sub>hi</sub> − C<sub>lo</sub>), mA</div>
+<h3>Data sources</h3>
+<ul class="hSrc">
+<li>LEL — <span class="nw">GOST 31610.20-1-2020</span> <span class="nw">(IEC 60079-20-1)</span>, <span class="nw">GOST R 51330.19-99</span>.</li>
+<li>OEL — Russian work-area maximum single concentration (ПДК р.з.), <span class="nw">SanPiN 1.2.3685-21</span>.</li>
+<li>Molar mass — from the chemical formula with IUPAC standard atomic weights.</li>
+<li>Standard conditions 20 °C and 101.325 kPa — <span class="nw">GOST 2939-63</span>.</li>
+<li>Signal status — <span class="nw">NAMUR NE 43</span>: <span class="nw">3.8…20.5 mA</span> — measurement, <span class="nw">≤ 3.6</span> and <span class="nw">≥ 21 mA</span> — failure.</li>
+</ul>
+<h3>Limitations</h3>
+<p>Ideal gas, absolute pressure. Reference values are for orientation: to set up and check a gas detector take the LEL and the range from the instrument datasheet, the calibration certificate and the design.</p>
+<p class="helpNote">Calculated on the phone, offline.</p>`;
 
 function $(id){return els[id]||(els[id]=root.querySelector("#"+id));}
 
 // ---------------------------------------------------------------- отрисовка
 function setInput(id,value){
   const el=$(id);
+  if(id!=="gasTag"&&id!=="gasCustomName")value=IN(value);
   if(el&&document.activeElement!==el&&el.value!==value)el.value=value;
 }
 function renderGas(c){
@@ -367,14 +399,14 @@ function renderGas(c){
   });
   const parts=[];
   const formula=c.formula?`<b>${subHtml(c.formula)}</b>`:"";
-  parts.push(`<span>${formula?formula+" · ":""}M ${Number.isFinite(c.M)?fmt(c.M,6):"—"} г/моль</span>`);
-  parts.push(`<span>НКПР ${c.lel>0?`${fmtLel(c.lel)} % об.`:(c.g.id==="custom"?"—":"не нормируется")}</span>`);
-  if(c.pdk>0)parts.push(`<span>ПДК р.з. ${fmt(c.pdk,4)} мг/м³</span>`);
+  parts.push(`<span>${formula?formula+" · ":""}M ${Number.isFinite(c.M)?fmt(c.M,6):"—"} ${TX("г/моль")}</span>`);
+  parts.push(`<span>${TX("НКПР")} ${c.lel>0?`${fmtLel(c.lel)} ${TX("% об.")}`:(c.g.id==="custom"?"—":TX("не нормируется"))}</span>`);
+  if(c.pdk>0)parts.push(`<span>${TX("ПДК р.з.")} ${fmt(c.pdk,4)} ${TX("мг/м³")}</span>`);
   let html=`<div class="gasInfoLine">${parts.join("")}</div>`;
   const notes=[];
-  if(c.edited)notes.push("Изменены параметры — используется значение пользователя");
-  if(c.g.pdkNote&&!c.edited)notes.push(`ПДК р.з.: ${c.g.pdkNote}`);
-  if(c.g.note)notes.push(c.g.note);
+  if(c.edited)notes.push(TX("Изменены параметры — используется значение пользователя"));
+  if(c.g.pdkNote&&!c.edited)notes.push(TX("ПДК р.з.: {0}",TX(c.g.pdkNote)));
+  if(c.g.note)notes.push(TX(c.g.note));
   if(notes.length)html+=`<div class="mini gasInfoNote">${notes.map(esc).join(" · ")}</div>`;
   $("gasInfo").innerHTML=html;
   $("gasValueGas").textContent=c.g.id==="custom"?c.name:`${c.name}${c.formula?` · ${subText(c.formula)}`:""}`;
@@ -388,8 +420,8 @@ function renderGas(c){
   $("gasNameField").hidden=!custom;
   $("gasReset").hidden=custom;
   $("gasParamsNote").textContent=custom
-    ?"Укажи молярную массу и НКПР (для горючих газов) — значения сохраняются на устройстве."
-    :"НКПР берите из паспорта прибора, если он отличается от справочного.";
+    ?TX("Укажи молярную массу и НКПР (для горючих газов) — значения сохраняются на устройстве.")
+    :TX("НКПР берите из паспорта прибора, если он отличается от справочного.");
   if(custom){
     setInput("gasCustomName",state.custom.name||"");
     setInput("gasM",state.custom.M||"");
@@ -409,23 +441,23 @@ function renderUnits(c){
     b.classList.toggle("active",on);
     b.setAttribute("aria-checked",String(on));
     b.classList.toggle("gasOff",!avail);
-    b.title=avail?unitById.get(u).title:unitBlockReason(u,c);
+    b.title=avail?TX(unitById.get(u).title):unitBlockReason(u,c);
   });
-  $("gasValueUnit").textContent=unitById.get(state.unit).label;
+  $("gasValueUnit").textContent=uLabel(state.unit);
 }
 function renderConditions(c){
   setInput("gasT",state.t);
   setInput("gasP",state.p);
   $("gasPUnit").value=state.pUnit;
   const cond=c.cond;
-  $("gasVm").textContent=cond.ok?`Vm ${fmt(cond.Vm,5)} л/моль`:"проверь T и P";
+  $("gasVm").textContent=cond.ok?`Vm ${fmt(cond.Vm,5)} ${TX("л/моль")}`:TX("проверь T и P");
   $("gasVm").classList.toggle("gasBad",!cond.ok);
   root.querySelectorAll(".gasPresetBtn").forEach(b=>{
     const p=PRESETS.find(x=>x.id===b.dataset.preset);
     const on=cond.ok&&Math.abs(cond.t-p.t)<1e-9&&Math.abs(cond.pk-p.p)<1e-6;
     b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));
   });
-  $("gasResultCond").textContent=cond.ok?`${fmt(cond.t,4)} °C · ${fmt(cond.pRaw,6)} ${P_UNITS[state.pUnit].label}`:"";
+  $("gasResultCond").textContent=cond.ok?`${fmt(cond.t,4)} °C · ${fmt(cond.pRaw,6)} ${pLabel(state.pUnit)}`:"";
 }
 function currentFraction(c){
   const v=parseNum(state.value);
@@ -439,25 +471,25 @@ function maScale(){
 function mAFor(value,s){return 4+16*(value-s.lo)/(s.hi-s.lo);}
 function namur(mA){
   if(!Number.isFinite(mA))return {cls:"",text:""};
-  if(mA<=3.6)return {cls:"gasBad",text:"Сигнал отказа: ≤ 3,6 мА (NAMUR NE 43)"};
-  if(mA<3.8)return {cls:"gasBad",text:"Ниже диапазона измерения (< 3,8 мА)"};
-  if(mA<4)return {cls:"gasWarnText",text:"Ниже нуля шкалы — в пределах 3,8–4 мА"};
-  if(mA<=20)return {cls:"gasOk",text:"В диапазоне шкалы 4–20 мА"};
-  if(mA<=20.5)return {cls:"gasWarnText",text:"Выше шкалы — в пределах 20–20,5 мА"};
-  if(mA<21)return {cls:"gasBad",text:"Выше диапазона измерения (> 20,5 мА)"};
-  return {cls:"gasBad",text:"Сигнал отказа: ≥ 21 мА (NAMUR NE 43)"};
+  if(mA<=3.6)return {cls:"gasBad",text:TX("Сигнал отказа: ≤ 3,6 мА (NAMUR NE 43)")};
+  if(mA<3.8)return {cls:"gasBad",text:TX("Ниже диапазона измерения (< 3,8 мА)")};
+  if(mA<4)return {cls:"gasWarnText",text:TX("Ниже нуля шкалы — в пределах 3,8–4 мА")};
+  if(mA<=20)return {cls:"gasOk",text:TX("В диапазоне шкалы 4–20 мА")};
+  if(mA<=20.5)return {cls:"gasWarnText",text:TX("Выше шкалы — в пределах 20–20,5 мА")};
+  if(mA<21)return {cls:"gasBad",text:TX("Выше диапазона измерения (> 20,5 мА)")};
+  return {cls:"gasBad",text:TX("Сигнал отказа: ≥ 21 мА (NAMUR NE 43)")};
 }
 function renderResults(c){
   const {v,x}=currentFraction(c);
   const warn=[];
-  let html="";
+  let html="",danger=false;
   if(!Number.isFinite(v)){
-    html=`<div class="gasEmpty">Введи значение концентрации</div>`;
+    html=`<div class="gasEmpty">${TX("Введи значение концентрации")}</div>`;
   }else if(!Number.isFinite(x)){
     html=`<div class="gasEmpty">${esc(unitBlockReason(state.unit,c))}</div>`;
   }else{
-    if(x<0)warn.push("Отрицательная концентрация — проверь значение.");
-    if(x>1)warn.push("Больше 100 % об. — проверь единицы измерения.");
+    if(x<0)warn.push(TX("Отрицательная концентрация — проверь значение."));
+    if(x>1)warn.push(TX("Больше 100 % об. — проверь единицы измерения."));
     const rows=UNITS.filter(u=>unitAvailable(u.id,c)).map(u=>{
       const val=fromFraction(x,u.id,c);
       const avail=Number.isFinite(val);
@@ -466,25 +498,25 @@ function renderResults(c){
       if(u.id==="lel"&&avail){
         const pct=Math.max(0,Math.min(100,val));
         extra=`<span class="progressTrack gasBar" aria-hidden="true"><span class="progressFill${val>=100?" gasFillBad":""}" style="width:${pct}%"></span></span>`;
-        if(val>=100)warn.push("Концентрация на уровне НКПР и выше — взрывоопасная среда.");
+        if(val>=100){warn.push(TX("Концентрация на уровне НКПР и выше — взрывоопасная среда."));danger=true;}
       }
-      return `<button type="button" class="gasRow${src?" gasSrc":""}${avail?"":" gasOff"}" data-copy-unit="${u.id}" ${avail?"":"disabled"} title="${avail?"Нажми, чтобы скопировать":esc(unitBlockReason(u.id,c))}">
-        <span class="gasRowLabel">${esc(u.label)}${src?'<i>исходное</i>':""}</span>
+      return `<button type="button" class="gasRow${src?" gasSrc":""}${avail?"":" gasOff"}" data-copy-unit="${u.id}" ${avail?"":"disabled"} title="${avail?TX("Нажми, чтобы скопировать"):esc(unitBlockReason(u.id,c))}">
+        <span class="gasRowLabel">${esc(TX(u.label))}${src?`<i>${TX("исходное")}</i>`:""}</span>
         <span class="gasRowValue">${avail?fmt(val):"—"}</span>${extra}</button>`;
     });
     if(c.pdk>0&&c.M>0&&c.Vm>0){
       const mg=fromFraction(x,"mg",c),k=mg/c.pdk;
-      rows.push(`<button type="button" class="gasRow gasExtra${k>=1?" gasRowBad":""}" data-copy-text="${esc(`${fmt(k,4)} ПДК`)}" title="Нажми, чтобы скопировать">
-        <span class="gasRowLabel">Доля ПДК р.з.<i>${fmt(c.pdk,4)} мг/м³</i></span><span class="gasRowValue">${fmt(k,4)} ×</span></button>`);
-      if(k>=1)warn.push("Превышение ПДК рабочей зоны.");
+      rows.push(`<button type="button" class="gasRow gasExtra${k>=1?" gasRowBad":""}" data-copy-text="${esc(`${fmt(k,4)} ${TX("ПДК")}`)}" title="${TX("Нажми, чтобы скопировать")}">
+        <span class="gasRowLabel">${TX("Доля ПДК р.з.")}<i>${fmt(c.pdk,4)} ${TX("мг/м³")}</i></span><span class="gasRowValue">${fmt(k,4)} ×</span></button>`);
+      if(k>=1){warn.push(TX("Превышение ПДК рабочей зоны."));danger=true;}
     }
     const s=maScale();
     if(s.ok&&unitAvailable(state.ma.unit,c)){
       const sv=fromFraction(x,state.ma.unit,c);
       const mA=mAFor(sv,s);
       if(Number.isFinite(mA)){
-        rows.push(`<button type="button" class="gasRow gasExtra" data-copy-text="${esc(`${fmtFixed(mA,2)} мА`)}" title="Шкала ${esc(`${fmt(s.lo)}–${fmt(s.hi)} ${unitById.get(state.ma.unit).label}`)}">
-          <span class="gasRowLabel">Ток 4–20 мА<i>шкала ${esc(`${fmt(s.lo)}–${fmt(s.hi)} ${unitById.get(state.ma.unit).label}`)}</i></span><span class="gasRowValue">${fmtFixed(mA,2)} мА</span></button>`);
+        rows.push(`<button type="button" class="gasRow gasExtra" data-copy-text="${esc(`${fmtFixed(mA,2)} ${TX("мА")}`)}" title="${TX("Шкала {0}",esc(`${fmt(s.lo)}–${fmt(s.hi)} ${uLabel(state.ma.unit)}`))}">
+          <span class="gasRowLabel">${TX("Ток 4–20 мА")}<i>${TX("шкала {0}",esc(`${fmt(s.lo)}–${fmt(s.hi)} ${uLabel(state.ma.unit)}`))}</i></span><span class="gasRowValue">${fmtFixed(mA,2)} ${TX("мА")}</span></button>`);
       }
     }
     html=rows.join("");
@@ -493,10 +525,10 @@ function renderResults(c){
   const w=$("gasWarn");
   w.hidden=!warn.length;
   w.textContent=warn.join(" ");
-  w.classList.toggle("gasWarnDanger",warn.some(t=>/взрывоопас|Превышение/.test(t)));
+  w.classList.toggle("gasWarnDanger",danger);
 }
 function renderMa(c){
-  const ma=state.ma,s=maScale(),unitLabel=unitById.get(ma.unit).label;
+  const ma=state.ma,s=maScale(),unitLabel=uLabel(ma.unit);
   setInput("gasLo",ma.lo);setInput("gasHi",ma.hi);
   root.querySelectorAll(".gasScaleBtn").forEach(b=>{
     const on=b.dataset.scale===ma.unit,avail=unitAvailable(b.dataset.scale,c);
@@ -504,14 +536,14 @@ function renderMa(c){
     b.classList.toggle("gasOff",!avail);
     b.title=avail?"":unitBlockReason(b.dataset.scale,c);
   });
-  $("gasMaValLabel").textContent=`Значение, ${unitLabel}`;
+  $("gasMaValLabel").textContent=TX("Значение, {0}",unitLabel);
   let mA=parseNum(ma.mA),val=parseNum(ma.val);
   if(s.ok){
     if(ma.last==="val"){mA=Number.isFinite(val)?mAFor(val,s):NaN;setInput("gasMa",Number.isFinite(mA)?fmtPlain(mA,4):"");}
     else{val=Number.isFinite(mA)?s.lo+(mA-4)/16*(s.hi-s.lo):NaN;setInput("gasMaVal",Number.isFinite(val)?fmtPlain(val,5):"");}
   }
   const st=$("gasMaStatus");
-  if(!s.ok){st.className="gasMaStatus gasBad";st.textContent="Начало и конец шкалы должны различаться";return;}
+  if(!s.ok){st.className="gasMaStatus gasBad";st.textContent=TX("Начало и конец шкалы должны различаться");return;}
   const n=namur(mA);
   let text=n.text;
   if(!unitAvailable(ma.unit,c))text=(text?text+" · ":"")+unitBlockReason(ma.unit,c);
@@ -523,7 +555,7 @@ function renderMa(c){
 function fmtPlain(x,sig){
   if(!Number.isFinite(x))return "";
   const r=Number(x.toPrecision(sig));
-  return String(Math.abs(r)<1e-6&&r!==0?r.toExponential():r).replace(".",",");
+  return String(Math.abs(r)<1e-6&&r!==0?r.toExponential():r).replace(".",DEC());
 }
 function render(){
   if(!root)return;
@@ -540,29 +572,29 @@ async function copyText(text,label){
       const ta=document.createElement("textarea");ta.value=text;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";
       document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
     }
-    toast(label||"Скопировано");
-  }catch(_){toast("Не удалось скопировать");}
+    toast(label||TX("Скопировано"));
+  }catch(_){toast(TX("Не удалось скопировать"));}
 }
-function summaryText(){
+function summaryText(forTask=false){
   const c=context(),{v,x}=currentFraction(c);
   if(!Number.isFinite(x))return "";
   const head=`${c.name}${c.formula?` (${c.formula})`:""}`;
   const order=[state.unit,...UNITS.map(u=>u.id).filter(id=>id!==state.unit&&id!=="ppb"&&id!=="g")];
-  const vals=order.map(id=>{const val=fromFraction(x,id,c);return Number.isFinite(val)?`${plain(fmt(val))} ${unitById.get(id).label}`:null;}).filter(Boolean);
-  const lines=[`Газоанализ — ${head}`,vals.join(" = ")];
+  const vals=order.map(id=>{const val=fromFraction(x,id,c);return Number.isFinite(val)?`${plain(fmt(val))} ${uLabel(id)}`:null;}).filter(Boolean);
+  const lines=[`${TX("Газоанализ")}${forTask?", ":" — "}${head}`,vals.join(" = ")];
   const extra=[];
-  if(c.pdk>0&&c.M>0&&c.Vm>0)extra.push(`${plain(fmt(fromFraction(x,"mg",c)/c.pdk,4))} ПДК р.з. (${plain(fmt(c.pdk,4))} мг/м³)`);
+  if(c.pdk>0&&c.M>0&&c.Vm>0)extra.push(`${plain(fmt(fromFraction(x,"mg",c)/c.pdk,4))} ${TX("ПДК р.з.")} (${plain(fmt(c.pdk,4))} ${TX("мг/м³")})`);
   const s=maScale();
   if(s.ok&&unitAvailable(state.ma.unit,c)){
     const mA=mAFor(fromFraction(x,state.ma.unit,c),s);
-    if(Number.isFinite(mA))extra.push(`${plain(fmtFixed(mA,2))} мА (шкала ${plain(fmt(s.lo))}–${plain(fmt(s.hi))} ${unitById.get(state.ma.unit).label})`);
+    if(Number.isFinite(mA))extra.push(`${plain(fmtFixed(mA,2))} ${TX("мА")} (${TX("шкала {0}",`${plain(fmt(s.lo))}–${plain(fmt(s.hi))} ${uLabel(state.ma.unit)}`)})`);
   }
   if(extra.length)lines.push(extra.join("; "));
   const cond=c.cond;
-  const cParts=[`${plain(fmt(cond.t,4))} °C`,`${plain(fmt(cond.pRaw,6))} ${P_UNITS[state.pUnit].label}`,`Vm ${plain(fmt(cond.Vm,5))} л/моль`];
-  if(c.lel>0)cParts.push(`НКПР ${plain(fmtLel(c.lel))} % об.`);
-  if(Number.isFinite(c.M))cParts.push(`M ${plain(fmt(c.M,6))} г/моль`);
-  lines.push(`Условия: ${cParts.join(", ")}`);
+  const cParts=[`${plain(fmt(cond.t,4))} °C`,`${plain(fmt(cond.pRaw,6))} ${pLabel(state.pUnit)}`,`Vm ${plain(fmt(cond.Vm,5))} ${TX("л/моль")}`];
+  if(c.lel>0)cParts.push(`${TX("НКПР")} ${plain(fmtLel(c.lel))} ${TX("% об.")}`);
+  if(Number.isFinite(c.M))cParts.push(`M ${plain(fmt(c.M,6))} ${TX("г/моль")}`);
+  lines.push(TX("Условия: {0}",cParts.join(", ")));
   return lines.join("\n");
 }
 // v97: подсказки тегов под полем (общий компонент из app.js) вместо <datalist>.
@@ -575,23 +607,23 @@ function refreshTagList(){
 }
 function saveToTask(){
   const tag=String($("gasTag").value||"").trim();
-  if(!tag){toast("Укажите тэг — результат запишется в его задание");$("gasTag").focus();return;}
-  const text=summaryText();
-  if(!text){toast("Нет результата для записи");return;}
+  if(!tag){toast(TX("Укажите тэг — результат запишется в его задание"));$("gasTag").focus();return;}
+  const text=summaryText(true);
+  if(!text){toast(TX("Нет результата для записи"));return;}
   const app=window.TagListApp;
-  if(!app?.addResultToTag){toast("Список тэгов недоступен");return;}
-  const r=app.addResultToTag(tag,text.replace(/^Газоанализ — /,"Газоанализ, "));
-  if(!r.ok){toast(r.message||"Не удалось записать");return;}
-  toast(r.created?`Создан тэг ${r.tag} на странице «${r.page}», результат — в задании`:`Записано в задание ${r.tag}`);
+  if(!app?.addResultToTag){toast(TX("Список тэгов недоступен"));return;}
+  const r=app.addResultToTag(tag,text);
+  if(!r.ok){toast(r.message||TX("Не удалось записать"));return;}
+  toast(r.created?TX("Создан тэг {0} на странице «{1}», результат — в задании",r.tag,r.page):TX("Записано в задание {0}",r.tag));
   refreshTagList();
 }
 async function shareSummary(){
   const text=summaryText();
-  if(!text){toast("Нет результата для отправки");return;}
+  if(!text){toast(TX("Нет результата для отправки"));return;}
   try{
-    if(typeof navigator.share==="function"){await navigator.share({title:"Газоанализ",text});toast("Результат передан");return;}
+    if(typeof navigator.share==="function"){await navigator.share({title:TX("Газоанализ"),text});toast(TX("Результат передан"));return;}
   }catch(e){if(e?.name==="AbortError")return;}
-  await copyText(text,"Результат скопирован");
+  await copyText(text,TX("Результат скопирован"));
 }
 function selectGas(id){
   if(!gasById.has(id))return;
@@ -642,30 +674,30 @@ function bind(){
     if(t.dataset.copyUnit){
       const c=context(),{x}=currentFraction(c);
       const val=fromFraction(x,t.dataset.copyUnit,c);
-      if(Number.isFinite(val)){const s=`${plain(fmt(val))} ${unitById.get(t.dataset.copyUnit).label}`;copyText(s,`Скопировано: ${s}`);}
+      if(Number.isFinite(val)){const s=`${plain(fmt(val))} ${uLabel(t.dataset.copyUnit)}`;copyText(s,TX("Скопировано: {0}",s));}
       return;
     }
-    if(t.dataset.copyText){copyText(plain(t.dataset.copyText),`Скопировано: ${plain(t.dataset.copyText)}`);return;}
+    if(t.dataset.copyText){copyText(plain(t.dataset.copyText),TX("Скопировано: {0}",plain(t.dataset.copyText)));return;}
     switch(t.id){
       case "gasParamsToggle":state.params=!state.params;persist();render();
         if(state.params)setTimeout(()=>$("gasLel")?.focus({preventScroll:false}),30);break;
       case "gasReset":delete state.overrides[state.gas];persist();
-        ["gasM","gasLel","gasPdk"].forEach(id=>{$(id).value="";});render();toast("Восстановлены справочные значения");break;
+        ["gasM","gasLel","gasPdk"].forEach(id=>{$(id).value="";});render();toast(TX("Восстановлены справочные значения"));break;
       case "gasTSign":{
         // На iPhone в цифровой клавиатуре нет минуса — знак меняется кнопкой.
         const t=String(state.t||"").trim();
         state.t=t.startsWith("-")||t.startsWith("−")?t.replace(/^[-−]\s*/,""):`-${t||"0"}`;
-        $("gasT").value=state.t;persist();render();break;
+        $("gasT").value=IN(state.t);persist();render();break;
       }
       case "gasClear":state.value="";$("gasValue").value="";persist();render();$("gasValue").focus();break;
-      case "gasCopy":{const s=summaryText();if(s)copyText(s,"Результат скопирован");else toast("Нет результата для копирования");break;}
+      case "gasCopy":{const s=summaryText();if(s)copyText(s,TX("Результат скопирован"));else toast(TX("Нет результата для копирования"));break;}
       case "gasShare":shareSummary();break;
       case "gasTask":saveToTask();break;
-      case "gasSources":window.TagListApp?.openInfo?.("Источники и формулы",SOURCES_HTML);break;
+      case "gasSources":window.TagListApp?.openInfo?.(TX("Источники и формулы"),isEn()?SOURCES_HTML_EN:SOURCES_HTML);break;
       case "gasFromMain":{
         const c=context(),{x}=currentFraction(c);
         const val=fromFraction(x,state.ma.unit,c);
-        if(!Number.isFinite(val)){toast("В расчёте нет значения для этой шкалы");break;}
+        if(!Number.isFinite(val)){toast(TX("В расчёте нет значения для этой шкалы"));break;}
         state.ma.val=fmtPlain(val,5);state.ma.last="val";$("gasMaVal").value=state.ma.val;persist();render();break;
       }
       case "gasToMain":{
@@ -713,18 +745,25 @@ function bind(){
   root.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.matches("input")){e.preventDefault();e.target.blur();}});
 }
 
+let boundRoot=null;
 function mount(container,opts={}){
   if(typeof opts.getTags==="function")getTags=opts.getTags;
   // v100: раздел уже размечен — обновление делает onShow() сразу после mount().
   if(root&&root===container&&root.firstElementChild)return;
-  root=container;els={};tagPicker=null;
+  root=container;build();
+}
+function build(){
+  els={};tagPicker=null;
   root.innerHTML=template();
-  bind();
+  if(boundRoot!==root){bind();boundRoot=root;}
   setInput("gasTag",state.tag||"");refreshTagList();
   setInput("gasValue",state.value);
   if(state.ma.last==="val")setInput("gasMaVal",state.ma.val);else setInput("gasMa",state.ma.mA);
   render();
 }
+
+// v107: смена языка — раздел размечается заново на новом языке (состояние и ввод сохраняются).
+window.addEventListener("tl-langchange",()=>{if(root&&root.firstElementChild){flush();build();}});
 
 // v100: приложение свернули сразу после ввода — значение не теряется.
 window.addEventListener("pagehide",flush);
