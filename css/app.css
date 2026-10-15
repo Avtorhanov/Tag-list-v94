@@ -2262,3 +2262,26 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .hpKind{display:inline-block;min-width:34px;margin-right:6px;padding:1px 7px;border-radius:7px;background:var(--soft);color:var(--accent-strong);font-family:var(--f-mono);font-weight:600;font-size:.92em;letter-spacing:0;text-align:center;text-transform:none}
 .hpSwipe{color:var(--muted);font-size:12px;text-align:center}
 @media (prefers-reduced-motion:reduce){.hpPager{transition:none}}
+
+/* ===== v107: язык интерфейса RU / EN =====
+   Кнопка рядом с переключателем разделов: две подписи и бегунок под текущим языком
+   (как у переключателя — та же высота, рамка и обводка активного). Касание — сменить язык. */
+.langBtn{position:relative;flex:0 0 auto;display:grid;grid-template-columns:1fr 1fr;align-items:stretch;height:40px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 1px 3px rgba(30,41,59,.04);color:var(--muted);cursor:pointer;font:800 11.5px/1 var(--appFont,system-ui,sans-serif);letter-spacing:.05em;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;transition:opacity var(--ui-motion) var(--ui-ease),border-color var(--ui-motion) var(--ui-ease)}
+.langOpt{position:relative;z-index:1;display:grid;place-items:center;min-width:25px;padding:0 4px;border-radius:9px;transition:color var(--ui-motion) var(--ui-ease)}
+.langThumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:9px;background:var(--soft);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 65%,transparent);transition:transform var(--ui-motion) var(--ui-ease)}
+.langBtn[data-lang="en"] .langThumb{transform:translateX(100%)}
+.langBtn[data-lang="ru"] .langOpt[data-l="ru"],.langBtn[data-lang="en"] .langOpt[data-l="en"]{color:var(--accent-strong)}
+.langBtn:active{transform:scale(.96)}
+.langBtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+:root[data-theme="dark"] .langBtn{background:var(--control)}
+:root[data-theme="dark"] .langThumb{background:var(--accent);box-shadow:0 0 0 1px rgba(210,213,215,.34),0 3px 10px rgba(0,0,0,.38)}
+:root[data-theme="dark"] .langBtn[data-lang="ru"] .langOpt[data-l="ru"],:root[data-theme="dark"] .langBtn[data-lang="en"] .langOpt[data-l="en"]{color:var(--on-accent,#fff)}
+:root[data-theme="navy"] .langBtn,:root[data-theme="green"] .langBtn{background:var(--card)}
+@media (hover:hover){.langBtn:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}.langBtn:hover .langOpt{color:var(--text)}.langBtn[data-lang="ru"]:hover .langOpt[data-l="ru"],.langBtn[data-lang="en"]:hover .langOpt[data-l="en"]{color:var(--accent-strong)}}
+.titleRow.swOpen .langBtn{opacity:.55}
+@media (max-width:380px){.langOpt{min-width:22px;padding:0 3px}.langBtn{font-size:11px}}
+@media (prefers-reduced-motion:reduce){.langThumb,.langOpt,.langBtn{transition:none}}
+/* Пока английский словарь не применён — без мелькания русского текста (снимается в js/i18n.js). */
+html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
+/* Метка «есть задание» у кнопки «Задание» карточки тега. */
+html[lang="en"] .taskToggle.hasTask::after{content:'✓'}

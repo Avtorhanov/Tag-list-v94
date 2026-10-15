@@ -18,12 +18,12 @@ async function fileToJpeg(file,maxSide=1800,quality=.76,maxBytes=900*1024){
           side=Math.round(side*.82); q=Math.max(.58,q-.05);
         }
         URL.revokeObjectURL(url);
-        if(!blob) return reject(new Error('Не удалось подготовить изображение'));
-        if(blob.size>maxBytes && maxBytes<=900*1024) return reject(new Error('Фото слишком большое для OCR. Попробуй снять ближе или использовать «Загрузка фото».'));
+        if(!blob) return reject(new Error(TX('Не удалось подготовить изображение')));
+        if(blob.size>maxBytes && maxBytes<=900*1024) return reject(new Error(TX('Фото слишком большое для OCR. Попробуй снять ближе или использовать «Загрузка фото».')));
         resolve(blob);
       }catch(e){URL.revokeObjectURL(url);reject(e)}
     };
-    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Не удалось открыть изображение'))};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error(TX('Не удалось открыть изображение')))};
     img.src=url;
   });
 }
@@ -34,7 +34,7 @@ function fetchWithTimeout(url,options={},timeoutMs=35000){
   return fetch(url,{...options,signal:controller.signal})
     .finally(()=>clearTimeout(timer))
     .catch(e=>{
-      if(e && e.name==='AbortError') throw new Error('Сервис распознавания не ответил вовремя. Попробуй ещё раз или используй резервный OCR.');
+      if(e && e.name==='AbortError') throw new Error(TX('Сервис распознавания не ответил вовремя. Попробуй ещё раз или используй резервный OCR.'));
       throw e;
     });
 }
@@ -44,21 +44,21 @@ async function runOCR(file){
   $("ocrProgressWrap").style.display="block";
   setProgress(5);
   try{
-    $("ocrStatus").textContent="Подготавливаю фото…";
+    $("ocrStatus").textContent=TX("Подготавливаю фото…");
     ocrCandidateMeta=new Map();
     const image=await fileToJpeg(file,1800,.76,900*1024);
     if(runToken!==ocrRunToken)return;
     const key=safeGetStorage('kipOcrSpaceKey','helloworld')||'helloworld';
     const localPage=location.protocol==='file:' || location.origin==='null' || /android\.fileexplorer\.myprovider/i.test(location.origin);
     if(localPage){
-      $("ocrStatus").textContent="Для распознавания открой приложение через HTTPS (например GitHub Pages).";
+      $("ocrStatus").textContent=TX("Для распознавания открой приложение через HTTPS (например GitHub Pages).");
       setProgress(0);
       return;
     }
     let lastError=null;
     for(const engine of ['3','2']){
       try{
-        $("ocrStatus").textContent=engine==='3' ? "OCR.space Engine 3…" : "Engine 3 не сработал — пробую Engine 2…";
+        $("ocrStatus").textContent=engine==='3' ? "OCR.space Engine 3…" : TX("Engine 3 не сработал — пробую Engine 2…");
         setProgress(engine==='2'?25:55);
         const fd=new FormData();
         fd.append('file',image,'kip-photo.jpg');
@@ -81,7 +81,7 @@ async function runOCR(file){
         ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
         if(runToken!==ocrRunToken)return;
         setProgress(100);
-        $("ocrStatus").textContent=`OCR.space Engine ${engine}: найдено кандидатов ${ocrCandidates.length}. Проверь отметки и задания перед добавлением.`;
+        $("ocrStatus").textContent=TX("OCR.space Engine {0}: найдено кандидатов {1}. Проверь отметки и задания перед добавлением.",engine,ocrCandidates.length);
         renderImportCandidates();
         return;
       }catch(e){
@@ -89,12 +89,12 @@ async function runOCR(file){
         if(engine==='2')continue;
       }
     }
-    throw lastError||new Error('OCR.space не ответил');
+    throw lastError||new Error(TX('OCR.space не ответил'));
   }catch(e){
     if(runToken!==ocrRunToken)return;
     console.error(e);
     setProgress(0);
-    $("ocrStatus").textContent=`Ошибка распознавания: ${e.message||e}. Проверь интернет и доступ к OCR.space.`;
+    $("ocrStatus").textContent=TX("Ошибка распознавания: {0}. Проверь интернет и доступ к OCR.space.",TX.msg(e.message||e));
   }
 }
 
@@ -103,7 +103,7 @@ function renderImportCandidates(){
   box.innerHTML='';
   $("photoImportLegend").classList.remove("ready");
   if(!ocrCandidates.length){
-    box.innerHTML='<div class="mini">Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или использовать «Загрузка фото» с оригиналом.</div>';
+    box.innerHTML='<div class="mini">'+TX('Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или использовать «Загрузка фото» с оригиналом.')+'</div>';
     actions.style.display='none'; return;
   }
   const existing=new Set(data.map(x=>tagKey(x.tag)));
@@ -116,38 +116,38 @@ function renderImportCandidates(){
 
     const pick=document.createElement('input');
     pick.type='checkbox'; pick.className='importPick'; pick.checked=!already; pick.disabled=already;
-    pick.setAttribute('aria-label',`Добавить ${tag}`); pick.title='Добавить';
+    pick.setAttribute('aria-label',TX('Добавить {0}',tag)); pick.title=TX('Добавить');
 
     const inp=document.createElement('input');
-    inp.type='text'; inp.value=tag; inp.className='importTag'; inp.setAttribute('aria-label',`Тег ${tag}`);
+    inp.type='text'; inp.value=tag; inp.className='importTag'; inp.setAttribute('aria-label',TX('Тег {0}',tag));
 
     const done=document.createElement('input');
     done.type='checkbox'; done.className='importDone'; done.checked=!!meta.completed;
-    if(meta.evidence) done.title=`Выполнено: ${meta.evidence}`;
-    done.setAttribute('aria-label',`Выполнено: ${tag}`); done.title='Выполнено';
+    if(meta.evidence) done.title=TX('Выполнено: {0}',meta.evidence);
+    done.setAttribute('aria-label',TX('Выполнено: {0}',tag)); done.title=TX('Выполнено');
 
     const taskToggle=document.createElement('button');
     taskToggle.type='button'; taskToggle.className='importTaskInline'+(meta.task?' hasTask':'');
-    taskToggle.textContent='▾'; taskToggle.title=meta.task?'Задание: есть запись':'Задание';
+    taskToggle.textContent='▾'; taskToggle.title=meta.task?TX('Задание: есть запись'):TX('Задание');
     taskToggle.setAttribute('aria-expanded',meta.task?'true':'false');
-    taskToggle.setAttribute('aria-label',`Задание для ${tag}`);
+    taskToggle.setAttribute('aria-label',TX('Задание для {0}',tag));
 
     const taskWrap=document.createElement('div'); taskWrap.className='importTaskWrap'+(meta.task?' open':'');
     const task=document.createElement('textarea');
-    task.className='importTask'; task.rows=1; task.placeholder='Запись / задание с фото'; task.value=meta.task||'';
-    task.setAttribute('aria-label',`Задание для ${tag}`); taskWrap.appendChild(task);
+    task.className='importTask'; task.rows=1; task.placeholder=TX('Запись / задание с фото'); task.value=meta.task||'';
+    task.setAttribute('aria-label',TX('Задание для {0}',tag)); taskWrap.appendChild(task);
 
     taskToggle.addEventListener('click',()=>{
       const open=taskWrap.classList.toggle('open');
       taskToggle.setAttribute('aria-expanded',String(open));
       taskToggle.classList.toggle('hasTask',!!task.value.trim());
-      taskToggle.title=task.value.trim()?'Задание: есть запись':'Задание';
+      taskToggle.title=task.value.trim()?TX('Задание: есть запись'):TX('Задание');
       if(open)setTimeout(()=>task.focus(),20);
     });
     task.addEventListener('input',()=>{
       const has=!!task.value.trim();
       taskToggle.classList.toggle('hasTask',has);
-      taskToggle.title=has?'Задание: есть запись':'Задание';
+      taskToggle.title=has?TX('Задание: есть запись'):TX('Задание');
     });
     line.append(pick,inp,taskToggle,done);
     row.append(line,taskWrap); box.appendChild(row);
@@ -165,13 +165,13 @@ function importCandidates(){
     if(!m||!/^[0-9]{4}-[A-Z]{2,8}-[0-9]{3}[A-Z]?$/.test(tag)){invalid.push(index+1);return;}
     selected.push({unit:m[1],tag,done:!!done?.checked,task:String(task?.value||"").trim()});
   });
-  if(invalid.length){showToast(`Исправь тег(и) №${invalid.join(", ")} перед добавлением`);return;}
-  if(!selected.length){showToast("Ничего не выбрано для добавления");return;}
+  if(invalid.length){showToast(TX("Исправь тег(и) №{0} перед добавлением",invalid.join(", ")));return;}
+  if(!selected.length){showToast(TX("Ничего не выбрано для добавления"));return;}
   const existing=new Set(data.map(x=>tagKey(x.tag)));const batch=new Set();const duplicates=[];
   for(const item of selected){const key=tagKey(item.tag);if(existing.has(key)||batch.has(key))duplicates.push(item.tag);else batch.add(key);}
   if(duplicates.length){
     const unique=[...new Set(duplicates)];
-    showToast(`Дубликаты не добавлены: ${unique.join(", ")}. Измени тег или сними отметку.`);
+    showToast(TX("Дубликаты не добавлены: {0}. Измени тег или сними отметку.",unique.join(", ")));
     rows.forEach(row=>{const inp=row.querySelector('.importTag');if(inp&&unique.includes(inp.value.trim().toUpperCase()))inp.style.borderColor="#d9534f";});
     return;
   }
@@ -179,7 +179,7 @@ function importCandidates(){
   const additions=selected.map((x,i)=>({id:max+i+1,unit:x.unit,tag:x.tag,done:x.done,task:x.task||""}));
   const before=data.length;
   data=data.concat(additions);
-  try{save();if(data.length!==before+additions.length)throw new Error("Проверка количества после сохранения не прошла");}
-  catch(error){console.error(error);data=data.slice(0,before);save();showToast("Не удалось сохранить добавленные теги. Повтори ещё раз.");return;}
-  closeModal();render();showToast(`Добавлено распознанных: ${additions.length}`);
+  try{save();if(data.length!==before+additions.length)throw new Error(TX("Проверка количества после сохранения не прошла"));}
+  catch(error){console.error(error);data=data.slice(0,before);save();showToast(TX("Не удалось сохранить добавленные теги. Повтори ещё раз."));return;}
+  closeModal();render();showToast(TX("Добавлено распознанных: {0}",additions.length));
 }

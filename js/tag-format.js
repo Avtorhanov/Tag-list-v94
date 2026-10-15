@@ -6,6 +6,10 @@
    Выбор хранится на устройстве (localStorage, kip-tag-format-v1). */
 (function(){
   "use strict";
+  // v107: подписи — через TX (js/i18n.js). Причины отказа (reason) внутри модуля остаются русскими:
+  // по ним выбирается подсказка (hint), на экран они идут через TX.
+  const TX=(s,...a)=>typeof window!=="undefined"&&typeof window.TX==="function"?window.TX(s,...a):String(s).replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
+  const isEn=()=>typeof window!=="undefined"&&!!window.I18N?.en;
   // Кириллические двойники → латиница (замена 1:1, индексы совпадают с исходным текстом).
   const LOOK={"А":"A","В":"B","Е":"E","К":"K","М":"M","Н":"H","О":"O","Р":"P","С":"C","Т":"T","Х":"X","У":"Y","І":"I",
               "а":"A","в":"B","е":"E","к":"K","м":"M","н":"H","о":"O","р":"P","с":"C","т":"T","х":"X","у":"Y","і":"I"};
@@ -14,7 +18,7 @@
   const isCyr=c=>/[А-ЯЁа-яёІі]/.test(c||"");
   // Цифра, прочитанная как буква (фото, OCR) — только в позиции номера.
   const DIGFIX={O:"0",Q:"0",I:"1",L:"1",S:"5",Z:"2"};
-  const fixDigits=s=>{let v="",n=0;const what=new Set();for(const c of s){if(/\d/.test(c))v+=c;else{v+=DIGFIX[c]||c;n++;what.add(`буква ${c} → цифра ${DIGFIX[c]||c}`);}}return {v,fixed:n,what:[...what].join(", ")};};
+  const fixDigits=s=>{let v="",n=0;const what=new Set();for(const c of s){if(/\d/.test(c))v+=c;else{v+=DIGFIX[c]||c;n++;what.add(TX("буква {0} → цифра {1}",c,DIGFIX[c]||c));}}return {v,fixed:n,what:[...what].join(", ")};};
   const digitsOk=s=>{const real=(s.match(/\d/g)||[]).length;return s.length>=2&&real>=Math.max(1,s.length-1);};
 
   // Не приборы: трубы, документы, стандарты и обычные слова.
@@ -44,15 +48,15 @@
   /* Образец → правило. «21-PT-1001A» → [2 цифры = установка] [буквы] [4 цифры] [+буква]. */
   function fromExample(text){
     const samples=String(text||"").split(/[,;\n]+|\s{2,}/).map(s=>norm(s.trim()).replace(DASH,"-").replace(/\s+/g," ")).filter(Boolean).slice(0,3);
-    if(!samples.length)return {ok:false,error:"Впишите тег из своего списка"};
+    if(!samples.length)return {ok:false,get error(){return TX("Впишите тег из своего списка");}};
     const rules=[];
     for(const s of samples){
       const parts=s.match(/\d+|[A-Z]+|[-_ ]+|[^A-Z0-9-_ ]+/g)||[];
-      if(parts.some(p=>/[^A-Z0-9-_ ]/.test(p)))return {ok:false,error:`В «${s}» лишние знаки: нужны буквы, цифры и дефис`};
-      if(!/[A-Z]/.test(s)||!/\d/.test(s))return {ok:false,error:`В «${s}» должны быть и буквы, и цифры`};
+      if(parts.some(p=>/[^A-Z0-9-_ ]/.test(p)))return {ok:false,get error(){return TX("В «{0}» лишние знаки: нужны буквы, цифры и дефис",s);}};
+      if(!/[A-Z]/.test(s)||!/\d/.test(s))return {ok:false,get error(){return TX("В «{0}» должны быть и буквы, и цифры",s);}};
       let re="";const segs=[];
       parts.forEach((p,i)=>{
-        const word=n=>`${n} ${n===1?"цифра":n<5?"цифры":"цифр"}`;
+        const word=n=>n;
         if(/^\d+$/.test(p)){re+=`([0-9OQILSZ]{${p.length}})`;segs.push(i===0?{k:"unit",n:p.length,t:word(p.length)}:{k:"num",n:p.length,t:word(p.length)});}
         else if(/^[A-Z]+$/.test(p)){
           const last=i===parts.length-1&&i>0&&/^\d+$/.test(parts[i-1]);
@@ -70,14 +74,14 @@
   function describe(custom){
     if(!custom||!custom.ok)return "";
     return custom.rules.map(r=>{
-      const p=[];r.segs.forEach(s=>{
-        if(s.k==="unit")p.push(`${s.t} — установка`);
-        else if(s.k==="fn")p.push("буквы прибора");
-        else if(s.k==="one")p.push(`буква ${s.t}`);
-        else if(s.k==="num")p.push(`номер из ${s.n} ${s.n===1?"цифры":"цифр"}`);
+      const en=isEn(),p=[];r.segs.forEach(s=>{
+        if(s.k==="unit")p.push(en?`${s.n} ${s.n===1?"digit":"digits"} — unit`:`${s.n} ${s.n===1?"цифра":s.n<5?"цифры":"цифр"} — установка`);
+        else if(s.k==="fn")p.push(TX("буквы прибора"));
+        else if(s.k==="one")p.push(TX("буква {0}",s.t));
+        else if(s.k==="num")p.push(en?`${s.n}-digit number`:`номер из ${s.n} ${s.n===1?"цифры":"цифр"}`);
       });
       return p.join(", ");
-    }).join("; ")+". Буква в конце — по желанию.";
+    }).join("; ")+TX(". Буква в конце — по желанию.");
   }
 
   const canon=(unit,L,num,suf)=>(unit?unit+"-":"")+L+"-"+num+(suf||"");
@@ -118,12 +122,12 @@
       const a=k.index,b=a+k[0].length;
       if(mode!=="kks"){skipped.push({start:a,end:b,text:src.slice(a,b),reason:"код KKS"});mark(a,b);continue;}
       const f1=fixDigits(k[3]),f2=fixDigits(k[5]),fixes=[];
-      if(f1.fixed||f2.fixed)fixes.push("в номере "+[f1.what,f2.what].filter(Boolean).join(", "));
-      if(cyrIn(a,b))fixes.push("кириллица → латиница");
+      if(f1.fixed||f2.fixed)fixes.push(TX("в номере {0}",[f1.what,f2.what].filter(Boolean).join(", ")));
+      if(cyrIn(a,b))fixes.push(TX("кириллица → латиница"));
       mark(a,b);found.push({start:a,end:b,tag:`${k[1]}${k[2]}${f1.v}${k[4]}${f2.v}`,unit:`${k[1]}${k[2]}`,fixes});
     }
     if(mode==="custom"){
-      if(!custom||!custom.ok)return {found,skipped,error:custom?custom.error:"Впишите тег из своего списка"};
+      if(!custom||!custom.ok)return {found,skipped,error:custom?custom.error:TX("Впишите тег из своего списка")};
       for(const r of custom.rules){
         r.re.lastIndex=0;let m;
         while((m=r.re.exec(N))){
@@ -132,12 +136,12 @@
           r.parts.forEach((p,i)=>{
             if(!ok)return;
             const last=i===r.parts.length-1&&i>0&&/^\d+$/.test(r.parts[i-1]);
-            if(/^\d+$/.test(p)){const g=m[gi++];if(!digitsOk(g)&&g.length>1){ok=false;return;}const f=fixDigits(g);if(f.fixed)fixes.push("в номере "+f.what);out+=(out?"-":"")+f.v;if(i===0)unit=f.v;}
+            if(/^\d+$/.test(p)){const g=m[gi++];if(!digitsOk(g)&&g.length>1){ok=false;return;}const f=fixDigits(g);if(f.fixed)fixes.push(TX("в номере {0}",f.what));out+=(out?"-":"")+f.v;if(i===0)unit=f.v;}
             else if(/^[A-Z]+$/.test(p)){if(last&&p.length<=2)return;out+=(out?"-":"")+m[gi++];}
           });
           if(!ok)continue;
           out+=m[gi]||"";
-          if(cyrIn(a,b))fixes.push("кириллица → латиница");
+          if(cyrIn(a,b))fixes.push(TX("кириллица → латиница"));
           mark(a,b);found.push({start:a,end:b,tag:out,unit,fixes});
         }
       }
@@ -153,8 +157,8 @@
         mark(c.a,c.b);
         if(reason){skipped.push({start:c.a,end:c.b,text:c.show,reason});continue;}
         const f=fixDigits(c.num),fixes=[];
-        if(f.fixed)fixes.push("в номере "+f.what);
-        if(cyrIn(c.a,c.b))fixes.push("кириллица → латиница");
+        if(f.fixed)fixes.push(TX("в номере {0}",f.what));
+        if(cyrIn(c.a,c.b))fixes.push(TX("кириллица → латиница"));
         found.push({start:c.a,end:c.b,tag:canon(c.unit,c.L,f.v,c.suf),unit:c.unit,fixes});
       }
     }
@@ -177,10 +181,10 @@
   // Подсказка, если формат отбросил похожие на теги: какой включить.
   function hint(res,mode){
     const r=(res&&res.skipped||[]).map(s=>s.reason);
-    if(r.includes("код KKS")&&mode!=="kks")return {to:"kks",text:"Это KKS",btn:"Включить KKS"};
-    if(r.includes("есть номер установки"))return {to:"auto",text:"Здесь теги с установкой",btn:"Установка: любая"};
-    if(r.includes("нет номера установки"))return {to:"auto",text:"Здесь есть теги без установки",btn:"Установка: любая"};
-    if(r.some(x=>x==="не по образцу"||x==="не KKS")&&!(res.found||[]).length)return {to:"auto",text:"Здесь другой формат",btn:"Включить ISA-5.1"};
+    if(r.includes("код KKS")&&mode!=="kks")return {to:"kks",text:TX("Это KKS"),btn:TX("Включить KKS")};
+    if(r.includes("есть номер установки"))return {to:"auto",text:TX("Здесь теги с установкой"),btn:TX("Установка: любая")};
+    if(r.includes("нет номера установки"))return {to:"auto",text:TX("Здесь есть теги без установки"),btn:TX("Установка: любая")};
+    if(r.some(x=>x==="не по образцу"||x==="не KKS")&&!(res.found||[]).length)return {to:"auto",text:TX("Здесь другой формат"),btn:TX("Включить ISA-5.1")};
     return null;
   }
 
@@ -208,9 +212,9 @@
     setMode,setExample,
     setPref(k,v){st[k]=v;persist();},
     onChange(fn){listeners.add(fn);return()=>listeners.delete(fn);},
-    name(m=st.mode){return FORMATS[m].name;},
-    button(m=st.mode){return m==="custom"&&custom.ok?["Свой","Свой"]:FORMATS[m].btn;},
-    placeholder(){return st.mode==="custom"?(custom.ok?"Например, "+custom.rules[0].src:"Сначала впишите образец"):FORMATS[st.mode].ph;},
+    name(m=st.mode){return TX(FORMATS[m].name);},
+    button(m=st.mode){return (m==="custom"&&custom.ok?["Свой","Свой"]:FORMATS[m].btn).map(x=>TX(x));},
+    placeholder(){return st.mode==="custom"?(custom.ok?TX("Например, {0}",custom.rules[0].src):TX("Сначала впишите образец")):TX(FORMATS[st.mode].ph);},
     // В выбранном формате.
     find(text){return scan(text,st.mode,custom).found;},
     scanNow(text){return scan(text,st.mode,custom);},
@@ -234,7 +238,9 @@
     {id:"ru",name:"Наш формат",text:"Перечень на смену 15.10\n1. 2131-PZT-414A — проверка контура\n2. 2131-TT-434 калибровка 0…400 °C\n3. 2140-FT-118 ✓\n4. 2140-LSHH-208B проверка уставки\n5. 2150-РDТ-302 продувка импульсных линий\nНасос P-2101A — не КИП\nТрубопровод DN-50, PN-16"},
     {id:"me",name:"Ближний Восток",text:"LOOP CHECK STATUS — AREA 21\n21-PT-1001   Loop check OK\n21-FT-1002A  Calibration pending\n21-LIT-1105  Re-test after repair\n22-TT-2010   OK\n22-PDT-2O14  Impulse line flushing\n22-XV-2051   Stroke test\nV-2101 vessel, see DWG-21-0001 rev 2"},
     {id:"us",name:"США · скид",text:"SKID 100 — INSTRUMENT INDEX\nPT-101   Pump discharge pressure\nPT-102   Suction pressure\nFT101A   Flow, magmeter\nTE-105 / TT-105   Bearing temperature, Pt100\nLSL-110  Low level switch\nP-101A pump, M-20 bolts, 2\" 150#"},
-    {id:"kks",name:"KKS",text:"Контрольный лист КИП, блок 1\n10LBA10CP001  давление пара\n10LBA10CT002  температура пара\n10LAB20CF001  расход питательной воды\n20HAD11CL001  уровень в барабане\n10 LBA 30 CP 003  датчик заменён"}
+    {id:"kks",name:"KKS",get text(){return isEn()
+      ?"I&C check sheet, unit 1\n10LBA10CP001  steam pressure\n10LBA10CT002  steam temperature\n10LAB20CF001  feedwater flow\n20HAD11CL001  drum level\n10 LBA 30 CP 003  sensor replaced"
+      :"Контрольный лист КИП, блок 1\n10LBA10CP001  давление пара\n10LBA10CT002  температура пара\n10LAB20CF001  расход питательной воды\n20HAD11CL001  уровень в барабане\n10 LBA 30 CP 003  датчик заменён";}}
   ];
   window.TagFormat=api;
   if(typeof module!=="undefined")module.exports=api;

@@ -7,13 +7,15 @@
 //  • второй проход только по тегам (латиница, цифры, «-») подставляет тег в ту же строку, где первый его не прочитал.
 (function(){
   const BASE=new URL('./js/ocr-local/',document.baseURI).href;
+  // v107: сообщения — через TX (js/i18n.js), без него — по-русски.
+  const TX=(s,...a)=>typeof window.TX==='function'?window.TX(s,...a):String(s).replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
   const FILES={simd:'tesseract-core-simd-lstm.wasm.js',plain:'tesseract-core-lstm.wasm.js',worker:'worker.js',rus:'rus.traineddata',eng:'eng.traineddata'};
   let worker=null,ready=null,reqId=0;const pending=new Map();let onProgress=null;
 
   function simdSupported(){try{return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11]));}catch(_){return false;}}
   async function fetchOk(name,type){
     const r=await fetch(BASE+name);
-    if(!r.ok)throw new Error(`Не найден файл распознавания ${name} (HTTP ${r.status})`);
+    if(!r.ok)throw new Error(TX('Не найден файл распознавания {0} (HTTP {1})',name,r.status));
     return type==='text'?r.text():r.arrayBuffer();
   }
   function call(type,payload,transfer){
@@ -24,8 +26,8 @@
   function ensure(stage){
     if(ready)return ready;
     ready=(async()=>{
-      if(typeof WebAssembly!=='object')throw new Error('Браузер не поддерживает WebAssembly');
-      stage&&stage('Запускаю распознавание…');
+      if(typeof WebAssembly!=='object')throw new Error(TX('Браузер не поддерживает WebAssembly'));
+      stage&&stage(TX('Запускаю распознавание…'));
       const simd=simdSupported();
       const [workerSrc,coreSrc,rus,eng]=await Promise.all([fetchOk(FILES.worker,'text'),fetchOk(simd?FILES.simd:FILES.plain,'text'),fetchOk(FILES.rus),fetchOk(FILES.eng)]);
       const workerUrl=URL.createObjectURL(new Blob([workerSrc],{type:'text/javascript'}));
@@ -33,8 +35,8 @@
       worker=new Worker(workerUrl);
       worker.onmessage=e=>{const m=e.data||{};
         if(m.type==='progress'){onProgress&&onProgress(m.value);return;}
-        const p=pending.get(m.id);if(!p)return;pending.delete(m.id);m.ok?p.resolve(m.result):p.reject(new Error(m.error));};
-      worker.onerror=e=>{const err=new Error(e.message||'Ошибка распознавания');for(const p of pending.values())p.reject(err);pending.clear();};
+        const p=pending.get(m.id);if(!p)return;pending.delete(m.id);m.ok?p.resolve(m.result):p.reject(new Error(TX(m.error)));};
+      worker.onerror=e=>{const err=new Error(e.message||TX('Ошибка распознавания'));for(const p of pending.values())p.reject(err);pending.clear();};
       await call('init',{coreUrl,models:[{code:'rus',data:rus},{code:'eng',data:eng}]},[rus,eng]);
       return true;
     })();
@@ -117,7 +119,7 @@
     const wordsA=[],wordsB=[];let conf=0,confW=0;const t0=performance.now();
     for(let k=0;k<strips.length;k++){
       const st=strips[k];
-      stage&&stage(strips.length>1?`Распознаю на телефоне: часть ${k+1} из ${strips.length}…`:'Распознаю на телефоне…');
+      stage&&stage(strips.length>1?TX('Распознаю на телефоне: часть {0} из {1}…',k+1,strips.length):TX('Распознаю на телефоне…'));
       onProgress=v=>progress&&progress((k+v)/strips.length);
       const canvas=prepare(source,region.x,region.y+st.y0,region.w,st.h,scale);
       const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));

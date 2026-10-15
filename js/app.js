@@ -1,4 +1,11 @@
 
+// v107: язык интерфейса (js/i18n.js). Запасной вариант — русский без перевода, если словарь не загрузился.
+if(typeof window.TX!=="function"){
+  window.TX=(s,...a)=>String(s??"").replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
+  window.TX.msg=s=>String(s??"");
+}
+try{window.I18N?._init?.();}catch(_){}
+const LOC=()=>window.I18N?.locale||"ru-RU";
 // v98: на Android карточки тегов плотнее по вертикали (см. css «v98 Android»).
 try{if(/Android/i.test(navigator.userAgent||""))document.documentElement.classList.add("is-android");}catch(_){}
 
@@ -65,7 +72,7 @@ function safeSetStorage(key,value){
     const now=Date.now();
     if(typeof showToast==="function" && now-(safeSetStorage.lastWarn||0)>8000){
       safeSetStorage.lastWarn=now;
-      setTimeout(()=>{try{showToast("Не удалось сохранить на устройстве: память браузера заполнена. Сохрани JSON-копию.");}catch(_){}} ,0);
+      setTimeout(()=>{try{showToast(TX("Не удалось сохранить на устройстве: память браузера заполнена. Сохрани JSON-копию."));}catch(_){}} ,0);
     }
     return false;
   }
@@ -86,7 +93,7 @@ function loadData(){
 
 function createPageId(){return `page-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;}
 
-function normalizePageName(value,fallback="Страница"){
+function normalizePageName(value,fallback=TX("Страница")){
   const base=String(value??"").replace(/\s+/g," ").trim().slice(0,60)||fallback;
   const used=new Set(pages.map(page=>String(page.name||"").trim().toLocaleLowerCase("ru-RU")));
   if(!used.has(base.toLocaleLowerCase("ru-RU")))return base;
@@ -98,7 +105,7 @@ function normalizePageName(value,fallback="Страница"){
 function normalizeUniquePageNames(list){
   const used=new Set();
   return list.map((page,index)=>{
-    const raw=String(page.name||`Страница ${index+1}`).replace(/\s+/g," ").trim()||`Страница ${index+1}`;
+    const raw=String(page.name||TX("Страница {0}",index+1)).replace(/\s+/g," ").trim()||TX("Страница {0}",index+1);
     let name=raw.slice(0,60), n=2;
     while(used.has(name.toLocaleLowerCase("ru-RU"))){
       const suffix=` (${n++})`;
@@ -140,7 +147,7 @@ function loadPages(){
       if(Array.isArray(parsed) && parsed.length){
         const restored=normalizeUniquePageNames(parsed.map((page,index)=>({
           id:String(page.id||createPageId()),
-          name:String(page.name||`Страница ${index+1}`).trim()||`Страница ${index+1}`,
+          name:String(page.name||TX("Страница {0}",index+1)).trim()||TX("Страница {0}",index+1),
           data:cloneItems(page.data),
           updatedAt:page.updatedAt||new Date().toISOString()
         })));
@@ -150,11 +157,11 @@ function loadPages(){
     }
   }catch(e){}
   if(Array.isArray(INITIAL_PAGES) && INITIAL_PAGES.length){
-    const restored=normalizeUniquePageNames(INITIAL_PAGES.map((page,index)=>({id:String(page.id||createPageId()),name:String(page.name||`Страница ${index+1}`).trim()||`Страница ${index+1}`,data:cloneItems(page.data),updatedAt:page.updatedAt||new Date().toISOString()})));
+    const restored=normalizeUniquePageNames(INITIAL_PAGES.map((page,index)=>({id:String(page.id||createPageId()),name:String(page.name||TX("Страница {0}",index+1)).trim()||TX("Страница {0}",index+1),data:cloneItems(page.data),updatedAt:page.updatedAt||new Date().toISOString()})));
     safeSetStorage(PAGES_KEY,JSON.stringify(restored));
     return restored;
   }
-  const first={id:createPageId(),name:"Основная страница",data:loadData(),updatedAt:new Date().toISOString()};
+  const first={id:createPageId(),name:TX("Основная страница"),data:loadData(),updatedAt:new Date().toISOString()};
   safeSetStorage(PAGES_KEY,JSON.stringify([first]));
   return [first];
 }
@@ -172,8 +179,8 @@ var tagIndexVersion=0;
 
 function formatSaved(value){
   const date=new Date(value||0);
-  if(Number.isNaN(date.getTime()))return "Сохранено на устройстве: —";
-  return `Сохранено на устройстве: ${date.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}`;
+  if(Number.isNaN(date.getTime()))return TX("Сохранено на устройстве: —");
+  return TX("Сохранено на устройстве: {0}",date.toLocaleString(LOC(),{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}));
 }
 
 function renderLastSaved(){
@@ -190,7 +197,7 @@ function renderPages(){
     button.type="button";
     button.className="pageChip"+(page.id===activePageId?" active":"")+(selectedPageIds.has(page.id)?" selected":"");
     if(page.id===activePageId) button.setAttribute("aria-current","page");
-    button.title=pageManageMode?"Нажми для выбора страницы":"Нажми для открытия • удерживай для управления";
+    button.title=pageManageMode?TX("Нажми для выбора страницы"):TX("Нажми для открытия • удерживай для управления");
     if(pageManageMode){
       const mark=document.createElement("span");
       mark.className="pageChipMark";mark.textContent="✓";mark.setAttribute("aria-hidden","true");
@@ -291,12 +298,12 @@ function editSelectedPage(){
   if(selectedPageIds.size!==1)return;
   const id=[...selectedPageIds][0],page=pages.find(item=>item.id===id);
   if(!page)return;
-  const name=prompt("Название страницы",page.name);
+  const name=prompt(TX("Название страницы"),page.name);
   if(name===null)return;
   const clean=name.replace(/\s+/g," ").trim();
-  if(!clean){showToast("Название не изменено");return;}
+  if(!clean){showToast(TX("Название не изменено"));return;}
   page.name=normalizePageName(clean,page.name);page.updatedAt=new Date().toISOString();
-  persistPages();exitPageManage();showToast("Название страницы сохранено");
+  persistPages();exitPageManage();showToast(TX("Название страницы сохранено"));
 }
 
 async function deleteSelectedPages(){
@@ -305,7 +312,7 @@ async function deleteSelectedPages(){
   if(!ids.length)return;
   pages=pages.filter(page=>!ids.includes(page.id));
   if(!pages.length){
-    const fresh={id:createPageId(),name:"Основная страница",data:[],updatedAt:new Date().toISOString()};
+    const fresh={id:createPageId(),name:TX("Основная страница"),data:[],updatedAt:new Date().toISOString()};
     pages=[fresh];activePageId=fresh.id;data=fresh.data;
   }else if(!pages.some(page=>page.id===activePageId)){
     const next=pages[0];activePageId=next.id;data=next.data;
@@ -313,7 +320,7 @@ async function deleteSelectedPages(){
   filter="all";query="";
   if($("search"))$("search").value="";
   persistPages();pageManageMode=false;selectedPageIds.clear();closePageContextMenu();render();
-  showToast(ids.length===1?"Страница удалена":"Страницы удалены");
+  showToast(ids.length===1?TX("Страница удалена"):TX("Страницы удалены"));
 }
 
 function closePageContextMenu(){
@@ -340,14 +347,14 @@ function selectPage(id){
 }
 
 function createPage(){
-  const proposed=`Страница ${pages.length+1}`;
-  const name=prompt("Название новой страницы",proposed);
+  const proposed=TX("Страница {0}",pages.length+1);
+  const name=prompt(TX("Название новой страницы"),proposed);
   if(name===null)return;
   const clean=normalizePageName(name.replace(/\s+/g," ").trim()||proposed,proposed);
   const page={id:createPageId(),name:clean,data:[],updatedAt:new Date().toISOString()};
   pages.push(page);resetTagSelection();activePageId=page.id;data=page.data;filter="all";query="";
   if($("search"))$("search").value="";
-  persistPages();render();showToast("Создана новая страница");
+  persistPages();render();showToast(TX("Создана новая страница"));
 }
 
 // v100: признак «есть несохранённые правки» — смена раздела больше не переписывает
@@ -411,9 +418,9 @@ function renderTabs(animate=true){
     if(unit)units.add(unit);
     unitCounts.set(raw,(unitCounts.get(raw)||0)+1);
   }
-  const defs = [["all","Все",counts.all]];
-  if(counts.task) defs.push(["task","Задания",counts.task]);
-  defs.push(["done","Выполненные",counts.done],["todo","Невыполненные",counts.todo]);
+  const defs = [["all",TX("Все"),counts.all]];
+  if(counts.task) defs.push(["task",TX("Задания"),counts.task]);
+  defs.push(["done",TX("Выполненные"),counts.done],["todo",TX("Невыполненные"),counts.todo]);
   units.forEach(u => defs.push([u,u,unitCounts.get(u)||0]));
   if(!defs.some(x=>x[0]===filter)) filter="all";
   const frag=document.createDocumentFragment();
@@ -475,7 +482,7 @@ function renderList(){
     const e=document.createElement("div");
     e.className="empty";
     // v81: пустая страница и «ничего не найдено» — разные ситуации.
-    e.textContent=data.length?"Ничего не найдено":"Список пуст — нажми «+», чтобы добавить прибор";
+    e.textContent=data.length?TX("Ничего не найдено"):TX("Список пуст — нажми «+», чтобы добавить прибор");
     frag.appendChild(e);
     list.replaceChildren(frag);
     return;
@@ -518,10 +525,10 @@ function buildRow(item){
   const taskToggle=document.createElement("button");
   taskToggle.type="button";
   taskToggle.className="taskToggle";
-  taskToggle.textContent="Задание";
+  taskToggle.textContent=TX("Задание");
   taskToggle.setAttribute("aria-expanded","false");
   const saveTask=document.createElement("button");
-  saveTask.type="button";saveTask.className="taskSave";saveTask.textContent="Сохранить";
+  saveTask.type="button";saveTask.className="taskSave";saveTask.textContent=TX("Сохранить");
   taskLine.append(taskToggle,saveTask);
   // v102: поле задания (textarea) создаётся при первом открытии — ensureTaskEditor().
   info.append(tag,taskLine);
@@ -530,18 +537,18 @@ function buildRow(item){
 
   const cancelBtn=document.createElement("button");
   cancelBtn.type="button";cancelBtn.className="rowAction rowCancel";cancelBtn.textContent="×";
-  cancelBtn.title="Отменить выбор";cancelBtn.setAttribute("aria-label","Отменить выбор тегов");
+  cancelBtn.title=TX("Отменить выбор");cancelBtn.setAttribute("aria-label",TX("Отменить выбор тегов"));
 
   const selectBtn=document.createElement("button");
   selectBtn.type="button";selectBtn.className="rowAction rowSelect";
 
   const copyBtn=document.createElement("button");
   copyBtn.type="button";copyBtn.className="rowAction rowCopy";copyBtn.textContent="⧉";
-  copyBtn.title="Скопировать тег";
+  copyBtn.title=TX("Скопировать тег");
 
   const editBtn=document.createElement("button");
   editBtn.type="button";editBtn.className="rowAction rowEdit";editBtn.textContent="✎";
-  editBtn.title="Изменить тег";
+  editBtn.title=TX("Изменить тег");
 
   actions.append(cancelBtn,selectBtn,copyBtn,editBtn);
   row.append(check,num,info,actions);
@@ -561,15 +568,15 @@ function syncRow(row,item){
   row.classList.toggle("done",!!item.done);
   row.classList.toggle("selection-mode",selectionMode);
   ui.check.classList.toggle("on",!!item.done);
-  ui.check.setAttribute("aria-label",item.done?"Отметить как невыполненное":"Отметить как выполненное");
+  ui.check.setAttribute("aria-label",item.done?TX("Отметить как невыполненное"):TX("Отметить как выполненное"));
   if(ui.num.textContent!==String(item.id))ui.num.textContent=item.id;
   if(ui.tag.textContent!==item.tag)ui.tag.textContent=item.tag;
   ui.taskToggle.classList.toggle("hasTask",!!item.task);
   ui.selectBtn.classList.toggle("selected",selected);
-  ui.selectBtn.title=selected?"Снять выбор":"Выбрать тег";
-  ui.selectBtn.setAttribute("aria-label",selected?`Снять выбор ${item.tag}`:`Выбрать ${item.tag}`);
-  ui.copyBtn.setAttribute("aria-label",`Скопировать ${item.tag}`);
-  ui.editBtn.setAttribute("aria-label",`Изменить ${item.tag}`);
+  ui.selectBtn.title=selected?TX("Снять выбор"):TX("Выбрать тег");
+  ui.selectBtn.setAttribute("aria-label",selected?TX("Снять выбор {0}",item.tag):TX("Выбрать {0}",item.tag));
+  ui.copyBtn.setAttribute("aria-label",TX("Скопировать {0}",item.tag));
+  ui.editBtn.setAttribute("aria-label",TX("Изменить {0}",item.tag));
 }
 
 function ensureTaskEditor(row,item){
@@ -578,7 +585,7 @@ function ensureTaskEditor(row,item){
   editor=document.createElement("div");editor.className="taskEditorWrap";
   const box=document.createElement("div");box.className="taskBox";
   const ta=document.createElement("textarea");
-  ta.placeholder=TASK_PLACEHOLDER;
+  ta.placeholder=TX(TASK_PLACEHOLDER);
   ta.value=item?.task||"";
   box.appendChild(ta);editor.appendChild(box);
   row.querySelector(".info").appendChild(editor);
@@ -594,11 +601,11 @@ function renderSummary(){
   const done=data.filter(x=>x.done).length;
   const remaining=Math.max(0,total-done);
   const percent=total ? Math.round((done/total)*100) : 0;
-  const scope=filter==="all" ? "Весь список" : filter==="todo" ? "Только невыполненные" : filter==="done" ? "Только выполненные" : filter==="task" ? "Только с заданиями" : `Unit ${filter}`;
-  $("summaryCount").textContent=`${done} из ${total} выполнено`;
+  const scope=filter==="all" ? TX("Весь список") : filter==="todo" ? TX("Только невыполненные") : filter==="done" ? TX("Только выполненные") : filter==="task" ? TX("Только с заданиями") : `Unit ${filter}`;
+  $("summaryCount").textContent=TX("{0} из {1} выполнено",done,total);
   $("summaryPercent").textContent=`${percent}%`;
-  $("summaryRemaining").textContent=`Осталось: ${remaining}`;
-  $("summaryFilter").textContent=query.trim() ? `${scope} · поиск` : scope;
+  $("summaryRemaining").textContent=TX("Осталось: {0}",remaining);
+  $("summaryFilter").textContent=query.trim() ? TX("{0} · поиск",scope) : scope;
   $("progressFill").style.width=`${percent}%`;
   $("progressTrack").setAttribute("aria-valuenow",String(percent));
 }
@@ -621,7 +628,7 @@ function updateRenderedRowState(row,item){
   const check=row.querySelector(".check");
   if(check){
     check.classList.toggle("on",!!item.done);
-    check.setAttribute("aria-label",item.done?"Отметить как невыполненное":"Отметить как выполненное");
+    check.setAttribute("aria-label",item.done?TX("Отметить как невыполненное"):TX("Отметить как выполненное"));
   }
 }
 
@@ -737,7 +744,7 @@ function commitTaskEditor(row,item){
   if(ta&&document.activeElement===ta)ta.blur();
   setTaskEditor(row,item,true,false,{editing:false,scrollTop:keep});
   renderTabs(false);
-  showToast("Задание сохранено");
+  showToast(TX("Задание сохранено"));
 }
 
 // После появления клавиатуры аккуратно показываем поле целиком (один раз),
@@ -794,12 +801,12 @@ function updateSelectionFooter(){
     const allSelected=scope.length>0 && scopedSelected.length===scope.length;
     const allDone=scopedSelected.length>0 && scopedSelected.every(item=>item.done);
     btn.disabled=!count;
-    btn.title=count?`Удалить выбранные теги: ${count}`:"Выбери теги для удаления";
+    btn.title=count?TX("Удалить выбранные теги: {0}",count):TX("Выбери теги для удаления");
     markBtn.disabled=!scope.length;
-    markBtn.title=allSelected?"Снять выбор со всех тегов текущей вкладки":"Выбрать все теги текущей вкладки";
+    markBtn.title=allSelected?TX("Снять выбор со всех тегов текущей вкладки"):TX("Выбрать все теги текущей вкладки");
     markBtn.dataset.mode=allSelected?"clear":"select";
     clearBtn.disabled=!scopedSelected.length;
-    clearBtn.title=allDone?"Снять статус «Выполнено» у выбранных":"Отметить выбранные как выполненные";
+    clearBtn.title=allDone?TX("Снять статус «Выполнено» у выбранных"):TX("Отметить выбранные как выполненные");
     clearBtn.dataset.mode=allDone?"unset-done":"set-done";
     btn.dataset.count=String(count);
   }else{
@@ -824,8 +831,8 @@ async function copyTags(ids){
     else{
       const ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
     }
-    showToast(items.length===1?`Скопирован тег${items[0].task?" с заданием":""}: ${items[0].tag}`:`Скопировано тегов с заданиями: ${items.length}`);
-  }catch(_){showToast("Не удалось скопировать тег");}
+    showToast(items.length===1?(items[0].task?TX("Скопирован тег с заданием: {0}",items[0].tag):TX("Скопирован тег: {0}",items[0].tag)):TX("Скопировано тегов с заданиями: {0}",items.length));
+  }catch(_){showToast(TX("Не удалось скопировать тег"));}
 }
 
 function enterTagSelection(id){
@@ -861,7 +868,7 @@ function openEdit(id){
   editId=id;
   const item=data.find(x=>x.id===id);
   if(!item)return;
-  $("modalTitleText").textContent="Редактировать прибор";
+  $("modalTitleText").textContent=TX("Редактировать прибор");
   setAddMode("manual");
   $("addChoice").style.display="none";
   tagInput.value=item.tag;checkTagLine();
@@ -897,7 +904,7 @@ function findDuplicateTag(tag,ignoreId=null){
 
 function openDuplicateDialog(duplicate,pending){
   pendingDuplicate={duplicateId:duplicate.id,pending};
-  $("duplicateMessage").innerHTML=`Тег <strong>${escapeHtml(pending.tag)}</strong> уже есть в списке (позиция №${duplicate.id}, ${escapeHtml(duplicate.tag)}).<br><br>Измени новый тег или удали существующую запись, если она больше не нужна.`;
+  $("duplicateMessage").innerHTML=TX("Тег <strong>{0}</strong> уже есть в списке (позиция №{1}, {2}).<br><br>Измени новый тег или удали существующую запись, если она больше не нужна.",escapeHtml(pending.tag),duplicate.id,escapeHtml(duplicate.tag));
   $("duplicateOverlay").classList.add("show");
 }
 
@@ -918,9 +925,9 @@ function manualTagCheck(value){
 
 function saveModal(){
   const raw=tagInput.value.trim();
-  if(!raw){showToast("Введите тег");tagInput.focus();return;}
+  if(!raw){showToast(TX("Введите тег"));tagInput.focus();return;}
   const r=manualTagCheck(raw);
-  if(!r||!r.ok){showToast(`Тег не подходит под формат «${TagFormat.name()}»: ${r?r.reason:"не похоже на тег"}. Формат меняется кнопкой ${TagFormat.button()[0]} рядом с OCR.`);tagInput.focus();return;}
+  if(!r||!r.ok){showToast(TX("Тег не подходит под формат «{0}»: {1}. Формат меняется кнопкой {2} рядом с OCR.",TagFormat.name(),TX(r?r.reason:"не похоже на тег"),TagFormat.button()[0]));tagInput.focus();return;}
   const tag=r.tag,unit=r.unit||"";
   const done=statusInput.value==="done";
   const task=manualTaskInput.value.trim();
@@ -935,19 +942,21 @@ function saveModal(){
   }
   // v98: closeModal() обнуляет editId — раньше после правки показывалось «Прибор добавлен».
   const wasEdit=editId!==null;
-  save();closeModal();render();showToast(wasEdit?"Сохранено":"Прибор добавлен");
+  save();closeModal();render();showToast(wasEdit?TX("Сохранено"):TX("Прибор добавлен"));
 }
 
 async function deleteCurrent(){
   if(editId===null)return;
   const item=data.find(x=>x.id===editId);
   if(!item)return;
-  if(!await askConfirm(`Удалить ${item.tag}?`,"Удаление прибора","Удалить"))return;
+  if(!await askConfirm(TX("Удалить {0}?",item.tag),TX("Удаление прибора"),TX("Удалить")))return;
   data=data.filter(x=>x.id!==editId);
-  save();closeModal();render();showToast("Прибор удалён");
+  save();closeModal();render();showToast(TX("Прибор удалён"));
 }
 
 function showToast(text){
+  // v107: готовые сообщения (в том числе из APK) переводятся по словарю.
+  text=TX.msg(text);
   const t=$("toast");if(!t)return;t.textContent=text;t.classList.add("show");
   // v81: длинные сообщения показываются дольше, чтобы их успевали прочитать.
   const ms=Math.min(5200,Math.max(1600,String(text||"").length*55));
@@ -958,7 +967,7 @@ function safeFileBase(name){
   return name.trim()
     .replace(/[\\/:*?"<>|]/g,"-")
     .replace(/\s+/g," ")
-    .replace(/\.+$/,"") || "КИП-чек-лист";
+    .replace(/\.+$/,"") || TX("КИП-чек-лист");
 }
 
 function renderExportPageButtons(){
@@ -969,14 +978,14 @@ function renderExportPageButtons(){
     const button=document.createElement("button");
     button.type="button";
     button.className="choice";
-    button.innerHTML=`<span class="ico">${index===0?"⌂":"≡"}</span>${escapeHtml(page.name||`Страница ${index+1}`)}`;
+    button.innerHTML=`<span class="ico">${index===0?"⌂":"≡"}</span>${escapeHtml(page.name||TX("Страница {0}",index+1))}`;
     button.addEventListener("click",()=>sharePageReport(page.id));
     wrap.appendChild(button);
   });
 }
 
 function openExportMenu(){
-  $("exportTitle").textContent="Сохранить / отправить";
+  $("exportTitle").textContent=TX("Сохранить / отправить");
   renderExportPageButtons();
   $("exportOverlay").classList.add("show");
 }
@@ -984,7 +993,7 @@ function openExportMenu(){
 function closeExportMenu(){ $("exportOverlay").classList.remove("show"); }
 
 function reportDateTime(){
-  return new Date().toLocaleString("ru-RU",{
+  return new Date().toLocaleString(LOC(),{
     day:"2-digit",month:"2-digit",year:"numeric",
     hour:"2-digit",minute:"2-digit"
   });
@@ -999,7 +1008,7 @@ function cleanReportField(value){
 
 function pageTitleForReport(page){
   const name=cleanReportField(page?.name);
-  return name||"Без названия";
+  return name||TX("Без названия");
 }
 
 function reportPageHeader(page){
@@ -1008,7 +1017,7 @@ function reportPageHeader(page){
 
 function formatReportItems(items,includeTasks=false){
   return items.map((item,index)=>{
-    const tag=cleanReportField(item.tag)||"Без тега";
+    const tag=cleanReportField(item.tag)||TX("Без тега");
     const task=cleanReportField(item.task);
     return `${index+1}. ${tag}${includeTasks&&task?` — ${task}`:""}`;
   }).join("\n");
@@ -1026,11 +1035,11 @@ function buildGroupedTextReport(kind="all"){
     sections.push(`${title}
 ${formatReportItems(items,includeTasks)}`);
   };
-  if(kind==="done") addSection("Выполненные",done);
-  else if(kind==="todo") addSection("Невыполненные",todo);
-  else if(kind==="task") addSection("Задания",tasks,true);
-  else { addSection("Выполненные",done); addSection("Невыполненные",todo); }
-  const body=sections.length?sections.join("\n\n"):"Нет данных";
+  if(kind==="done") addSection(TX("Выполненные"),done);
+  else if(kind==="todo") addSection(TX("Невыполненные"),todo);
+  else if(kind==="task") addSection(TX("Задания"),tasks,true);
+  else { addSection(TX("Выполненные"),done); addSection(TX("Невыполненные"),todo); }
+  const body=sections.length?sections.join("\n\n"):TX("Нет данных");
   return `${reportPageHeader(page)}\n\n${body}`;
 }
 
@@ -1044,11 +1053,11 @@ function buildPageTextReport(page,kind="all"){
     if(items.length) sections.push(`  ${title}
 ${formatReportItems(items,includeTasks).replace(/^/gm,"    ")}`);
   };
-  if(kind==="done") addSection("Выполненные",done);
-  else if(kind==="todo") addSection("Невыполненные",todo);
-  else if(kind==="task") addSection("Задания",tasks,true);
-  else { addSection("Выполненные",done); addSection("Невыполненные",todo); }
-  const body=sections.length?sections.join("\n\n") : "  Нет данных";
+  if(kind==="done") addSection(TX("Выполненные"),done);
+  else if(kind==="todo") addSection(TX("Невыполненные"),todo);
+  else if(kind==="task") addSection(TX("Задания"),tasks,true);
+  else { addSection(TX("Выполненные"),done); addSection(TX("Невыполненные"),todo); }
+  const body=sections.length?sections.join("\n\n") : "  "+TX("Нет данных");
   return `**${pageTitleForReport(page)}**\n\n${body}`;
 }
 
@@ -1059,7 +1068,7 @@ function buildFullStateTextReport(){
     const todo=page.data.filter(item=>!item.done);
     const tasks=page.data.filter(item=>!!cleanReportField(item.task));
     const section=(title,items,includeTasks=false)=>items.length?`  ${title}\n${formatReportItems(items,includeTasks).replace(/^/gm,"    ")}`:`  ${title}\n    —`;
-    chunks.push(`\n\n**${pageTitleForReport(page)}**\n\n${section("Выполненные",done)}\n\n${section("Невыполненные",todo)}\n\n${section("Задания",tasks,true)}`);
+    chunks.push(`\n\n**${pageTitleForReport(page)}**\n\n${section(TX("Выполненные"),done)}\n\n${section(TX("Невыполненные"),todo)}\n\n${section(TX("Задания"),tasks,true)}`);
   });
   return chunks.join("");
 }
@@ -1071,20 +1080,20 @@ function buildTitlesReport(){
 async function shareTextPayload(title,text){
   closeExportMenu();
   try{
-    if(navigator.share){await navigator.share({title,text});showToast("Текст передан");return;}
-    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);showToast("Текст скопирован");return;}
+    if(navigator.share){await navigator.share({title,text});showToast(TX("Текст передан"));return;}
+    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);showToast(TX("Текст скопирован"));return;}
     throw new Error("share-unavailable");
-  }catch(e){if(e.name!=="AbortError")showToast("Не удалось передать текст");}
+  }catch(e){if(e.name!=="AbortError")showToast(TX("Не удалось передать текст"));}
 }
 
 async function shareTextReport(kind){
   const labels={all:"Весь список",done:"Выполненные",todo:"Невыполненные",task:"Задания",pages:"Титулы"};
   const text=kind==="pages"?buildTitlesReport():buildPageTextReport(getActivePage(),kind);
-  await shareTextPayload(`${docTitle} — ${labels[kind]}`,text);
+  await shareTextPayload(`${docTitle} — ${TX(labels[kind])}`,text);
 }
 
 async function shareFullStateText(){
-  await shareTextPayload(`${docTitle} — всё состояние`,buildFullStateTextReport());
+  await shareTextPayload(TX("{0} — всё состояние",docTitle),buildFullStateTextReport());
 }
 
 function buildStateObject(){
@@ -1144,26 +1153,26 @@ async function saveCurrentStateJson(){
       closeExportMenu();
       const file=stateShareFile(text,fileName);
       if(file && typeof navigator.share==="function"){
-        try{await navigator.share({title:`${docTitle} — состояние`,files:[file]});showToast("JSON передан");return;}
+        try{await navigator.share({title:TX("{0} — состояние",docTitle),files:[file]});showToast(TX("JSON передан"));return;}
         catch(err){if(err?.name==="AbortError")return;}
       }
-      if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);showToast("Встроенный браузер не сохраняет файлы — JSON скопирован. Открой приложение в Chrome.");return;}
+      if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);showToast(TX("Встроенный браузер не сохраняет файлы — JSON скопирован. Открой приложение в Chrome."));return;}
       throw new Error("save-unavailable");
     }
     if(window.showSaveFilePicker && !isAndroidBrowser()){
       try{
         await writeJsonWithPicker(text,fileName);
-        showToast("JSON сохранён");closeExportMenu();return;
+        showToast(TX("JSON сохранён"));closeExportMenu();return;
       }catch(pickerError){
         if(pickerError?.name==="AbortError")return;
         // Запись через выбор файла не удалась — сохраняем обычной загрузкой.
       }
     }
     downloadJsonFile(text,fileName);
-    showToast(isAndroidBrowser()?"JSON сохранён в «Загрузки»":"JSON сохранён в файлы/загрузки");
+    showToast(isAndroidBrowser()?TX("JSON сохранён в «Загрузки»"):TX("JSON сохранён в файлы/загрузки"));
     closeExportMenu();
   }catch(e){
-    if(e?.name!=="AbortError")showToast("Не удалось сохранить JSON");
+    if(e?.name!=="AbortError")showToast(TX("Не удалось сохранить JSON"));
   }
 }
 function openJsonStatePicker(){
@@ -1177,7 +1186,7 @@ async function backupAndOpenJsonState(){
   const file=input.files[0];
   input.value="";
   try{ await importJsonStateFile(file); }
-  catch(e){ showToast(e?.message||"Не удалось открыть JSON"); }
+  catch(e){ showToast(TX.msg(e?.message)||TX("Не удалось открыть JSON")); }
 }
 // v81: отправка состояния .json сразу в мессенджер.
 // Chrome/Samsung Internet/Edge на Android принимают в «Поделиться» только файлы из
@@ -1211,7 +1220,7 @@ async function shareCurrentStateJson(){
   const bridge=nativeBridge();
   if(bridge){
     try{
-      if(bridge.shareFile(fileName,"application/json",text,`${docTitle} — состояние`)){showToast("Выбери мессенджер для отправки JSON");return;}
+      if(bridge.shareFile(fileName,"application/json",text,TX("{0} — состояние",docTitle))){showToast(TX("Выбери мессенджер для отправки JSON"));return;}
     }catch(_){}
   }
   try{
@@ -1219,8 +1228,8 @@ async function shareCurrentStateJson(){
     if(file && typeof navigator.share==="function"){
       // Не проверяем canShare(): он не учитывает тип файлов и на части WebView отсутствует.
       try{
-        await navigator.share({title:`${docTitle} — состояние`,text:`Состояние приложения «${docTitle}»`,files:[file]});
-        showToast("JSON передан");return;
+        await navigator.share({title:TX("{0} — состояние",docTitle),text:TX("Состояние приложения «{0}»",docTitle),files:[file]});
+        showToast(TX("JSON передан"));return;
       }catch(shareError){
         if(shareError?.name==="AbortError") return;
         // Реальная ошибка — запасной путь ниже.
@@ -1228,23 +1237,23 @@ async function shareCurrentStateJson(){
     }
     if(navigator.clipboard?.writeText){
       await navigator.clipboard.writeText(text);
-      showToast("JSON скопирован в буфер обмена");return;
+      showToast(TX("JSON скопирован в буфер обмена"));return;
     }
-    downloadJsonFile(text,fileName);showToast("JSON подготовлен для сохранения");
+    downloadJsonFile(text,fileName);showToast(TX("JSON подготовлен для сохранения"));
   }catch(e){
     if(e?.name==="AbortError")return;
-    try{downloadJsonFile(text,fileName);showToast("Не удалось отправить напрямую — JSON подготовлен для сохранения");}
-    catch(_){showToast("Не удалось отправить или сохранить JSON");}
+    try{downloadJsonFile(text,fileName);showToast(TX("Не удалось отправить напрямую — JSON подготовлен для сохранения"));}
+    catch(_){showToast(TX("Не удалось отправить или сохранить JSON"));}
   }
 }
 function validateImportedState(parsed){
-  if(!parsed||typeof parsed!=="object")throw new Error("JSON не является объектом состояния Tag list.");
+  if(!parsed||typeof parsed!=="object")throw new Error(TX("JSON не является объектом состояния Tag list."));
   const version=Number(parsed.schemaVersion||parsed.v||0);
-  if(version!==1)throw new Error(`Неподдерживаемая версия JSON: ${version||"не указана"}.`);
-  if(!Array.isArray(parsed.pages)||!parsed.pages.length)throw new Error("В JSON нет страниц.");
+  if(version!==1)throw new Error(TX("Неподдерживаемая версия JSON: {0}.",version||TX("не указана")));
+  if(!Array.isArray(parsed.pages)||!parsed.pages.length)throw new Error(TX("В JSON нет страниц."));
   const normalized=normalizeUniquePageNames(parsed.pages.map((page,index)=>{
-    if(!page||typeof page!=="object")throw new Error(`Некорректная страница №${index+1}.`);
-    return {id:String(page.id||createPageId()),name:String(page.name||`Страница ${index+1}`).trim()||`Страница ${index+1}`,data:cloneItems(page.data),updatedAt:page.updatedAt||new Date().toISOString()};
+    if(!page||typeof page!=="object")throw new Error(TX("Некорректная страница №{0}.",index+1));
+    return {id:String(page.id||createPageId()),name:String(page.name||TX("Страница {0}",index+1)).trim()||TX("Страница {0}",index+1),data:cloneItems(page.data),updatedAt:page.updatedAt||new Date().toISOString()};
   }));
   const requestedActive=String(parsed.activePageId||"");
   const active=normalized.some(p=>p.id===requestedActive)?requestedActive:normalized[0].id;
@@ -1276,20 +1285,20 @@ async function readTextFileCompat(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onload=()=>resolve(String(reader.result||""));
-    reader.onerror=()=>reject(new Error("Не удалось прочитать выбранный файл."));
+    reader.onerror=()=>reject(new Error(TX("Не удалось прочитать выбранный файл.")));
     reader.readAsText(file,"UTF-8");
   });
 }
 async function importJsonStateFile(file){
-  if(!file)throw new Error("JSON-файл не выбран.");
-  if(file.size>10*1024*1024)throw new Error("JSON больше 10 МБ.");
+  if(!file)throw new Error(TX("JSON-файл не выбран."));
+  if(file.size>10*1024*1024)throw new Error(TX("JSON больше 10 МБ."));
   const text=await readTextFileCompat(file);let parsed;
-  try{parsed=JSON.parse(text.replace(/^\uFEFF/,""));}catch(_){throw new Error("Файл содержит некорректный JSON.");}
+  try{parsed=JSON.parse(text.replace(/^\uFEFF/,""));}catch(_){throw new Error(TX("Файл содержит некорректный JSON."));}
   // Validation happens before backup or mutation. Successful import stores a
   // local recovery snapshot, then replaces the live state and redraws the UI.
   applyImportedState(parsed,true);
   closeModal();closeExportMenu();
-  showToast(`Открыто состояние из ${file.name||"JSON"}. Предыдущее состояние сохранено локально.`);
+  showToast(TX("Открыто состояние из {0}. Предыдущее состояние сохранено локально.",file.name||"JSON"));
   return true;
 }
 async function sharePageReport(pageId){
@@ -1342,31 +1351,31 @@ function buildReportLines(){
   const push=(t,k,num=false)=>L.push({t,k,num});
   if(!multi)push(pageTitleForReport(chosen[0]),"p:"+chosen[0].id);
   const who=reportState.people.filter(n=>reportState.on.includes(n));
-  if(who.length)push("Исполнители: "+who.join(", "),"who");
+  if(who.length)push(TX("Исполнители: {0}",who.join(", ")),"who");
   chosen.forEach(page=>{
     const items=page.data||[],pid=String(page.id);
     const done=items.filter(x=>x.done),todo=items.filter(x=>!x.done);
     if(L.length)push("","b:"+pid+":0");
     if(multi)push(pageTitleForReport(page),"p:"+pid);
     const pct=items.length?Math.round(done.length/items.length*100):0;
-    push(`Выполнено ${done.length} из ${items.length} (${pct} %)`,"stat:"+pid);
+    push(TX("Выполнено {0} из {1} ({2} %)",done.length,items.length,pct),"stat:"+pid);
     const section=(head,list,kind)=>{
       push("","b:"+pid+":"+kind);
       push(`${head} (${list.length})`,"sec:"+pid+":"+kind);
       if(!list.length){push("—","dash:"+pid+":"+kind);return;}
       const groups=new Map();
-      list.forEach(x=>{const u=cleanReportField(x.unit)||unitFromTag(x.tag)||"Без установки";if(!groups.has(u))groups.set(u,[]);groups.get(u).push(x);});
+      list.forEach(x=>{const u=cleanReportField(x.unit)||unitFromTag(x.tag)||TX("Без установки");if(!groups.has(u))groups.set(u,[]);groups.get(u).push(x);});
       let n=0;
       groups.forEach((group,unit)=>{
         if(groups.size>1)push(`▸ ${unit}`,"u:"+pid+":"+kind+":"+unit);
         group.forEach(x=>{
-          const tag=cleanReportField(x.tag)||"Без тега",task=cleanReportField(x.task);
+          const tag=cleanReportField(x.tag)||TX("Без тега"),task=cleanReportField(x.task);
           push(`${++n}. ${tag}${reportState.withTasks&&task?` — ${task}`:""}`,"t:"+pid+":"+x.id+":"+tag,true);
         });
       });
     };
-    if(reportState.kind!=="todo")section("✅ Выполнено",done,"done");
-    if(reportState.kind!=="done")section("⏳ Не выполнено",todo,"todo");
+    if(reportState.kind!=="todo")section(TX("✅ Выполнено"),done,"done");
+    if(reportState.kind!=="done")section(TX("⏳ Не выполнено"),todo,"todo");
   });
   return L;
 }
@@ -1449,17 +1458,17 @@ function paintReportEditState(){
   const box=$("reportEditState");
   box.replaceChildren();
   if(edited){
-    const warn=document.createElement("span");warn.className="rpWarn";warn.textContent="Изменено вручную";
-    const reset=document.createElement("button");reset.type="button";reset.className="rpLink";reset.id="reportResetEdit";reset.textContent="Вернуть исходный";
+    const warn=document.createElement("span");warn.className="rpWarn";warn.textContent=TX("Изменено вручную");
+    const reset=document.createElement("button");reset.type="button";reset.className="rpLink";reset.id="reportResetEdit";reset.textContent=TX("Вернуть исходный");
     box.append(warn,reset);
   }else{
     const hint=document.createElement("span");
-    hint.textContent=reportEditing?"Правка: дополните или исправьте текст":"Двойное касание по тексту — правка на весь экран";
+    hint.textContent=reportEditing?TX("Правка: дополните или исправьте текст"):TX("Двойное касание по тексту — правка на весь экран");
     box.append(hint);
   }
   const has=!!ta.value.trim();
   $("reportSend").disabled=!has;
-  $("reportSend").textContent=has?"Отправить":"Выберите страницу";
+  $("reportSend").textContent=has?TX("Отправить"):TX("Выберите страницу");
 }
 
 function renderReportPages(){
@@ -1479,7 +1488,7 @@ function renderReportPages(){
   }
   const chosen=new Set(reportState.pages);
   box.querySelectorAll(".rpPage").forEach(b=>b.setAttribute("aria-pressed",String(chosen.has(b.dataset.pageId))));
-  $("reportAllPages").textContent=reportState.pages.length===pages.length?"Снять все":"Выбрать все";
+  $("reportAllPages").textContent=reportState.pages.length===pages.length?TX("Снять все"):TX("Выбрать все");
 }
 function renderReportTiles(){
   let done=0,todo=0;
@@ -1506,14 +1515,14 @@ function renderReportPeople(){
       b.append(av,nm);
       return b;
     });
-    const add=document.createElement("button");add.type="button";add.className="rpAdd";add.id="reportAddPeople";add.textContent="+ Из контактов";
+    const add=document.createElement("button");add.type="button";add.className="rpAdd";add.id="reportAddPeople";add.textContent=TX("+ Из контактов");
     box.replaceChildren(...items,add);
   }
   const on=new Set(reportState.on);
   box.querySelectorAll(".rpPerson").forEach(b=>{
     const active=on.has(b.dataset.person);
     b.setAttribute("aria-pressed",String(active));
-    b.title=active?"Убрать из отчёта":"Добавить в отчёт";
+    b.title=active?TX("Убрать из отчёта"):TX("Добавить в отчёт");
   });
 }
 function renderReport(){
@@ -1671,7 +1680,7 @@ const IS_IOS=/iP(hone|ad|od)/.test(navigator.userAgent||"")||(/Macintosh/.test(n
 function renderReportPickList(){
   const list=$("reportPickList");
   if(!reportState.people.length){
-    const e=document.createElement("div");e.className="rpEmpty";e.textContent="Пока никого нет — выберите в контактах или впишите имя.";
+    const e=document.createElement("div");e.className="rpEmpty";e.textContent=TX("Пока никого нет — выберите в контактах или впишите имя.");
     list.replaceChildren(e);return;
   }
   const on=new Set(reportState.on);
@@ -1680,7 +1689,7 @@ function renderReportPickList(){
     const cb=document.createElement("input");cb.type="checkbox";cb.id=`reportPick${i}`;cb.checked=on.has(name);cb.dataset.person=name;
     const nm=document.createElement("span");nm.className="rpPickName";nm.textContent=name;
     const forget=document.createElement("button");forget.type="button";forget.className="rpForget";forget.textContent="×";
-    forget.dataset.forget=name;forget.title="Убрать из списка";forget.setAttribute("aria-label",`Убрать ${name} из списка`);
+    forget.dataset.forget=name;forget.title=TX("Убрать из списка");forget.setAttribute("aria-label",TX("Убрать {0} из списка",name));
     row.append(cb,nm,forget);
     return row;
   }));
@@ -1718,7 +1727,7 @@ function reportManualAdd(){
 async function reportPickFromContacts(){
   reportPickCommitChecks();
   const bridge=window.AndroidApp;
-  if(typeof bridge?.pickContact==="function"){try{bridge.pickContact();}catch(_){showToast("Не удалось открыть контакты");}return;}
+  if(typeof bridge?.pickContact==="function"){try{bridge.pickContact();}catch(_){showToast(TX("Не удалось открыть контакты"));}return;}
   if(!("contacts" in navigator&&typeof navigator.contacts?.select==="function")){
     // iPhone без Contact Picker API: сайтам телефонная книга недоступна.
     const inp=$("reportManualName"),hint=$("reportPickHint");
@@ -1731,7 +1740,7 @@ async function reportPickFromContacts(){
     let added=0;
     (picked||[]).forEach(c=>{if(reportAddPerson(Array.isArray(c?.name)?c.name[0]:c?.name))added++;});
     if(added){saveReportState();renderReportPickList();}
-  }catch(e){if(e?.name!=="AbortError"&&e?.name!=="InvalidStateError")showToast("Контакты недоступны — впишите имя вручную");}
+  }catch(e){if(e?.name!=="AbortError"&&e?.name!=="InvalidStateError")showToast(TX("Контакты недоступны — впишите имя вручную"));}
 }
 // APK: имя выбранного в системных контактах человека (MainActivity → RC_CONTACT).
 window.__tagListContactPicked=name=>{
@@ -1747,16 +1756,16 @@ async function sendReport(){
   const text=ta.value.replace(/\s+$/,"");
   if(!text.trim())return;
   const chosen=reportChosenPages();
-  const title=chosen.length===1?pageTitleForReport(chosen[0]):`${cleanReportField(docTitle)||"Tag list"} — отчёт`;
+  const title=chosen.length===1?pageTitleForReport(chosen[0]):TX("{0} — отчёт",cleanReportField(docTitle)||"Tag list");
   if(document.activeElement===ta)ta.blur();
   try{
-    if(navigator.share){await navigator.share({title,text});closeReport();showToast("Отчёт передан");return;}
-    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);closeReport();showToast("Текст отчёта скопирован");return;}
+    if(navigator.share){await navigator.share({title,text});closeReport();showToast(TX("Отчёт передан"));return;}
+    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);closeReport();showToast(TX("Текст отчёта скопирован"));return;}
     throw new Error("share-unavailable");
   }catch(e){
     if(e?.name==="AbortError")return;
     try{ta.focus({preventScroll:true});ta.select();}catch(_){}
-    showToast("Не удалось передать — текст выделен, скопируйте его");
+    showToast(TX("Не удалось передать — текст выделен, скопируйте его"));
   }
 }
 
@@ -1786,8 +1795,8 @@ function updateOcrConfigStatus(){
   for(const id of ["ocrOnlineToggle","headOcrToggle"]){const t=$(id);if(t)t.checked=online;}
   document.querySelector(".ocrEngineRow")?.classList.toggle("online",online);
   $("headOcr")?.classList.toggle("on",online);
-  $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":"На телефоне, без интернета";
-  $("ocrConfigStatus").textContent=online?"Нужны интернет и VPN, фото уходит на сервер":"Фото не покидает устройство";
+  $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":TX("На телефоне, без интернета");
+  $("ocrConfigStatus").textContent=online?TX("Нужны интернет и VPN, фото уходит на сервер"):TX("Фото не покидает устройство");
   updateNetStrip();
 }
 // Строка под заголовком меню: при включённом OCR.space напоминает про сеть и VPN и показывает, отвечает ли сервис.
@@ -1799,7 +1808,7 @@ function updateNetStrip(state){
   if(!show)return;
   const st=state||(ocrNetworkKnownUp()?"up":"check");
   strip.classList.toggle("up",st==="up");strip.classList.toggle("down",st==="down");
-  $("netStripState").textContent=st==="up"?"· OCR.space на связи":st==="down"?"· OCR.space пока не отвечает":"· проверяю связь…";
+  $("netStripState").textContent=st==="up"?TX("· OCR.space на связи"):st==="down"?TX("· OCR.space пока не отвечает"):TX("· проверяю связь…");
   if(!state&&st==="check"){
     const n=++netStripCheck;
     probeOcrNetwork(true).then(up=>{if(n===netStripCheck)updateNetStrip(up?"up":"down");});
@@ -2039,7 +2048,7 @@ function setAddMode(mode){
 
 function openAdd(){
   editId=null;
-  $("modalTitleText").textContent="Добавить"; // v105: короче — заголовок, формат и OCR в одну строку
+  $("modalTitleText").textContent=TX("Добавить"); // v105: короче — заголовок, формат и OCR в одну строку
   setAddMode("manual");
   $("addChoice").style.display="grid";
   tagInput.value="";checkTagLine();lastImport=null;lastOcrText="";
@@ -2073,8 +2082,8 @@ function loadSheetJs(){
     // полностью локально, без интернета. Единственный сетевой запрос приложения — OCR фото.
     script.src=new URL("./js/vendor/xlsx.full.min.js",document.baseURI).href;
     script.async=true;
-    script.onload=()=>window.XLSX ? resolve(window.XLSX) : reject(new Error("Не удалось запустить модуль Excel"));
-    script.onerror=()=>{script.remove();reject(new Error("Не удалось загрузить модуль Excel (js/vendor/xlsx.full.min.js). Проверь, что файл опубликован вместе с приложением."));};
+    script.onload=()=>window.XLSX ? resolve(window.XLSX) : reject(new Error(TX("Не удалось запустить модуль Excel")));
+    script.onerror=()=>{script.remove();reject(new Error(TX("Не удалось загрузить модуль Excel (js/vendor/xlsx.full.min.js). Проверь, что файл опубликован вместе с приложением.")));};
     document.head.appendChild(script);
   }).catch(err=>{sheetJsPromise=null;throw err;});
   return sheetJsPromise;
@@ -2096,14 +2105,14 @@ function renderFileCandidates(){
     const tag=String(candidate.tag||"").toUpperCase(),already=existing.has(tagKey(tag));
     const row=document.createElement("div");row.className="importItem";row.dataset.candidateTag=tag;
     const line=document.createElement("div");line.className="importRow";
-    const pick=document.createElement("input");pick.type="checkbox";pick.className="importPick";pick.checked=!already;pick.disabled=already;pick.title="Добавить";pick.setAttribute("aria-label",`Добавить ${tag}`);
-    const inp=document.createElement("input");inp.type="text";inp.value=tag;inp.className="importTag";inp.setAttribute("aria-label",`Тег ${tag}`);
-    const taskToggle=document.createElement("button");taskToggle.type="button";taskToggle.className="importTaskInline"+(candidate.task?" hasTask":"");taskToggle.title=candidate.task?"Задание: есть запись":"Задание";taskToggle.setAttribute("aria-label",`Задание для ${tag}`);taskToggle.setAttribute("aria-expanded",candidate.task?"true":"false");
-    const done=document.createElement("input");done.type="checkbox";done.className="importDone";done.checked=!!candidate.done;done.title="Выполнено";done.setAttribute("aria-label",`Выполнено: ${tag}`);
+    const pick=document.createElement("input");pick.type="checkbox";pick.className="importPick";pick.checked=!already;pick.disabled=already;pick.title=TX("Добавить");pick.setAttribute("aria-label",TX("Добавить {0}",tag));
+    const inp=document.createElement("input");inp.type="text";inp.value=tag;inp.className="importTag";inp.setAttribute("aria-label",TX("Тег {0}",tag));
+    const taskToggle=document.createElement("button");taskToggle.type="button";taskToggle.className="importTaskInline"+(candidate.task?" hasTask":"");taskToggle.title=candidate.task?TX("Задание: есть запись"):TX("Задание");taskToggle.setAttribute("aria-label",TX("Задание для {0}",tag));taskToggle.setAttribute("aria-expanded",candidate.task?"true":"false");
+    const done=document.createElement("input");done.type="checkbox";done.className="importDone";done.checked=!!candidate.done;done.title=TX("Выполнено");done.setAttribute("aria-label",TX("Выполнено: {0}",tag));
     const taskWrap=document.createElement("div");taskWrap.className="importTaskWrap"+(candidate.task?" open":"");
-    const task=document.createElement("textarea");task.className="importTask";task.rows=1;task.placeholder="Опишите задание";task.value=candidate.task||"";taskWrap.appendChild(task);
+    const task=document.createElement("textarea");task.className="importTask";task.rows=1;task.placeholder=TX("Опишите задание");task.value=candidate.task||"";taskWrap.appendChild(task);
     taskToggle.addEventListener("click",()=>{const open=taskWrap.classList.toggle("open");taskToggle.setAttribute("aria-expanded",String(open));if(open)setTimeout(()=>{task.scrollTop=0;autosizeTaskTextarea(task,104);task.focus();requestAnimationFrame(()=>task.scrollTop=0);},20);});
-    task.addEventListener("input",()=>{const has=!!task.value.trim();taskToggle.classList.toggle("hasTask",has);taskToggle.title=has?"Задание: есть запись":"Задание";});
+    task.addEventListener("input",()=>{const has=!!task.value.trim();taskToggle.classList.toggle("hasTask",has);taskToggle.title=has?TX("Задание: есть запись"):TX("Задание");});
     line.append(pick,inp,taskToggle,done);row.append(line,taskWrap);box.appendChild(row);
   });
   importUnitHeaders(box,fileCandidates.map(c=>String(c.tag||"")));
@@ -2111,29 +2120,29 @@ function renderFileCandidates(){
   actions.style.display="flex";
 }
 
-async function processTextImport(text,label="Текст",startProgress=35){
+async function processTextImport(text,label=TX("Текст"),startProgress=35){
   const status=$("fileImportStatus");
   $("fileProgressWrap").style.display="block";setFileProgress(startProgress);await nextFrame();
   lastImport={text,label};
   const records=extractTagRecordsFromText(text);
   setFileProgress(Math.max(startProgress+8,78));await nextFrame();
   fileCandidates=records;
-  status.textContent=`${label}: найдено тегов ${records.length}. Проверь задания и отметки перед добавлением.`;
+  status.textContent=TX("{0}: найдено тегов {1}. Проверь задания и отметки перед добавлением.",label,records.length);
   renderFileCandidates();
   setFileProgress(100);setTimeout(()=>{$("fileProgressWrap").style.display="none"},450);
 }
 
 // v101: «Вставить» в меню сразу читает буфер обмена (в APK — через приложение) и показывает найденные теги.
 async function pasteTextImport(){
-  let text="",label="Буфер обмена",unreadable=false;
+  let text="",label=TX("Буфер обмена"),unreadable=false;
   try{
     if(!navigator.clipboard?.readText)throw new Error("clipboard");
     text=await navigator.clipboard.readText();
   }catch(e){unreadable=true;}
   if(!String(text||"").trim()){
-    const typed=prompt(unreadable?"Вставь сюда скопированный текст со списком тегов и заданий:":"Буфер обмена пуст. Вставь сюда текст со списком тегов и заданий:","");
-    if(!typed||!typed.trim()){if(unreadable)showToast("Не удалось прочитать буфер обмена. Скопируй список тегов и нажми «Вставить» ещё раз.");return;}
-    text=typed;label="Вставленный текст";
+    const typed=prompt(unreadable?TX("Вставь сюда скопированный текст со списком тегов и заданий:"):TX("Буфер обмена пуст. Вставь сюда текст со списком тегов и заданий:"),"");
+    if(!typed||!typed.trim()){if(unreadable)showToast(TX("Не удалось прочитать буфер обмена. Скопируй список тегов и нажми «Вставить» ещё раз."));return;}
+    text=typed;label=TX("Вставленный текст");
   }
   openFileReview();
   await processTextImport(text,label);
@@ -2150,11 +2159,11 @@ async function runFileImport(file){
   $("fileImportList").innerHTML="";$("fileImportActions").style.display="none";fileCandidates=[];
   $("fileProgressWrap").style.display="block";setFileProgress(5);
   try{
-    if(file.size>10*1024*1024)throw new Error("Файл больше 10 МБ. Для бюджетного устройства лучше экспортировать нужный лист или сохранить его как CSV.");
+    if(file.size>10*1024*1024)throw new Error(TX("Файл больше 10 МБ. Для бюджетного устройства лучше экспортировать нужный лист или сохранить его как CSV."));
     await nextFrame();
     const name=String(file.name||"").toLowerCase();let text="";
     if(/\.(xlsx|xls)$/.test(name)){
-      status.textContent="Открываю Excel локально на устройстве…";setFileProgress(20);await nextFrame();
+      status.textContent=TX("Открываю Excel локально на устройстве…");setFileProgress(20);await nextFrame();
       const XLSX=await loadSheetJs();setFileProgress(38);await nextFrame();
       const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellText:true,cellDates:false});
       setFileProgress(58);await nextFrame();
@@ -2163,20 +2172,20 @@ async function runFileImport(file){
       text=workbook.SheetNames.map(sheetName=>XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName],{FS:"\t"})).join("\n");
       setFileProgress(72);await nextFrame();
     }else if(/\.json$/.test(name)||file.type==="application/json"){
-      status.textContent="Открываю состояние из JSON…";setFileProgress(45);await nextFrame();
+      status.textContent=TX("Открываю состояние из JSON…");setFileProgress(45);await nextFrame();
       await importJsonStateFile(file);setFileProgress(100);
-      status.textContent=`${file.name||"JSON"}: состояние открыто.`;
+      status.textContent=TX("{0}: состояние открыто.",file.name||"JSON");
       setTimeout(()=>{$("fileProgressWrap").style.display="none"},500);
       return;
     }else if(/\.(csv|tsv|txt)$/.test(name)||/^text\//.test(file.type||"")){
-      status.textContent="Читаю файл…";setFileProgress(28);await nextFrame();
+      status.textContent=TX("Читаю файл…");setFileProgress(28);await nextFrame();
       text=await file.text();setFileProgress(68);await nextFrame();
-    }else throw new Error("Поддерживаются XLSX, XLS, CSV, TSV, TXT и JSON. Для PDF или Word сначала сохрани таблицу как CSV или Excel.");
-    await processTextImport(text,file.name||"Файл",Math.max(72,Number($('fileBar').style.width.replace("%",""))||72));
-    setFileProgress(100);status.textContent=`${file.name||"Файл"}: найдено тегов ${fileCandidates.length}. Проверь задания и отметки перед добавлением.`;addFormatNote(status);
+    }else throw new Error(TX("Поддерживаются XLSX, XLS, CSV, TSV, TXT и JSON. Для PDF или Word сначала сохрани таблицу как CSV или Excel."));
+    await processTextImport(text,file.name||TX("Файл"),Math.max(72,Number($('fileBar').style.width.replace("%",""))||72));
+    setFileProgress(100);status.textContent=TX("{0}: найдено тегов {1}. Проверь задания и отметки перед добавлением.",file.name||TX("Файл"),fileCandidates.length);addFormatNote(status);
     setTimeout(()=>{$("fileProgressWrap").style.display="none"},500);
   }catch(error){
-    console.error(error);setFileProgress(0);status.textContent=`Не удалось импортировать: ${error.message||error}`;
+    console.error(error);setFileProgress(0);status.textContent=TX("Не удалось импортировать: {0}",TX.msg(error.message||error));
     $("fileBackBtn").style.display="block";
   }
 }
@@ -2194,14 +2203,14 @@ function importFileCandidates(){
     if(existing.has(key)){duplicates.push(tag);return;}
     existing.add(key);additions.push({unit,tag,done:!!doneInput?.checked,task:String(taskInput?.value||"").trim()});
   });
-  if(invalid.length){showToast(`Исправь тег(и) №${invalid.join(", ")} перед добавлением`);return;}
-  if(duplicates.length){const unique=[...new Set(duplicates)];showToast(`Дубликаты не добавлены: ${unique.join(", ")}. Измени тег или сними отметку.`);return;}
-  if(!additions.length){showToast("Новых тегов для добавления нет");return;}
+  if(invalid.length){showToast(TX("Исправь тег(и) №{0} перед добавлением",invalid.join(", ")));return;}
+  if(duplicates.length){const unique=[...new Set(duplicates)];showToast(TX("Дубликаты не добавлены: {0}. Измени тег или сними отметку.",unique.join(", ")));return;}
+  if(!additions.length){showToast(TX("Новых тегов для добавления нет"));return;}
   const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0),before=data.length;
   data=data.concat(additions.map((x,i)=>({id:max+i+1,...x})));
-  try{save();if(data.length!==before+additions.length)throw new Error("Проверка количества после сохранения не прошла");}
-  catch(error){console.error(error);data=data.slice(0,before);save();showToast("Не удалось сохранить добавленные теги. Повтори ещё раз.");return;}
-  closeModal();render();showToast(`Добавлено из файла/текста: ${additions.length}`);
+  try{save();if(data.length!==before+additions.length)throw new Error(TX("Проверка количества после сохранения не прошла"));}
+  catch(error){console.error(error);data=data.slice(0,before);save();showToast(TX("Не удалось сохранить добавленные теги. Повтори ещё раз."));return;}
+  closeModal();render();showToast(TX("Добавлено из файла/текста: {0}",additions.length));
 }
 
 // v98: пункт шрифта показывается, только если на этом устройстве он действительно
@@ -2240,7 +2249,7 @@ function applyFontFamily(id,persist=true){
   // При запуске не затираем сохранённый выбор, если шрифт сейчас недоступен.
   if(persist)safeSetStorage(FONT_FAMILY_KEY,option.id);
   const btn=$("fontBtn");
-  if(btn){btn.title=`Шрифт: ${option.name}`;btn.setAttribute("aria-label",`Выбрать шрифт. Сейчас: ${option.name}`);}
+  if(btn){btn.title=TX("Шрифт: {0}",TX(option.name));btn.setAttribute("aria-label",TX("Выбрать шрифт. Сейчас: {0}",TX(option.name)));}
 }
 
 function cycleFont(){
@@ -2249,7 +2258,7 @@ function cycleFont(){
   const next=list[(idx+1+list.length)%list.length];
   applyFontFamily(next.id);
   const bubble=$("fontBubble");
-  bubble.textContent=next.name;
+  bubble.textContent=TX(next.name);
   bubble.classList.add("show");
   clearTimeout(cycleFont.timer);
   cycleFont.timer=setTimeout(()=>bubble.classList.remove("show"),850);
@@ -2259,7 +2268,7 @@ function openDryReport(kind){
   const labels={all:"Весь список",done:"Выполненные",todo:"Невыполненные",task:"Задания"};
   const text=kind==="all"?buildGroupedTextReport("all"):buildGroupedTextReport(kind);
   $("dryListOverlay").classList.remove("show");
-  $("fullReportTitle").textContent=`Сухой список · ${labels[kind]||""}`;
+  $("fullReportTitle").textContent=TX("Сухой список · {0}",TX(labels[kind]||""));
   $("fullReportText").textContent=text;
   $("fullReportOverlay").classList.add("show");
 }
@@ -2270,7 +2279,7 @@ function closeDryReport(){
   $("fullReportOverlay").classList.remove("show");
 }
 
-function askConfirm(message,title="Подтверждение",okText="Удалить"){
+function askConfirm(message,title=TX("Подтверждение"),okText=TX("Удалить")){
   $("confirmTitle").textContent=title;
   $("confirmMessage").innerHTML=escapeHtml(message).replace(/\n/g,"<br>");
   $("confirmOk").textContent=okText;
@@ -2297,7 +2306,7 @@ function applyTheme(theme){
   const icon=$("themeIcon");
   if(icon)icon.textContent=THEME_ICON[selected];
   const btn=$("themeBtn");
-  if(btn){btn.title=`Тема: ${selected}. Нажми для смены`;btn.setAttribute("aria-label",`Сменить тему. Сейчас: ${selected}`);}
+  if(btn){btn.title=TX("Тема: {0}. Нажми для смены",selected);btn.setAttribute("aria-label",TX("Сменить тему. Сейчас: {0}",selected));}
 }
 
 // v102: строка состояния (iPhone — theme-color, APK — системная строка) красится ровно
@@ -2377,9 +2386,9 @@ function showInstallFallback(){
   const isiOS=/iPhone|iPad|iPod/i.test(ua) ||
     (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
   if(isiOS){
-    showToast("Установка на iPhone: нажми «Поделиться» → «На экран „Домой“»");
+    showToast(TX("Установка на iPhone: нажми «Поделиться» → «На экран „Домой“»"));
   }else{
-    showToast("Установка через кнопку сейчас недоступна. Открой меню браузера и выбери «Установить приложение».");
+    showToast(TX("Установка через кнопку сейчас недоступна. Открой меню браузера и выбери «Установить приложение»."));
   }
 }
 
@@ -2403,12 +2412,12 @@ async function fileToJpeg(file,maxSide=1800,quality=.76,maxBytes=900*1024){
           side=Math.round(side*.82); q=Math.max(.58,q-.05);
         }
         URL.revokeObjectURL(url);
-        if(!blob) return reject(new Error('Не удалось подготовить изображение'));
-        if(blob.size>maxBytes && maxBytes<=900*1024) return reject(new Error('Фото слишком большое для OCR. Попробуй снять ближе или использовать «Загрузка фото».'));
+        if(!blob) return reject(new Error(TX('Не удалось подготовить изображение')));
+        if(blob.size>maxBytes && maxBytes<=900*1024) return reject(new Error(TX('Фото слишком большое для OCR. Попробуй снять ближе или использовать «Загрузка фото».')));
         resolve(blob);
       }catch(e){URL.revokeObjectURL(url);reject(e)}
     };
-    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Не удалось открыть изображение'))};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error(TX('Не удалось открыть изображение')))};
     img.src=url;
   });
 }
@@ -2419,7 +2428,7 @@ function fetchWithTimeout(url,options={},timeoutMs=35000){
   return fetch(url,{...options,signal:controller.signal})
     .finally(()=>clearTimeout(timer))
     .catch(e=>{
-      if(e && e.name==='AbortError') throw new Error('Сервис распознавания не ответил вовремя. Попробуй ещё раз или используй резервный OCR.');
+      if(e && e.name==='AbortError') throw new Error(TX('Сервис распознавания не ответил вовремя. Попробуй ещё раз или используй резервный OCR.'));
       throw e;
     });
 }
@@ -2429,21 +2438,21 @@ async function runOCR(file){
   $("ocrProgressWrap").style.display="block";
   setProgress(5);
   try{
-    $("ocrStatus").textContent="Подготавливаю фото…";
+    $("ocrStatus").textContent=TX("Подготавливаю фото…");
     ocrCandidateMeta=new Map();
     const image=await fileToJpeg(file,1800,.76,900*1024);
     if(runToken!==ocrRunToken)return;
     const key=safeGetStorage('kipOcrSpaceKey','helloworld')||'helloworld';
     const localPage=location.protocol==='file:' || location.origin==='null' || /android\.fileexplorer\.myprovider/i.test(location.origin);
     if(localPage){
-      $("ocrStatus").textContent="Для распознавания открой приложение через HTTPS (например GitHub Pages).";
+      $("ocrStatus").textContent=TX("Для распознавания открой приложение через HTTPS (например GitHub Pages).");
       setProgress(0);
       return;
     }
     let lastError=null;
     for(const engine of ['3','2']){
       try{
-        $("ocrStatus").textContent=engine==='3' ? "OCR.space Engine 3…" : "Engine 3 не сработал — пробую Engine 2…";
+        $("ocrStatus").textContent=engine==='3' ? "OCR.space Engine 3…" : TX("Engine 3 не сработал — пробую Engine 2…");
         setProgress(engine==='2'?25:55);
         const fd=new FormData();
         fd.append('file',image,'kip-photo.jpg');
@@ -2466,7 +2475,7 @@ async function runOCR(file){
         ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
         if(runToken!==ocrRunToken)return;
         setProgress(100);
-        $("ocrStatus").textContent=`OCR.space Engine ${engine}: найдено кандидатов ${ocrCandidates.length}. Проверь отметки и задания перед добавлением.`;
+        $("ocrStatus").textContent=TX("OCR.space Engine {0}: найдено кандидатов {1}. Проверь отметки и задания перед добавлением.",engine,ocrCandidates.length);
         renderImportCandidates();
         return;
       }catch(e){
@@ -2474,12 +2483,12 @@ async function runOCR(file){
         if(engine==='2')continue;
       }
     }
-    throw lastError||new Error('OCR.space не ответил');
+    throw lastError||new Error(TX('OCR.space не ответил'));
   }catch(e){
     if(runToken!==ocrRunToken)return;
     console.error(e);
     setProgress(0);
-    $("ocrStatus").textContent=`Ошибка распознавания: ${e.message||e}. Проверь интернет и VPN — нужен доступ к OCR.space.`;
+    $("ocrStatus").textContent=TX("Ошибка распознавания: {0}. Проверь интернет и VPN — нужен доступ к OCR.space.",TX.msg(e.message||e));
   }
 }
 
@@ -2497,7 +2506,7 @@ function loadLocalOcr(){
   if(localOcrPromise)return localOcrPromise;
   localOcrPromise=new Promise((resolve,reject)=>{
     const s=document.createElement("script");s.async=true;s.src=new URL("./js/ocr-local.js",document.baseURI).href;
-    s.onload=()=>resolve();s.onerror=()=>{s.remove();reject(new Error("Не найден модуль распознавания js/ocr-local.js"));};
+    s.onload=()=>resolve();s.onerror=()=>{s.remove();reject(new Error(TX("Не найден модуль распознавания js/ocr-local.js")));};
     document.head.appendChild(s);
   }).catch(err=>{localOcrPromise=null;throw err;});
   return localOcrPromise;
@@ -2512,15 +2521,15 @@ async function showOcrPhoto(file){
   try{
     let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"});}catch(_){bmp=await createImageBitmap(file);}
     ++ocrRunToken;
-    ocrPhoto={name:file.name||"Фото",source:bmp,crop:null};ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
+    ocrPhoto={name:file.name||TX("Фото"),source:bmp,crop:null};ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
     ocrCandidates=[];ocrCandidateMeta=new Map();setReviewing(false);lastOcrText="";
     $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
     $("ocrProgressWrap").style.display="none";setProgress(0);
-    $("ocrStatus").textContent="При необходимости выделите участок, затем нажмите «Распознать».";
+    $("ocrStatus").textContent=TX("При необходимости выделите участок, затем нажмите «Распознать».");
     updateOcrPhotoUi();drawOcrPhoto();
     // Пока человек смотрит на фото, движок уже загружается.
     if(ocrEngine()==="local")loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
-  }catch(e){$("ocrStatus").textContent="Не удалось открыть фото: "+(e.message||e);}
+  }catch(e){$("ocrStatus").textContent=TX("Не удалось открыть фото: {0}",TX.msg(e.message||e));}
 }
 function ocrFullRect(){return{x:0,y:0,w:ocrPhoto.source.width,h:ocrPhoto.source.height};}
 function ocrRegion(){return ocrPhoto.crop||ocrFullRect();}
@@ -2533,8 +2542,8 @@ function updateOcrPhotoUi(){
   box.classList.toggle("cropping",ocrCropMode);
   box.classList.toggle("compact",!ocrCropMode&&!!$("importList").children.length);
   const hint=$("ocrCropHint");
-  if(ocrCropMode){hint.hidden=false;hint.textContent="Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.";}
-  else if(has&&ocrPhoto.crop){hint.hidden=false;hint.textContent="Распознаётся выделенный участок.";}
+  if(ocrCropMode){hint.hidden=false;hint.textContent=TX("Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.");}
+  else if(has&&ocrPhoto.crop){hint.hidden=false;hint.textContent=TX("Распознаётся выделенный участок.");}
   else hint.hidden=true;
 }
 function drawOcrPhoto(){
@@ -2642,7 +2651,7 @@ function ocrRegionCanvas(maxSide=3200){
 async function runOnlineOcr(){
   if(!ocrPhoto)return;
   const blob=await new Promise(res=>ocrRegionCanvas().toBlob(res,"image/jpeg",.92));
-  if(!blob){$("ocrStatus").textContent="Не удалось подготовить фото";return;}
+  if(!blob){$("ocrStatus").textContent=TX("Не удалось подготовить фото");return;}
   await runOCR(blob);
   updateOcrPhotoUi();
 }
@@ -2650,8 +2659,8 @@ async function runLocalOcr(){
   const runToken=++ocrRunToken,btn=$("ocrRunBtn");btn.disabled=true;
   $("ocrProgressWrap").style.display="block";setProgress(3);
   $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
-  const status=t=>{if(runToken===ocrRunToken)$("ocrStatus").textContent=t;};
-  status("Запускаю распознавание…");
+  const status=t=>{if(runToken===ocrRunToken)$("ocrStatus").textContent=TX.msg(t);};
+  status(TX("Запускаю распознавание…"));
   try{
     await loadLocalOcr();
     const res=await window.LocalOCR.recognize(ocrPhoto.source,ocrRegion(),{stage:status,progress:v=>{if(runToken===ocrRunToken)setProgress(6+92*v);}});
@@ -2661,12 +2670,12 @@ async function runLocalOcr(){
     ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(res.text);
     ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
     setProgress(100);
-    status(`На телефоне: найдено кандидатов ${ocrCandidates.length} за ${(res.ms/1000).toFixed(1).replace(".",",")} с. Проверь отметки и задания перед добавлением.`);
+    status(TX("На телефоне: найдено кандидатов {0} за {1} с. Проверь отметки и задания перед добавлением.",ocrCandidates.length,(res.ms/1000).toFixed(1).replace(".",window.I18N?.dec||",")));
     renderImportCandidates();
   }catch(e){
     if(runToken!==ocrRunToken)return;
     console.error(e);setProgress(0);
-    status(`Не удалось распознать на телефоне: ${e.message||e}. Если есть интернет и VPN, включите тумблер OCR.space.`);
+    status(TX("Не удалось распознать на телефоне: {0}. Если есть интернет и VPN, включите тумблер OCR.space.",TX.msg(e.message||e)));
   }finally{
     if(runToken===ocrRunToken){btn.disabled=!ocrPhoto;updateOcrPhotoUi();}
   }
@@ -2679,7 +2688,7 @@ let reviewSnap=safeGetStorage(REVIEW_KEY,"full")==="half"?"half":"full";
 function setReviewing(on){overlay.classList.toggle("reviewing",!!on);applyReviewSnap();}
 function applyReviewSnap(){
   overlay.classList.toggle("sheetHalf",overlay.classList.contains("reviewing")&&reviewSnap==="half");
-  $("sheetGrip")?.setAttribute("aria-label",reviewSnap==="half"?"Развернуть на весь экран":"Свернуть до половины экрана");
+  $("sheetGrip")?.setAttribute("aria-label",reviewSnap==="half"?TX("Развернуть на весь экран"):TX("Свернуть до половины экрана"));
 }
 function wireSheetGrip(){
   const sheet=overlay.querySelector(".sheet"),grip=$("sheetGrip"),title=$("modalTitle");
@@ -2722,7 +2731,7 @@ function renderImportCandidates(){
   box.innerHTML='';
   $("photoImportLegend").classList.remove("ready");
   if(!ocrCandidates.length){
-    box.innerHTML=lastOcrText&&TagFormat.scanNow(lastOcrText).skipped.length?emptyFormatHtml(lastOcrText):'<div class="mini">Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или выдели участок со списком.</div>';
+    box.innerHTML=lastOcrText&&TagFormat.scanNow(lastOcrText).skipped.length?emptyFormatHtml(lastOcrText):'<div class="mini">'+TX('Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или выдели участок со списком.')+'</div>';
     addFormatNote($("ocrStatus"));
     actions.style.display='none'; return;
   }
@@ -2736,38 +2745,38 @@ function renderImportCandidates(){
 
     const pick=document.createElement('input');
     pick.type='checkbox'; pick.className='importPick'; pick.checked=!already; pick.disabled=already;
-    pick.setAttribute('aria-label',`Добавить ${tag}`); pick.title='Добавить';
+    pick.setAttribute('aria-label',TX('Добавить {0}',tag)); pick.title=TX('Добавить');
 
     const inp=document.createElement('input');
-    inp.type='text'; inp.value=tag; inp.className='importTag'; inp.setAttribute('aria-label',`Тег ${tag}`);
+    inp.type='text'; inp.value=tag; inp.className='importTag'; inp.setAttribute('aria-label',TX('Тег {0}',tag));
 
     const done=document.createElement('input');
     done.type='checkbox'; done.className='importDone'; done.checked=!!meta.completed;
-    if(meta.evidence) done.title=`Выполнено: ${meta.evidence}`;
-    done.setAttribute('aria-label',`Выполнено: ${tag}`); done.title='Выполнено';
+    if(meta.evidence) done.title=TX('Выполнено: {0}',meta.evidence);
+    done.setAttribute('aria-label',TX('Выполнено: {0}',tag)); done.title=TX('Выполнено');
 
     const taskToggle=document.createElement('button');
     taskToggle.type='button'; taskToggle.className='importTaskInline'+(meta.task?' hasTask':'');
-    taskToggle.textContent='▾'; taskToggle.title=meta.task?'Задание: есть запись':'Задание';
+    taskToggle.textContent='▾'; taskToggle.title=meta.task?TX('Задание: есть запись'):TX('Задание');
     taskToggle.setAttribute('aria-expanded',meta.task?'true':'false');
-    taskToggle.setAttribute('aria-label',`Задание для ${tag}`);
+    taskToggle.setAttribute('aria-label',TX('Задание для {0}',tag));
 
     const taskWrap=document.createElement('div'); taskWrap.className='importTaskWrap'+(meta.task?' open':'');
     const task=document.createElement('textarea');
-    task.className='importTask'; task.rows=1; task.placeholder='Опишите задание'; task.value=meta.task||'';
-    task.setAttribute('aria-label',`Задание для ${tag}`); taskWrap.appendChild(task);
+    task.className='importTask'; task.rows=1; task.placeholder=TX('Опишите задание'); task.value=meta.task||'';
+    task.setAttribute('aria-label',TX('Задание для {0}',tag)); taskWrap.appendChild(task);
 
     taskToggle.addEventListener('click',()=>{
       const open=taskWrap.classList.toggle('open');
       taskToggle.setAttribute('aria-expanded',String(open));
       taskToggle.classList.toggle('hasTask',!!task.value.trim());
-      taskToggle.title=task.value.trim()?'Задание: есть запись':'Задание';
+      taskToggle.title=task.value.trim()?TX('Задание: есть запись'):TX('Задание');
       if(open)setTimeout(()=>{task.scrollTop=0;autosizeTaskTextarea(task,104);task.focus();requestAnimationFrame(()=>task.scrollTop=0);},20);
     });
     task.addEventListener('input',()=>{
       const has=!!task.value.trim();
       taskToggle.classList.toggle('hasTask',has);
-      taskToggle.title=has?'Задание: есть запись':'Задание';
+      taskToggle.title=has?TX('Задание: есть запись'):TX('Задание');
     });
     line.append(pick,inp,taskToggle,done);
     row.append(line,taskWrap); box.appendChild(row);
@@ -2787,13 +2796,13 @@ function importCandidates(){
     if(!r||!r.ok){invalid.push(index+1);return;}
     selected.push({unit:r.unit||"",tag:r.tag,done:!!done?.checked,task:String(task?.value||"").trim()});
   });
-  if(invalid.length){showToast(`Исправь тег(и) №${invalid.join(", ")} перед добавлением`);return;}
-  if(!selected.length){showToast("Ничего не выбрано для добавления");return;}
+  if(invalid.length){showToast(TX("Исправь тег(и) №{0} перед добавлением",invalid.join(", ")));return;}
+  if(!selected.length){showToast(TX("Ничего не выбрано для добавления"));return;}
   const existing=new Set(data.map(x=>tagKey(x.tag)));const batch=new Set();const duplicates=[];
   for(const item of selected){const key=tagKey(item.tag);if(existing.has(key)||batch.has(key))duplicates.push(item.tag);else batch.add(key);}
   if(duplicates.length){
     const unique=[...new Set(duplicates)];
-    showToast(`Дубликаты не добавлены: ${unique.join(", ")}. Измени тег или сними отметку.`);
+    showToast(TX("Дубликаты не добавлены: {0}. Измени тег или сними отметку.",unique.join(", ")));
     rows.forEach(row=>{const inp=row.querySelector('.importTag');if(inp&&unique.includes(inp.value.trim().toUpperCase()))inp.style.borderColor="#d9534f";});
     return;
   }
@@ -2801,9 +2810,9 @@ function importCandidates(){
   const additions=selected.map((x,i)=>({id:max+i+1,unit:x.unit,tag:x.tag,done:x.done,task:x.task||""}));
   const before=data.length;
   data=data.concat(additions);
-  try{save();if(data.length!==before+additions.length)throw new Error("Проверка количества после сохранения не прошла");}
-  catch(error){console.error(error);data=data.slice(0,before);save();showToast("Не удалось сохранить добавленные теги. Повтори ещё раз.");return;}
-  closeModal();render();showToast(`Добавлено распознанных: ${additions.length}`);
+  try{save();if(data.length!==before+additions.length)throw new Error(TX("Проверка количества после сохранения не прошла"));}
+  catch(error){console.error(error);data=data.slice(0,before);save();showToast(TX("Не удалось сохранить добавленные теги. Повтори ещё раз."));return;}
+  closeModal();render();showToast(TX("Добавлено распознанных: {0}",additions.length));
 }
 
 const INITIAL_DATA = [];
@@ -3225,6 +3234,142 @@ ${hLi(hT("DWG"),"Номера документов: DWG, REV, ITP. Слова в
 <p>Кириллица в теге → латиница: <code>РТ</code> → <code>PT</code>. На фото в номере буква O → 0, I и L → 1.</p>
 <p class="helpNote"><b>Проверить на тексте</b> — вставьте кусок перечня: зелёным — тег, жёлтым — исправлен, зачёркнуто — не взят; коснитесь, чтобы увидеть причину.</p>`}
 };
+// v107: справка на английском — та же разметка и значки, что у HELP.
+const HELP_EN={
+  list:{title:"Tags — help",html:`
+<p class="helpLead">Instrument checklist: what is done, what is left and a task for every tag. Data is stored only on this phone.</p>
+<h3>Buttons under the header</h3>
+<ul>
+${hLi(hS("eye"),"<b>Plain list</b> — full-screen list: all, done, pending, tasks.")}
+${hLi(hT("Aa"),"<b>Font</b> — cycles through. Only fonts available on this phone are listed.")}
+${hLi(hS("send"),"<b>Save / send</b> — text report to a messenger or a .json state file.")}
+${hLi(hT("A±"),"<b>Text size</b> — smaller / larger.")}
+${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks, crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
+${hLi(hS("search"),"<b>Search</b> — by tag or unit number.")}
+${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the browser allows it.")}
+</ul>
+<h3>Pages</h3>
+<p>Separate lists — e.g. per unit or per shift. Tap to open, <b>+</b> for a new one. Hold a page for “Edit” (name), “Select” (all) and “Delete”.</p>
+<h3>Filters and progress</h3>
+<p>All, Tasks, Done, Pending and per unit — by the unit number in the tag (digits before the letters: <span class="nw">2131-PT-102</span> → “2131”). Brackets show the tag count. “Overall progress” counts the whole page.</p>
+<h3>Tag card</h3>
+<ul>
+${hLi(hS("check"),"<b>Square on the left</b> — done / not done.")}
+${hLi(hT("▾"),"<b>Task</b> — open the field. Tap the text to write, “Save” to finish. “✓” — a task is written.")}
+${hLi(hT("✎"),"<b>Edit</b> — tag, task, status, or delete the instrument.")}
+</ul>
+<h3>Multiple selection</h3>
+<p>Hold a tag card. On the right: <b>×</b> — leave selection, empty button — select (a ✓ appears), <b>⧉</b> — copy selected tags with tasks. At the bottom: “Delete” removes the selected at once, “All” selects everything in the current filter or clears it, “Done” marks the selected or clears the mark.</p>
+<h3>Add — the “+” button</h3>
+<p>Manually, from the camera, a photo or a file. Details — the “!” in the add window.</p>
+<h3>Where the data is</h3>
+<p>Tags, tasks and settings are stored in the phone memory and work offline. A network with VPN is needed only for photo recognition with the OCR.space service (Engine 3, Engine 2 as fallback); in the browser — also for updating the app itself. To move the list to another phone: “Save / send” → .json file → “Open” on the other phone.</p>`},
+  gas:{title:"Gas detection — help",html:`
+<p class="helpLead">Gas detector reading conversion: ppm, mg/m³, % vol, % LEL, ppb, g/m³ and 4–20 mA current. Calculated on the phone, offline.</p>
+<h3>Substance</h3>
+<p>Pick a gas from the list or with a button. “Parameters” — molar mass, LEL and OEL: if the detector datasheet gives a different LEL, enter it; “Reference” restores the values. “Custom gas” (end of the list) — for mixtures.</p>
+<h3>Concentration</h3>
+<p>Enter the reading and choose its unit. Grey units are unavailable: % LEL needs a flammable gas, mg/m³ needs the molar mass.</p>
+<h3>Conversion conditions</h3>
+<p>Temperature and absolute pressure. They affect only mg/m³ and g/m³. Buttons — typical conditions: 20 °C is used for workplace exposure limits.</p>
+<h3>Result</h3>
+<p>All units at once; tap a row to copy the value. Below — the OEL fraction and the current from the scale in the “Signal” block. “Tag for task” and “To task” append the result to the tag’s task (the tag is created if missing). Copy and “Send” — the result as text.</p>
+<h3>4–20 mA signal</h3>
+<p>Instrument scale: start, end and unit. Current and value are converted both ways, signal status per NAMUR NE 43. “From result” and “To input” exchange values with the “Concentration” block.</p>
+<p class="helpNote">Formulas and standards — the “Sources and formulas” button at the bottom of the page.</p>`},
+  loop:{title:"4–20 mA — help",html:`
+<p class="helpLead">“Value ⇄ current ⇄ % of span” conversion for TT, PT, FT and LT plus calibration points. Calculated on the phone, offline.</p>
+<h3>Instrument</h3>
+<p>Type: TT — temperature, PT — pressure, FT — flow, LT — level. Enter a tag — the type is detected from the letters (<span class="nw">2131-TT-434</span> → TT). “Save” stores the scale for the tag; saved tags are the buttons below, × deletes.</p>
+<h3>Value</h3>
+<p>Enter any field — process value, resistance or differential pressure, current or % of span — the rest is recalculated. The bar shows the loop current, the status follows NAMUR NE 43. Copy, “To task” and “Send” — as in “Gas”.</p>
+<h3>Scale</h3>
+<p>LRV (4 mA), URV (20 mA) and the type settings: RTD curve and R₀, pressure units, DP flow (where the square root is taken), level direct or hydrostatic (density and offset). Buttons — typical ranges.</p>
+<h3>Calibration points</h3>
+<p>0, 25, 50, 75 and 100 % of span with the expected current. Tap a row to move the values to “Value”.</p>
+<p class="helpNote">Formulas and standards — the “Sources and formulas” button at the bottom of the page.</p>`},
+  elec:{title:"Electrical — help",html:`
+<p class="helpLead">Electrical calculations: in each tab enter all values but one — it is calculated. The field marked “calc” is the one you touched least recently. Calculated on the phone, offline.</p>
+<div class="hpTabs" role="tablist" aria-label="Help pages"><span class="hpThumb" aria-hidden="true"></span><button type="button" class="hpTab active" data-page="0" role="tab" aria-selected="true">P·I · M — power</button><button type="button" class="hpTab" data-page="1" role="tab" aria-selected="false">ΔU · CT — cable</button></div>
+<div class="hpPager">
+<section class="hpPage" aria-label="Page 1 of 2">
+<h3>Network</h3>
+<p>3 phases — line-to-line voltage, 1 phase — line-to-neutral. Buttons 400 V, 690 V, 6 kV, 10 kV set typical values.</p>
+<h3><span class="hpKind">P·I</span>Power and current</h3>
+<p>Four fields: U, I, P, cosφ — any three, the fourth is calculated. Below them S (kVA), Q (kvar) and current per 1 kW. Units (V/kV, A/kA, W/kW/MW) — tap the label on the right of the field.</p>
+<div class="hpEx"><span class="k">Example: pump motor current</span>3 phases, <b>400 V</b>, P <b>75 kW</b>, cosφ <b>0.86</b> → I <b>125.9 A</b>, S 87.2 kVA, Q 44.5 kvar.</div>
+<div class="hpEx"><span class="k">Example: load from a clamp meter</span>3 phases, <b>10 kV</b>, clamp <b>40 A</b>, cosφ <b>0.9</b> → P <b>623.5 kW</b>.</div>
+<h3><span class="hpKind">M</span>Motor</h3>
+<p>P₂ on the shaft (as on the nameplate), rated current, cosφ and efficiency η — any three. Below — starting current from the ratio, star-delta start and slip from the speed.</p>
+<div class="hpEx"><span class="k">Example: check the breaker</span><b>75 kW</b>, 400 V, cosφ <b>0.86</b>, η <b>0.94</b> → In <b>133.9 A</b>. Ratio 7 → start ≈ <b>937 A</b>, via star ≈ 312 A. Speed 1480 → synchronous 1500, slip 1.33 %.</div>
+<p class="hpSwipe">Swipe left — cable and metering →</p>
+</section>
+<section class="hpPage" aria-label="Page 2 of 2">
+<h3><span class="hpKind">ΔU</span>Cable</h3>
+<p>Cross-section, length, current and voltage drop ΔU % — any three. Material — copper or aluminium, load cosφ — in “Parameters”. If the calculated cross-section is non-standard, the next larger one is shown below.</p>
+<div class="hpEx"><span class="k">Example: is the cable enough</span>Copper <b>35 mm²</b>, <b>120 m</b>, <b>136 A</b>, 400 V, cosφ 0.86 → ΔU <b>3.93 %</b> (15.7 V).</div>
+<div class="hpEx"><span class="k">Example: how far can it run</span>Enter the cross-section, current and ΔU <b>5 %</b> — the length is calculated: ≈ <b>152 m</b>.</div>
+<p class="mini">AWG → mm²: AWG 10 = 5.26 mm² → nearest 6 mm². Current-carrying capacity (PUE ch. 1.3 / IEC 60364-5-52) is not checked. The ΔU limit comes from the design; a common guide is 5 %.</p>
+<h3><span class="hpKind">CT</span>Metering</h3>
+<p>Start and end readings, consumption — any two. Multiplier K = Kct × Kvt. If the CT/VT ratios were entered into the meter at commissioning, choose “primary” — no multiplier needed.</p>
+<div class="hpEx"><span class="k">Example: monthly consumption</span>CT <b>600/5</b>, no VT → K <b>120</b>. 12 345.6 → 12 512.3: difference 166.7 → <b>20 004 kWh</b>. Over 30 days the average power is 27.8 kW.</div>
+<div class="hpEx"><span class="k">With a voltage transformer</span>CT 600/5 and VT <b>10000/100</b> → K = 120 × 100 = <b>12 000</b>.</div>
+<h3>Table, tag and buttons</h3>
+<p>Tap a table row to fill in the power, cross-section or current transformer. “Tag” — where “To task” appends the result (a missing tag is created). Copy and “Send” — as in “Gas” and “4–20”.</p>
+<p class="helpNote">Formulas and standards — the “Sources and formulas” button at the bottom of the page.</p>
+</section>
+</div>
+<div class="hpDots" aria-hidden="true"><i class="on"></i><i></i></div>`},
+  export:{title:"Sending — help",html:`
+<h3>State — all pages at once</h3>
+<ul>
+${hLi(hS("send"),"<b>Send • current state</b> — .json file to a messenger. From Chrome on Android it goes as “….json.txt” — it opens the same way.")}
+${hLi(hS("open"),"<b>Open</b> — load the state from a .json file. The current state is first backed up in the phone memory.")}
+${hLi(hS("save"),"<b>Save</b> — .json file to Downloads or a chosen folder.")}
+${hLi(hS("text"),"<b>Current state • text</b> — all pages as text: done, pending, tasks.")}
+</ul>
+<h3>Report for the open page</h3>
+<ul>
+${hLi(hS("all"),"<b>Whole list</b> — done and pending.")}
+${hLi(hS("done"),"<b>Done</b> — done only.")}
+${hLi(hS("todo"),"<b>Pending</b> — what is left only.")}
+${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
+</ul>
+<p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
+  add:{title:"Adding — help",html:`
+<ul>
+${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — a shot of a list or tag plates. The photo is recognized right on the phone, offline; the icon in the photo corner lets you select the needed area. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
+${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
+${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
+${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; KKS and an own sample are available. The choice is stored on the phone; details — in the format menu help.")}
+</ul>
+<h3>Manually</h3>
+<p>Tag, task and status. Under the field you see at once whether the tag matches the format and which tab it goes to: tabs are built from the unit number — <span class="nw">21-PT-1001</span> → “21”.</p>
+<p class="helpNote">Duplicates are not added — the app offers to change the tag or delete the previous entry.</p>`},
+  fmt:{title:"Tag format — help",html:`
+<p class="helpLead">The format is the rule the app uses to find tags in pasted text, files and photos and to check manual input. The choice is stored on this phone.</p>
+<h3>ISA-5.1</h3>
+<p>International instrument identification; the same letters are used in Russian GOST 21.208.</p>
+<div class="isaTag" aria-label="Example: 21-PT-1001A"><span><b>21</b><small>unit</small></span><span><b>P</b><small>variable</small></span><span><b>T</b><small>function</small></span><span><b>1001</b><small>loop</small></span><span><b>A</b><small>suffix</small></span></div>
+<ul>
+${hLi(hT("1st"),"<b>Measured variable:</b> P pressure, T temperature, F flow, L level, A analysis, V vibration, Z position, H hand.")}
+${hLi(hT("next"),"<b>Function:</b> T transmitter, I indicator, C controller, V valve, S switch, E primary element, Y relay/converter; H/L — high/low: <code>LSHH</code> — level switch high-high.")}
+</ul>
+<p><b>Unit</b> — digits before the letters, any length: <code>2131-PT-102</code>, <code>21-PT-1001</code>, <code>100-FT-0012</code>. Tabs are built from it. The <b>Unit</b> switch: “Any” — tags with and without a unit; “With” — only with a unit; “Without” — only <code>PT-101</code>.</p>
+<h3>KKS</h3>
+<p>Power plants: <code>10LBA10CP001</code> — unit 10, system LBA, sensor CP001. Tab — unit and system: “10LBA”.</p>
+<h3>Own sample</h3>
+<p>Enter a tag from your list — the rule is built automatically: the first digit group becomes the unit, the letters the instrument type. 2–3 samples separated by commas are fine.</p>
+<h3>What is not a tag</h3>
+<ul>
+${hLi(hT("1 letter"),"Equipment and fasteners: <code>P-101</code> pump, <code>V-201</code> vessel, <code>M-20</code> bolt.")}
+${hLi(hT("DN PN"),"Pipe size and pressure. Markings and standards: IP65, RS485, Pt100.")}
+${hLi(hT("DWG"),"Document numbers: DWG, REV, ITP. Words like AREA 21, SKID 100.")}
+</ul>
+<h3>Fixed automatically</h3>
+<p>Cyrillic in a tag → Latin: <code>РТ</code> → <code>PT</code>. In photos, in the number the letter O → 0, I and L → 1.</p>
+<p class="helpNote"><b>Test on text</b> — paste a piece of a list: green — a tag, yellow — fixed, struck through — skipped; tap to see the reason.</p>`}
+};
 // Проверки на null: при обновлении браузер может на минуту взять старый index.html из кэша.
 function openInfo(title,html){
   const ov=$("helpOverlay"),body=$("helpBody"),head=$("helpTitle");
@@ -3265,7 +3410,7 @@ function initHelpPager(body){
   requestAnimationFrame(fit);
 }
 function closeInfo(){$("helpOverlay")?.classList.remove("show");}
-function openHelp(key){const h=HELP[key];if(h)openInfo(h.title,h.html);}
+function openHelp(key){const h=(window.I18N?.en&&HELP_EN[key])||HELP[key];if(h)openInfo(h.title,h.html);}
 document.addEventListener("click",e=>{
   const b=e.target.closest?.(".helpBtn[data-help]");
   if(!b)return;
@@ -3287,7 +3432,7 @@ function fmtModeName(){return TagFormat.name();}
 function updateFmtButton(){
   const [l,s]=TagFormat.button(),btn=$("fmtBtn");if(!btn)return;
   $("fmtBtnLong").textContent=l;$("fmtBtnShort").textContent=s;
-  btn.setAttribute("aria-label",`Формат тегов: ${fmtModeName()}`);btn.title=`Формат тегов: ${fmtModeName()}`;
+  btn.setAttribute("aria-label",TX("Формат тегов: {0}",fmtModeName()));btn.title=TX("Формат тегов: {0}",fmtModeName());
   btn.classList.toggle("isNew",!safeGetStorage(FMT_SEEN_KEY,""));
   tagInput.placeholder=TagFormat.placeholder();
   layoutAddHead();
@@ -3319,8 +3464,8 @@ function checkTagLine(){
   if(r&&r.ok){
     if(r.same){el.className="tagCheck";el.textContent="";return;}
     el.className="tagCheck ok";
-    el.innerHTML=`✓ <code>${escapeHtml(r.tag)}</code> → ${r.unit?`вкладка «${escapeHtml(r.unit)}»`:"без установки"}${r.fixes&&r.fixes.length?` · исправлено: ${escapeHtml(r.fixes.join(", "))}`:""}`;
-  }else{el.className="tagCheck no";el.textContent=`Не подходит под формат «${fmtModeName()}»: ${r?r.reason:"не похоже на тег"}`;}
+    el.innerHTML=`✓ <code>${escapeHtml(r.tag)}</code> → ${r.unit?TX("вкладка «{0}»",escapeHtml(r.unit)):TX("без установки")}${r.fixes&&r.fixes.length?TX(" · исправлено: {0}",escapeHtml(r.fixes.join(", "))):""}`;
+  }else{el.className="tagCheck no";el.textContent=TX("Не подходит под формат «{0}»: {1}",fmtModeName(),TX(r?r.reason:"не похоже на тег"));}
 }
 tagInput.addEventListener("input",checkTagLine);
 
@@ -3328,11 +3473,11 @@ tagInput.addEventListener("input",checkTagLine);
 function addFormatNote(el){
   if(!el)return;
   el.querySelector(".fmtNote")?.remove();
-  el.insertAdjacentHTML("beforeend",` <span class="fmtNote">· формат <b>«${escapeHtml(fmtModeName())}»</b> <button class="fmtLink" data-fmt-open type="button">Изменить</button></span>`);
+  el.insertAdjacentHTML("beforeend",` <span class="fmtNote">${TX("· формат <b>«{0}»</b>",escapeHtml(fmtModeName()))} <button class="fmtLink" data-fmt-open type="button">${TX("Изменить")}</button></span>`);
 }
 function emptyFormatHtml(text){
   const h=TagFormat.hint(TagFormat.scanNow(text||""),TagFormat.mode);
-  return `<div class="mini">Тегов в формате «${escapeHtml(fmtModeName())}» не найдено. ${h?`${escapeHtml(h.text)} — <button class="fmtLink" data-fmt-set="${h.to}" type="button">${escapeHtml(h.btn)}</button>`:`<button class="fmtLink" data-fmt-open type="button">Сменить формат</button>`}</div>`;
+  return `<div class="mini">${TX("Тегов в формате «{0}» не найдено.",escapeHtml(fmtModeName()))} ${h?`${escapeHtml(h.text)} — <button class="fmtLink" data-fmt-set="${h.to}" type="button">${escapeHtml(h.btn)}</button>`:`<button class="fmtLink" data-fmt-open type="button">${TX("Сменить формат")}</button>`}</div>`;
 }
 // Заголовки «Вкладка «21»» в списке найденного — когда установок больше одной.
 function importUnitHeaders(box,tags){
@@ -3340,11 +3485,11 @@ function importUnitHeaders(box,tags){
   if(new Set(units).size<2)return;
   const items=[...box.querySelectorAll(".importItem")];let last=null;
   items.forEach((row,i)=>{const u=units[i];if(u===last)return;last=u;
-    const h=document.createElement("div");h.className="importUnit";h.textContent=u?`Вкладка «${u}»`:"Без установки";row.before(h);});
+    const h=document.createElement("div");h.className="importUnit";h.textContent=u?TX("Вкладка «{0}»",u):TX("Без установки");row.before(h);});
 }
 document.addEventListener("click",e=>{
   const open=e.target.closest?.("[data-fmt-open]");if(open){e.preventDefault();openFmtMenu();return;}
-  const set=e.target.closest?.("[data-fmt-set]");if(set){e.preventDefault();TagFormat.setMode(set.dataset.fmtSet);showToast(`Формат тегов: ${fmtModeName()}`);}
+  const set=e.target.closest?.("[data-fmt-set]");if(set){e.preventDefault();TagFormat.setMode(set.dataset.fmtSet);showToast(TX("Формат тегов: {0}",fmtModeName()));}
 });
 // Формат сменился — открытый текст (вставка, файл, фото) разбирается заново, без повторного распознавания.
 function refreshImportsForFormat(){
@@ -3354,7 +3499,7 @@ function refreshImportsForFormat(){
     const records=extractTagRecordsFromText(lastOcrText);
     ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(lastOcrText);
     ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
-    $("ocrStatus").textContent=`Найдено кандидатов ${ocrCandidates.length}. Проверь отметки и задания перед добавлением.`;
+    $("ocrStatus").textContent=TX("Найдено кандидатов {0}. Проверь отметки и задания перед добавлением.",ocrCandidates.length);
     renderImportCandidates();
   }
 }
@@ -3379,10 +3524,10 @@ function renderFmtMenu(full){
 }
 function renderRuleLine(){
   const el=$("ruleLine"),st=TagFormat.state,c=TagFormat.custom;
-  if(!String(st.example||"").trim()){el.className="ruleLine";el.textContent="Например, 21-PT-1001 или 100-FT-0012A. Можно 2–3 через запятую.";return;}
+  if(!String(st.example||"").trim()){el.className="ruleLine";el.textContent=TX("Например, 21-PT-1001 или 100-FT-0012A. Можно 2–3 через запятую.");return;}
   if(!c.ok){el.className="ruleLine err";el.textContent=c.error;return;}
   el.className="ruleLine";
-  el.innerHTML=escapeHtml(TagFormat.describe(c)).replace(/(\d+ цифр[аы]? — установка)/g,"<b>$1</b>");
+  el.innerHTML=escapeHtml(TagFormat.describe(c)).replace(/(\d+ цифр[аы]? — установка|\d+ digits? — unit)/g,"<b>$1</b>");
 }
 $("fmtBtn").addEventListener("click",openFmtMenu);
 $("fmtClose").addEventListener("click",closeFmtMenu);
@@ -3399,7 +3544,7 @@ function renderFmtSamples(){
   const st=TagFormat.state,box=$("fmtSamples");
   const list=[...TagFormat.SAMPLES,{id:"own",name:"Свой текст"}];
   if(!list.some(x=>x.id===st.sample))st.sample="me";
-  box.innerHTML=list.map(x=>`<button aria-pressed="${st.sample===x.id}" data-id="${x.id}" type="button">${escapeHtml(x.name)}</button>`).join("");
+  box.innerHTML=list.map(x=>`<button aria-pressed="${st.sample===x.id}" data-id="${x.id}" type="button">${escapeHtml(TX(x.name))}</button>`).join("");
 }
 $("fmtSamples").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TagFormat.setPref("sample",b.dataset.id);
   $("fmtSamples").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));renderFmtCheck();});
@@ -3409,8 +3554,8 @@ function fmtHighlight(text,res){
   for(const m of marks){
     if(m.start<p)continue;out+=escapeHtml(text.slice(p,m.start));const seg=escapeHtml(text.slice(m.start,m.end));
     out+=m.t==="ok"
-      ?`<mark${m.fixes.length?' class="fix"':""} data-say="${escapeHtml(`${m.tag} → ${m.unit?`вкладка «${m.unit}»`:"без установки"}${m.fixes.length?" · "+m.fixes.join(", "):""}`)}">${seg}</mark>`
-      :`<s data-say="${escapeHtml(`${m.text.replace(/\s+/g," ")}: ${m.reason}`)}">${seg}</s>`;
+      ?`<mark${m.fixes.length?' class="fix"':""} data-say="${escapeHtml(`${m.tag} → ${m.unit?TX("вкладка «{0}»",m.unit):TX("без установки")}${m.fixes.length?" · "+m.fixes.join(", "):""}`)}">${seg}</mark>`
+      :`<s data-say="${escapeHtml(`${m.text.replace(/\s+/g," ")}: ${TX(m.reason)}`)}">${seg}</s>`;
     p=m.end;
   }
   return out+escapeHtml(text.slice(p));
@@ -3420,7 +3565,7 @@ function renderFmtCheck(){
   const text=own?String(st.own||""):(TagFormat.SAMPLES.find(x=>x.id===st.sample)||TagFormat.SAMPLES[1]).text;
   if(own){
     if(!$("fmtOwnText")){
-      wrap.innerHTML='<textarea aria-label="Свой текст для проверки" class="fmtOwn" id="fmtOwnText" placeholder="Вставьте кусок своего перечня" spellcheck="false"></textarea><div class="fmtPreview" hidden id="fmtPreview"></div>';
+      wrap.innerHTML=`<textarea aria-label="${escapeHtml(TX("Свой текст для проверки"))}" class="fmtOwn" id="fmtOwnText" placeholder="${escapeHtml(TX("Вставьте кусок своего перечня"))}" spellcheck="false"></textarea><div class="fmtPreview" hidden id="fmtPreview"></div>`;
       $("fmtOwnText").value=st.own||"";
       $("fmtOwnText").addEventListener("input",()=>{TagFormat.setPref("own",$("fmtOwnText").value);renderFmtCheck();});
     }
@@ -3429,11 +3574,11 @@ function renderFmtCheck(){
   pv.hidden=!text.trim();pv.innerHTML=fmtHighlight(text,res);
   const out=$("fmtRes");
   if(res.error){out.innerHTML=`<span class="zero">${escapeHtml(res.error)}</span>`;return;}
-  if(!text.trim()){out.innerHTML='<span class="muted">Найденные теги подсветятся зелёным.</span>';return;}
-  const units=new Map();res.found.forEach(t=>units.set(t.unit||"без установки",(units.get(t.unit||"без установки")||0)+1));
+  if(!text.trim()){out.innerHTML='<span class="muted">'+TX('Найденные теги подсветятся зелёным.')+'</span>';return;}
+  const noUnit=TX("без установки"),units=new Map();res.found.forEach(t=>units.set(t.unit||noUnit,(units.get(t.unit||noUnit)||0)+1));
   const h=TagFormat.hint(res,TagFormat.mode);
-  out.innerHTML=`<b class="${res.found.length?"":"zero"}">Найдено тегов: ${res.found.length}</b>${units.size?` → ${[...units].map(([u,n])=>`${escapeHtml(u)} (${n})`).join(" · ")}`:""}`
-    +(res.skipped.length?`<br><span class="muted">Не взято: ${res.skipped.length}. Коснитесь зачёркнутого — будет видна причина.</span>`:"")
+  out.innerHTML=`<b class="${res.found.length?"":"zero"}">${TX("Найдено тегов: {0}",res.found.length)}</b>${units.size?` → ${[...units].map(([u,n])=>`${escapeHtml(u)} (${n})`).join(" · ")}`:""}`
+    +(res.skipped.length?`<br><span class="muted">${TX("Не взято: {0}. Коснитесь зачёркнутого — будет видна причина.",res.skipped.length)}</span>`:"")
     +(h?`<br>${escapeHtml(h.text)} — <button class="fmtLink" data-fmt-set="${h.to}" type="button">${escapeHtml(h.btn)}</button>`:"");
 }
 $("fmtCheckWrap").addEventListener("click",e=>{const m=e.target.closest("[data-say]");if(m)showToast(m.dataset.say);});
@@ -3682,7 +3827,7 @@ $("themeBtn").onclick=cycleTheme;
 $("fontBtn").onclick=cycleFont;
 $("addPageBtn").onclick=createPage;
 $("pageManageEdit").onclick=()=>{
-  if(selectedPageIds.size!==1){showToast("Выбери одну страницу");return;}
+  if(selectedPageIds.size!==1){showToast(TX("Выбери одну страницу"));return;}
   editSelectedPage();
 };
 $("pageManageSelect").onclick=()=>selectAllPages();
@@ -3781,10 +3926,10 @@ if("launchQueue" in window && typeof window.launchQueue.setConsumer==="function"
     try{
       const file=await handle.getFile();
       await importJsonStateFile(file);
-    }catch(e){showToast(e?.message||"Не удалось открыть переданный JSON");}
+    }catch(e){showToast(TX.msg(e?.message)||TX("Не удалось открыть переданный JSON"));}
   });
 }
-$("importBtn").onclick=async()=>{try{await ensureOcrLoaded();importCandidates();}catch(err){showToast(err.message||"Не удалось загрузить OCR");}};
+$("importBtn").onclick=async()=>{try{await ensureOcrLoaded();importCandidates();}catch(err){showToast(TX.msg(err.message)||TX("Не удалось загрузить OCR"));}};
 $("cancelImportBtn").onclick=()=>setAddMode("manual");
 $("fileImportBtn").onclick=importFileCandidates;
 $("cancelFileImportBtn").onclick=()=>setAddMode("manual");
@@ -3799,9 +3944,9 @@ $("duplicateDeleteBtn").onclick=()=>{
   editId=pending.editId;tagInput.value=pending.tag;manualTaskInput.value=pending.task||"";statusInput.value=pending.done?"done":"todo";
   if(editId!==null){
     const item=data.find(x=>x.id===editId);
-    if(item){item.unit=pending.unit;item.tag=pending.tag;item.done=pending.done;item.task=pending.task||"";save();closeModal();render();showToast("Дубликат удалён, запись обновлена");return;}
+    if(item){item.unit=pending.unit;item.tag=pending.tag;item.done=pending.done;item.task=pending.task||"";save();closeModal();render();showToast(TX("Дубликат удалён, запись обновлена"));return;}
   }
-  const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);data.push({id:max+1,unit:pending.unit,tag:pending.tag,done:pending.done,task:pending.task||""});save();closeModal();render();showToast("Дубликат удалён, новый прибор добавлен");
+  const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);data.push({id:max+1,unit:pending.unit,tag:pending.tag,done:pending.done,task:pending.task||""});save();closeModal();render();showToast(TX("Дубликат удалён, новый прибор добавлен"));
 };
 $("duplicateCloseBtn").onclick=closeDuplicateDialog;
 $("duplicateOverlay").addEventListener("click",e=>{if(e.target===$("duplicateOverlay"))closeDuplicateDialog();});
@@ -3813,7 +3958,7 @@ $("deleteAll").onclick=()=>{
   if(selectionMode){
     const visibleIds=new Set(getSelectionScope().map(item=>item.id));
     const ids=[...selectedTagIds].filter(id=>visibleIds.has(id));
-    if(!ids.length){showToast("Выбери теги в текущей вкладке");return;}
+    if(!ids.length){showToast(TX("Выбери теги в текущей вкладке"));return;}
     const set=new Set(ids);
     data=data.filter(item=>!set.has(item.id));
     selectedTagIds.clear();
@@ -3822,28 +3967,28 @@ $("deleteAll").onclick=()=>{
     save();
     updateSelectionFooter();
     render();
-    showToast(`Удалено тегов: ${ids.length}`);
+    showToast(TX("Удалено тегов: {0}",ids.length));
     return;
   }
   const count=data.length;
-  if(!count){showToast("Список уже пуст");return;}
+  if(!count){showToast(TX("Список уже пуст"));return;}
   data=[];
   save();
   filter="all";
   render();
-  showToast(`Удалено тегов: ${count}`);
+  showToast(TX("Удалено тегов: {0}",count));
 };
 $("markAllDone").onclick=()=>{
   if(!selectionMode)return;
   const scope=getSelectionScope();
-  if(!scope.length){showToast("В текущей вкладке нет тегов");return;}
+  if(!scope.length){showToast(TX("В текущей вкладке нет тегов"));return;}
   const allSelected=scope.every(item=>selectedTagIds.has(item.id));
   if(allSelected){
     scope.forEach(item=>selectedTagIds.delete(item.id));
-    showToast("Выбор снят в текущей вкладке");
+    showToast(TX("Выбор снят в текущей вкладке"));
   }else{
     scope.forEach(item=>selectedTagIds.add(item.id));
-    showToast(`Выбраны все теги текущей вкладки: ${scope.length}`);
+    showToast(TX("Выбраны все теги текущей вкладки: {0}",scope.length));
   }
   updateSelectionFooter();renderList();
 };
@@ -3851,14 +3996,14 @@ $("markAllDone").onclick=()=>{
 $("clearChecks").onclick=()=>{
   if(!selectionMode)return;
   const selected=getSelectionScope().filter(item=>selectedTagIds.has(item.id));
-  if(!selected.length){showToast("Выбери теги в текущей вкладке");return;}
+  if(!selected.length){showToast(TX("Выбери теги в текущей вкладке"));return;}
   const allDone=selected.every(item=>item.done);
   selected.forEach(item=>item.done=!allDone);
   save();
   selectedTagIds.clear();
   setSelectionMode(false);
   render();
-  showToast(allDone?`Снят статус «Выполнено»: ${selected.length}`:`Отмечено выполненными: ${selected.length}`);
+  showToast(allDone?TX("Снят статус «Выполнено»: {0}",selected.length):TX("Отмечено выполненными: {0}",selected.length));
 };
 document.addEventListener("selectstart",e=>{
   // selectstart может прийти на текстовый узел — у него нет closest().
@@ -3897,7 +4042,7 @@ function ensureOcrLoaded(){
       if(settled)return;
       settled=true;
       script.remove();
-      reject(new Error("Не удалось загрузить OCR-модуль. Проверьте, что файл js/ocr.js опубликован на GitHub Pages."));
+      reject(new Error(TX("Не удалось загрузить OCR-модуль. Проверьте, что файл js/ocr.js опубликован на GitHub Pages.")));
     };
     script.async=true;
     script.src=src;
@@ -3991,11 +4136,11 @@ function ensureViewModule(view){
     const fail=msg=>{clearTimeout(timer);script.onload=script.onerror=null;script.remove();reject(new Error(msg));};
     script.src=new URL(mod.file,document.baseURI).href;
     script.async=true;
-    script.onload=()=>{clearTimeout(timer);window[mod.global]?resolve(window[mod.global]):reject(new Error(`Не удалось запустить ${mod.name}`));};
-    script.onerror=()=>fail(`Не удалось загрузить ${mod.name} (${mod.file.slice(2)}). Проверь, что файл опубликован вместе с приложением.`);
+    script.onload=()=>{clearTimeout(timer);window[mod.global]?resolve(window[mod.global]):reject(new Error(TX("Не удалось запустить {0}",TX(mod.name))));};
+    script.onerror=()=>fail(TX("Не удалось загрузить {0} ({1}). Проверь, что файл опубликован вместе с приложением.",TX(mod.name),mod.file.slice(2)));
     timer=setTimeout(()=>{
       if(window[mod.global]){resolve(window[mod.global]);return;}
-      fail(`Не удалось загрузить ${mod.name}: нет ответа. Попробуй ещё раз.`);
+      fail(TX("Не удалось загрузить {0}: нет ответа. Попробуй ещё раз.",TX(mod.name)));
     },VIEW_LOAD_TIMEOUT_MS);
     document.head.appendChild(script);
   }).catch(err=>{delete viewLoads[view];throw err;});
@@ -4076,7 +4221,7 @@ function updateViewChrome(prev){
   });
   const titleEl=$("viewTitle"),docEl=$("docTitle");
   const mod=VIEW_MODULES[currentView];
-  if(titleEl){titleEl.textContent=mod?mod.title:"";titleEl.hidden=!mod;}
+  if(titleEl){titleEl.textContent=mod?TX(mod.title):"";titleEl.hidden=!mod;}
   if(docEl)docEl.hidden=!!mod;
   document.body.classList.toggle("conv-mode",!!mod);
   for(const key of Object.keys(VIEW_MODULES))document.body.classList.toggle(`${key}-mode`,currentView===key);
@@ -4117,7 +4262,7 @@ async function setView(view,{fromHistory=false}={}){
   let api=mod?window[mod.global]||null:null;
   if(mod&&!api){
     try{api=await ensureViewModule(view);}
-    catch(e){if(seq===viewRequestSeq)showToast(e?.message||"Не удалось открыть раздел");return;}
+    catch(e){if(seq===viewRequestSeq)showToast(e?.message||TX("Не удалось открыть раздел"));return;}
     // Пока модуль грузился, пользователь выбрал другой раздел — его выбор важнее.
     if(seq!==viewRequestSeq||view===currentView)return;
   }
@@ -4152,7 +4297,7 @@ function switchViewNow(view,api,fromHistory){
   if(api&&mounted){
     try{api.onShow?.();}catch(e){console.warn("Tag list: onShow",e);}
   }else if(api){
-    showToast(`Не удалось открыть ${VIEW_MODULES[view].name}`);
+    showToast(TX("Не удалось открыть {0}",TX(VIEW_MODULES[view].name)));
   }
 }
 // История (только браузер/PWA): из списка в конвертор — одна новая запись (системное
@@ -4192,7 +4337,7 @@ function finishViewPop(){
 function resultTagKey(t){return tagKey(t).replace(/[ТРЕАСКМНОХВ]/g,ch=>({"Т":"T","Р":"P","Е":"E","А":"A","С":"C","К":"K","М":"M","Н":"H","О":"O","Х":"X","В":"B"})[ch]);}
 function addResultToTag(tag,text){
   const name=String(tag||"").replace(/\s+/g," ").trim();
-  if(!name)return {ok:false,message:"Укажите тег"};
+  if(!name)return {ok:false,message:TX("Укажите тег")};
   const key=resultTagKey(name);
   let page=null,item=null;
   for(const pg of [getActivePage(),...pages.filter(p=>p.id!==activePageId)]){
@@ -4201,7 +4346,7 @@ function addResultToTag(tag,text){
     const found=arr.find(x=>resultTagKey(x.tag)===key);
     if(found){page=pg;item=found;break;}
   }
-  const stamp=new Date().toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(",","");
+  const stamp=new Date().toLocaleString(LOC(),{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(",","");
   const entry=`${stamp} — ${String(text||"").trim()}`;
   let created=false;
   if(item){
@@ -4314,10 +4459,10 @@ function attachTagPicker(input,opts={}){
     const hit=findTagEntry(v);
     if(hit){
       info.className="tagPickInfo";
-      info.innerHTML=`<span class="tpMark" aria-hidden="true">✓</span><span>В списке · ${escapeHtml(hit.page)}</span>`;
+      info.innerHTML=`<span class="tpMark" aria-hidden="true">✓</span><span>${TX("В списке · {0}",escapeHtml(hit.page))}</span>`;
     }else{
       info.className="tagPickInfo isNew";
-      info.innerHTML=`<span class="tpMark" aria-hidden="true">+</span><span>Новый тег — появится на странице «<b>${escapeHtml(activePageName())}</b>» при записи в задание</span>`;
+      info.innerHTML=`<span class="tpMark" aria-hidden="true">+</span><span>${TX("Новый тег — появится на странице «<b>{0}</b>» при записи в задание",escapeHtml(activePageName()))}</span>`;
     }
     info.hidden=false;
   }
@@ -4338,7 +4483,7 @@ function attachTagPicker(input,opts={}){
     if(exact&&items.length===1&&items[0].tag===raw){close();renderInfo();return;}
     kbd=-1;
     box.innerHTML=items.map((it,i)=>it.isNew
-      ?`<button type="button" class="tagSuggestItem isNew" role="option" data-i="${i}"><span class="tsPlus" aria-hidden="true">+</span><span class="tsTag">${escapeHtml(it.tag)}</span><span class="tsPage">новый · ${escapeHtml(it.page)}</span></button>`
+      ?`<button type="button" class="tagSuggestItem isNew" role="option" data-i="${i}"><span class="tsPlus" aria-hidden="true">+</span><span class="tsTag">${escapeHtml(it.tag)}</span><span class="tsPage">${TX("новый · {0}",escapeHtml(it.page))}</span></button>`
       :`<button type="button" class="tagSuggestItem" role="option" data-i="${i}"><span class="tsTag">${highlightMatch(it.tag,q)}</span><span class="tsPage">${escapeHtml(it.page)}</span></button>`).join("");
     box.hidden=false;input.setAttribute("aria-expanded","true");
     info.hidden=true; // пока открыт список, строка-подсказка не нужна
@@ -4403,6 +4548,37 @@ function attachTagPicker(input,opts={}){
   return api;
 }
 window.TagListApp={addResultToTag,tagNames:allTagNames,tagEntries,findTagEntry,activePageName,attachTagPicker,openInfo};
+// v107: смена языка (кнопка RU/EN в шапке) — всё, что приложение рисует само, перерисовывается
+// на новом языке. Данные (теги, задания, названия страниц) не меняются. Конверторы
+// перерисовываются сами (свой обработчик того же события).
+// Названия страниц, которые приложение дало само («Основная страница», «Страница 2»),
+// переводятся вместе с интерфейсом; названия, данные пользователем, не трогаются.
+const DEFAULT_PAGE_NAMES={ru:{main:"Основная страница",re:/^Страница (\d+)$/,n:"Страница "},en:{main:"Main page",re:/^Page (\d+)$/,n:"Page "}};
+function relocalizePageNames(){
+  const to=window.I18N?.en?"en":"ru",from=to==="en"?"ru":"en",A=DEFAULT_PAGE_NAMES[from],B=DEFAULT_PAGE_NAMES[to];
+  const names=new Set(pages.map(p=>String(p.name)));
+  let changed=false;
+  pages.forEach(p=>{
+    const name=String(p.name||""),m=A.re.exec(name);
+    const next=name===A.main?B.main:m?B.n+m[1]:null;
+    if(!next||names.has(next))return;
+    names.delete(name);names.add(next);p.name=next;changed=true;
+  });
+  if(changed)persistPages();
+}
+function relocalizeApp(){
+  try{
+    relocalizePageNames();
+    rowCache=new WeakMap(); // карточки тегов — заново, с новыми подписями
+    render();
+    const mod=VIEW_MODULES[currentView],titleEl=$("viewTitle");
+    if(titleEl&&mod)titleEl.textContent=TX(mod.title);
+    applyFontFamily(currentFontId,false);
+    applyTheme(document.documentElement.dataset.theme||"light");
+    updateOcrConfigStatus();updateFmtButton();checkTagLine();applyReviewSnap();
+  }catch(e){console.warn("Tag list: relocalize",e);}
+}
+window.addEventListener("tl-langchange",relocalizeApp);
 // Совместимость: прежние вызовы закрытия конвертора.
 function closeGasView(fromHistory=false){return setView("list",{fromHistory});}
 $("viewSwitch").addEventListener("click",e=>{
@@ -4491,7 +4667,7 @@ if(window.AndroidApp){
     try{
       const blob=await (await fetch(a.href)).blob();
       bridge.saveBase64(a.getAttribute("download")||"file",blob.type||"application/octet-stream",await blobToBase64(blob));
-    }catch(_){showToast("Не удалось сохранить файл");}
+    }catch(_){showToast(TX("Не удалось сохранить файл"));}
   },true);
   const anchorClick=HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click=function(){
@@ -4541,7 +4717,7 @@ if(window.AndroidApp){
     try{
       if(currentView!=="list")await setView("list");
       await importJsonStateFile(new File([String(text||"")],name||"state.json",{type:"application/json"}));
-    }catch(e){showToast(e?.message||"Не удалось открыть JSON");}
+    }catch(e){showToast(TX.msg(e?.message)||TX("Не удалось открыть JSON"));}
   };
   try{bridge.ready?.();}catch(_){}
 }

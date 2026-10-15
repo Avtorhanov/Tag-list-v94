@@ -76,6 +76,8 @@ public class MainActivity extends Activity {
     static final String STATE_PENDING_SAVE = "taglist.pendingSavePath";
 
     WebView web;
+    // v107: язык системных окон и уведомлений — как у интерфейса (кнопка RU/EN, AndroidApp.setLanguage).
+    volatile boolean langEn;
     ValueCallback<Uri[]> fileCallback;
     Uri cameraUri;
     File cameraFile;
@@ -91,6 +93,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        langEn = "en".equals(getSharedPreferences("taglist", MODE_PRIVATE).getString("lang", "ru"));
         cleanupCache("share", 24L * 3600 * 1000);
         cleanupCache("camera", 24L * 3600 * 1000);
         cleanupCache("save", 24L * 3600 * 1000);
@@ -323,10 +326,10 @@ public class MainActivity extends Activity {
                 pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             }
             try {
-                startActivityForResult(Intent.createChooser(pick, imagesOnly ? "Выбери фото" : "Выбери файл"), RC_FILE);
+                startActivityForResult(Intent.createChooser(pick, imagesOnly ? tr("Выбери фото", "Choose a photo") : tr("Выбери файл", "Choose a file")), RC_FILE);
             } catch (ActivityNotFoundException e) {
                 finishFileChooser(null);
-                toast("Не найдено приложение для выбора файла");
+                toast(tr("Не найдено приложение для выбора файла", "No app found to pick a file"));
             }
             return true;
         }
@@ -348,7 +351,7 @@ public class MainActivity extends Activity {
             new AlertDialog.Builder(MainActivity.this)
                     .setMessage(message)
                     .setPositiveButton("OK", (d, w) -> result.confirm())
-                    .setNegativeButton("Отмена", (d, w) -> result.cancel())
+                    .setNegativeButton(tr("Отмена", "Cancel"), (d, w) -> result.cancel())
                     .setOnCancelListener(d -> result.cancel())
                     .show();
             return true;
@@ -369,7 +372,7 @@ public class MainActivity extends Activity {
                     .setMessage(message)
                     .setView(box)
                     .setPositiveButton("OK", (d, w) -> result.confirm(input.getText().toString()))
-                    .setNegativeButton("Отмена", (d, w) -> result.cancel())
+                    .setNegativeButton(tr("Отмена", "Cancel"), (d, w) -> result.cancel())
                     .setOnCancelListener(d -> result.cancel())
                     .show();
             return true;
@@ -445,7 +448,7 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
             }
             if (name == null || name.trim().isEmpty()) {
-                jsToast("Не удалось прочитать имя контакта");
+                jsToast(tr("Не удалось прочитать имя контакта", "Could not read the contact name"));
                 return;
             }
             web.evaluateJavascript("window.__tagListContactPicked&&window.__tagListContactPicked(" + JSONObject.quote(name.trim()) + ")", null);
@@ -473,17 +476,17 @@ public class MainActivity extends Activity {
                 if (bytes == null) {
                     // Данные потеряны вместе с процессом — не оставляем пустой файл.
                     deleteDocumentQuietly(target);
-                    jsToast("Сохранение прервано системой. Нажми «Сохранить» ещё раз.");
+                    jsToast(tr("Сохранение прервано системой. Нажми «Сохранить» ещё раз.", "Saving was interrupted by the system. Tap “Save” again."));
                     return;
                 }
                 int result = writeDocument(target, bytes);
                 if (result == WRITE_OK) {
-                    jsToast("Файл сохранён");
+                    jsToast(tr("Файл сохранён", "File saved"));
                 } else if (result == WRITE_UNVERIFIED) {
-                    jsToast("Файл записан, но папка не подтвердила размер. Проверь файл или используй «Отправить».");
+                    jsToast(tr("Файл записан, но папка не подтвердила размер. Проверь файл или используй «Отправить».", "File written, but the folder did not confirm its size. Check the file or use “Send”."));
                 } else {
                     deleteDocumentQuietly(target);
-                    jsToast("Не удалось записать файл в эту папку. Выбери другую (например, «Загрузки») или используй «Отправить».");
+                    jsToast(tr("Не удалось записать файл в эту папку. Выбери другую (например, «Загрузки») или используй «Отправить».", "Could not write the file to this folder. Choose another (e.g. Downloads) or use “Send”."));
                 }
             }).start();
         }
@@ -591,7 +594,7 @@ public class MainActivity extends Activity {
             try {
                 requestSave(name, mime, Base64.decode(base64 == null ? "" : base64, Base64.DEFAULT));
             } catch (IllegalArgumentException e) {
-                jsToast("Не удалось сохранить файл");
+                jsToast(tr("Не удалось сохранить файл", "Could not save the file"));
             }
         }
 
@@ -616,7 +619,7 @@ public class MainActivity extends Activity {
                 try {
                     startActivityForResult(new Intent(Intent.ACTION_PICK, ContactsContract.Contacts.CONTENT_URI), RC_CONTACT);
                 } catch (ActivityNotFoundException e) {
-                    jsToast("На телефоне нет приложения «Контакты» — впишите имя вручную");
+                    jsToast(tr("На телефоне нет приложения «Контакты» — впишите имя вручную", "No Contacts app on the phone — type the name"));
                 }
             });
             return true;
@@ -638,6 +641,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String appVersion() {
             return versionName();
+        }
+
+        // v107: язык интерфейса (кнопка RU/EN) — для системных окон и уведомлений приложения.
+        @JavascriptInterface
+        public void setLanguage(String lang) {
+            langEn = "en".equals(lang);
+            getSharedPreferences("taglist", MODE_PRIVATE).edit().putString("lang", langEn ? "en" : "ru").apply();
         }
     }
 
@@ -672,13 +682,13 @@ public class MainActivity extends Activity {
     }
 
     boolean startChooser(Intent send, String title) {
-        final Intent chooser = Intent.createChooser(send, title == null || title.isEmpty() ? "Отправить" : title);
+        final Intent chooser = Intent.createChooser(send, title == null || title.isEmpty() ? tr("Отправить", "Send") : title);
         chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         runOnUiThread(() -> {
             try {
                 startActivity(chooser);
             } catch (ActivityNotFoundException e) {
-                toast("Нет приложений для отправки");
+                toast(tr("Нет приложений для отправки", "No apps to send with"));
             }
         });
         return true;
@@ -686,7 +696,7 @@ public class MainActivity extends Activity {
 
     void requestSave(String name, String mime, byte[] bytes) {
         if (bytes == null || bytes.length == 0) {
-            jsToast("Нет данных для сохранения");
+            jsToast(tr("Нет данных для сохранения", "No data to save"));
             return;
         }
         // Копия на диске переживёт выгрузку приложения, пока открыт системный диалог.
@@ -718,7 +728,7 @@ public class MainActivity extends Activity {
                 pendingSaveBytes = null;
                 deleteQuietly(pendingSaveFile);
                 pendingSaveFile = null;
-                toast("Не найдено приложение для сохранения файлов");
+                toast(tr("Не найдено приложение для сохранения файлов", "No app found to save files"));
             }
         });
     }
@@ -746,7 +756,7 @@ public class MainActivity extends Activity {
                     deliverPendingOpen();
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> toast("Не удалось открыть файл"));
+                runOnUiThread(() -> toast(tr("Не удалось открыть файл", "Could not open the file")));
             }
         }).start();
         // Не обрабатывать тот же файл повторно при пересоздании экрана.
@@ -831,6 +841,10 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             return "1";
         }
+    }
+
+    String tr(String ru, String en) {
+        return langEn ? en : ru;
     }
 
     void toast(String msg) {
