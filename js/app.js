@@ -861,10 +861,10 @@ function openEdit(id){
   editId=id;
   const item=data.find(x=>x.id===id);
   if(!item)return;
-  modalTitle.textContent="Редактировать прибор";
+  $("modalTitleText").textContent="Редактировать прибор";
   setAddMode("manual");
   $("addChoice").style.display="none";
-  tagInput.value=item.tag;
+  tagInput.value=item.tag;checkTagLine();
   manualTaskInput.value=item.task||"";
   statusInput.value=item.done?"done":"todo";
   deleteBtn.style.display="block";
@@ -879,8 +879,10 @@ function closeModal(){
   editId=null;
 }
 
+// v105: номер установки — по формату тега (ISA-5.1: цифры перед буквами, KKS: блок и система).
 function unitFromTag(tag){
-  const m=String(tag||"").trim().match(/^(\d{4})-/);
+  if(window.TagFormat)return TagFormat.unitOf(tag);
+  const m=String(tag||"").trim().match(/^(\d{1,5})-/);
   return m ? m[1] : "";
 }
 
@@ -901,17 +903,25 @@ function openDuplicateDialog(duplicate,pending){
 
 function closeDuplicateDialog(){pendingDuplicate=null;$("duplicateOverlay").classList.remove("show");}
 
-function normalizeManualTag(value){
+// v105: тег проверяется по выбранному формату (кнопка ISA-5.1 у тумблера OCR).
+// При правке готового тега подходит и любой известный формат, а неизменённый тег сохраняется как есть.
+function manualTagCheck(value){
   const raw=String(value||"").trim();
-  const canonical=canonicalTag(raw);
-  return canonical || raw.toUpperCase().replace(/[–—−_]/g,"-").replace(/\s+/g,"");
+  if(!raw)return null;
+  if(editId!==null){
+    const prev=data.find(x=>x.id===editId);
+    if(prev&&tagKey(prev.tag)===tagKey(raw))return {ok:true,tag:prev.tag,unit:String(prev.unit||"").trim()||unitFromTag(prev.tag),fixes:[],same:true};
+    return TagFormat.anyValid(raw);
+  }
+  return TagFormat.check(raw);
 }
 
 function saveModal(){
-  const tag=normalizeManualTag(tagInput.value);
-  const unit=unitFromTag(tag);
-  if(!tag){showToast("Заполни Tag Number");return;}
-  if(!unit){showToast("Unit определяется автоматически из Tag Number");return;}
+  const raw=tagInput.value.trim();
+  if(!raw){showToast("Введите тег");tagInput.focus();return;}
+  const r=manualTagCheck(raw);
+  if(!r||!r.ok){showToast(`Тег не подходит под формат «${TagFormat.name()}»: ${r?r.reason:"не похоже на тег"}. Формат меняется кнопкой ${TagFormat.button()[0]} рядом с OCR.`);tagInput.focus();return;}
+  const tag=r.tag,unit=r.unit||"";
   const done=statusInput.value==="done";
   const task=manualTaskInput.value.trim();
   const duplicate=findDuplicateTag(tag,editId);
@@ -1763,14 +1773,10 @@ function normalizeOcrText(text){
     .replace(/[\r\n]+/g,"\n");
 }
 
+// v105: канонический вид — по выбранному формату (раньше только «4 цифры-буквы-3 цифры»,
+// номер из 4 цифр обрезался до 3).
 function canonicalTag(s){
-  const t=normalizeOcrText(s).replace(/[^A-Z0-9-]/g,"");
-  const m=t.match(/(\d{4})-?([A-Z]{2,8})-?(\d{2,4})([A-Z]?)/);
-  if(!m)return null;
-  let n=m[3];
-  if(n.length<3)n=n.padStart(3,"0");
-  if(n.length>3)n=n.slice(-3);
-  return `${m[1]}-${m[2]}-${n}${m[4]||""}`;
+  return window.TagFormat?TagFormat.canonical(s):null;
 }
 
 function knownTags(){ return data.map(x=>x.tag).filter(Boolean); }
@@ -1831,15 +1837,8 @@ function fuzzyKnownTag(tag){
 }
 
 function extractTagsSmart(text){
-  const norm=normalizeOcrText(text).replace(/[—–_]/g,'-');
   const found=new Set();
-  const re=/\b(\d{4})\s*-?\s*([A-Z]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})([A-Z0-9]?)\b/g;
-  let m;
-  while((m=re.exec(norm))){
-    let num=m[3].replace(/O/g,'0').replace(/Q/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/Z/g,'2');
-    const candidate=canonicalTag(`${m[1]}-${m[2]}-${num}${m[4]||''}`);
-    if(candidate)found.add(fuzzyKnownTag(candidate));
-  }
+  for(const t of TagFormat.find(String(text||"").replace(/[\r\n]+/g,"\n")))found.add(fuzzyKnownTag(t.tag));
   return [...found];
 }
 
@@ -1912,7 +1911,9 @@ function taskLikeText(value){
   t=extractMeaningfulWords(t);
   if(!t)return '';
   t=completeMeaningfulTaskPhrase(t);
-  const hasMeaning=/[А-ЯЁа-яё]/.test(t) || /\b(?:check|replace|repair|broken|sensor|install|verify|change|перенастро|замен|провер|оборван|неисправ|сенсор|датчик|ремонт|монтаж|клапан|соленоид|манифольд|утечк|давлен|бирк|шильдик|кабель|муфт|болт|высот|фото|устран|погнут|клин|заед|связ|HART|прибор|питани|пневм|воздух)\b/i.test(t);
+  // v105: задания по-английски (зарубежные перечни): ключевые слова или фраза из двух слов со строчными буквами.
+  const enWords=(t.match(/\b[A-Za-z]{3,}\b/g)||[]).filter(w=>/[a-z]/.test(w));
+  const hasMeaning=/[А-ЯЁа-яё]/.test(t) || /\b(?:check|replace|repair|broken|sensor|install|verify|change|calibrat\w*|flush\w*|stroke|test\w*|pending|valve|transmitter|cable|wiring|signal|leak\w*|fault\w*|alarm|setpoint|span|damaged|missing|power|supply|перенастро|замен|провер|оборван|неисправ|сенсор|датчик|ремонт|монтаж|клапан|соленоид|манифольд|утечк|давлен|бирк|шильдик|кабель|муфт|болт|высот|фото|устран|погнут|клин|заед|связ|HART|прибор|питани|пневм|воздух)\b/i.test(t) || enWords.length>=2;
   return hasMeaning?t.slice(0,240):'';
 }
 
@@ -1924,7 +1925,8 @@ function normalizeDoneMark(value){
 
 function stripTagFromContext(text){
   let t=String(text||'');
-  t=t.replace(/\b\d{4}\s*-?\s*[A-ZА-ЯЁ]{2,8}\s*-?\s*[0-9OQILSZ]{2,4}[A-ZА-ЯЁ]?\b/gi,' ');
+  const spans=TagFormat.find(t);
+  for(let i=spans.length-1;i>=0;i--)t=t.slice(0,spans[i].start)+' '+t.slice(spans[i].end);
   return cleanImportedTask(t);
 }
 
@@ -1947,16 +1949,13 @@ function extractJsonTagRecords(text){
     const keys=Object.keys(node);
     const tagKeyName=keys.find(k=>/^(tag|тег|tag_number|tagNumber)$/i.test(k));
     if(tagKeyName){
+      // v105: поле «тег» в JSON — любой известный формат (выбранный, ISA-5.1, KKS).
       const rawTag=String(node[tagKeyName]??'').trim();
-      const m=rawTag.match(/(\d{4})\s*-?\s*([A-ZА-ЯЁ]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})\s*([A-ZА-ЯЁ]?)/i);
-      if(m){
-        const num=m[3].toUpperCase().replace(/O/g,'0').replace(/Q/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/Z/g,'2');
-        const tag=canonicalTag(`${m[1]}-${m[2]}-${num}${m[4]||''}`);
-        if(tag){
-          const taskKey=keys.find(k=>/^(task|задание|assignment|note|комментарий|comment)$/i.test(k));
-          const doneKey=keys.find(k=>/^(done|completed|complete|выполнено|статус|status)$/i.test(k));
-          out.push({unit:tag.slice(0,4),tag,done:normalizeDoneMark(node[doneKey]),task:taskLikeText(node[taskKey]??'')});
-        }
+      const r=rawTag?TagFormat.anyValid(rawTag):null;
+      if(r&&r.ok){
+        const taskKey=keys.find(k=>/^(task|задание|assignment|note|комментарий|comment)$/i.test(k));
+        const doneKey=keys.find(k=>/^(done|completed|complete|выполнено|статус|status)$/i.test(k));
+        out.push({unit:r.unit||"",tag:r.tag,done:normalizeDoneMark(node[doneKey]),task:taskLikeText(node[taskKey]??'')});
       }
     }
     keys.forEach(k=>walk(node[k]));
@@ -1975,30 +1974,28 @@ function extractTagRecordsFromText(text){
   const lines=String(text||'').replace(/\r/g,'').split('\n');
   const records=[];
   // v101: буква-суффикс (…-061A) только вплотную к номеру: отметка «v» через пробел — не часть тега.
-  const tagRe=/\b(\d{4})\s*-?\s*([A-ZА-ЯЁ]{2,8})\s*-?\s*([0-9OQILSZ]{2,4})([A-ZА-ЯЁ]?)\b/gi;
+  // v105: теги ищутся по выбранному формату (TagFormat): ISA-5.1, KKS или свой образец.
   let current=null;
   for(const rawLine of lines){
     const line=String(rawLine||'').trim();
     if(!line)continue;
-    const matches=[...line.matchAll(tagRe)];
+    const matches=TagFormat.find(line);
     if(matches.length){
       for(let i=0;i<matches.length;i++){
-        const m=matches[i];
-        let num=m[3].toUpperCase().replace(/O/g,'0').replace(/Q/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/Z/g,'2');
-        const tag=canonicalTag(`${m[1]}-${m[2]}-${num}${m[4]||''}`);
+        const m=matches[i],tag=m.tag;
         if(!tag)continue;
-        const start=m.index+m[0].length;
-        const end=i+1<matches.length?matches[i+1].index:line.length;
+        const start=m.end;
+        const end=i+1<matches.length?matches[i+1].start:line.length;
         const after=line.slice(start,end);
         // v101: номер строки таблицы («556», «12.») перед тегом — не задание.
-        const beforeRaw=i===0?line.slice(0,m.index):'';
+        const beforeRaw=i===0?line.slice(0,m.start):'';
         const before=/^[\s\d.)№#|]*$/.test(beforeRaw)?'':beforeRaw;
         const context=stripTagFromContext(`${before} ${after}`);
         const markContext=`${before} ${after}`;
         const done=/(^|[\s|;,:\t])(✓|✔|☑|☒|✕|✖|×|\+|v|да|yes|true|done|выполнено|готово)(?=[\s|;,:\t]|$)/i.test(markContext)
           ||/[✓✔☑☒✕✖×]/.test(markContext)
           || /(^|\s)[+v]\s*$/i.test(markContext.trim());
-        current={unit:tag.slice(0,4),tag,done,task:taskLikeText(context)};
+        current={unit:m.unit||"",tag,done,task:taskLikeText(context)};
         records.push(current);
       }
     }else if(current && !isNoiseImportLine(line)){
@@ -2037,14 +2034,15 @@ function setAddMode(mode){
   overlay.classList.toggle("addMenu",mode==="manual"&&editId===null);
   setReviewing(false);
   updateOcrConfigStatus();
+  if(typeof layoutAddHead==="function")layoutAddHead();
 }
 
 function openAdd(){
   editId=null;
-  modalTitle.textContent="Добавить прибор";
+  $("modalTitleText").textContent="Добавить"; // v105: короче — заголовок, формат и OCR в одну строку
   setAddMode("manual");
   $("addChoice").style.display="grid";
-  tagInput.value="";
+  tagInput.value="";checkTagLine();lastImport=null;lastOcrText="";
   manualTaskInput.value="";
   statusInput.value="todo";
   deleteBtn.style.display="none";
@@ -2059,7 +2057,7 @@ function openAdd(){
   $("fileProgressWrap").style.display="none";
   setFileProgress(0);
   overlay.classList.add("show");
-  resetOcrPhoto();updateOcrConfigStatus();
+  resetOcrPhoto();updateOcrConfigStatus();updateFmtButton();
   if(ocrEngine()==="online")probeOcrNetwork(); // заранее узнать, доступен ли OCR.space
   setTimeout(()=>tagInput.focus(),50);
 }
@@ -2089,7 +2087,7 @@ function renderFileCandidates(){
   $("fileBackBtn").style.display=fileCandidates.length?"none":"block";
   setReviewing(fileCandidates.length>0);
   if(!fileCandidates.length){
-    box.innerHTML='<div class="mini">Подходящих КИП-тегов не найдено. Проверь формат вида 2131-PZT-414A.</div>';
+    box.innerHTML=emptyFormatHtml(lastImport?.text);addFormatNote($("fileImportStatus"));
     actions.style.display="none";return;
   }
   const existing=new Set(data.map(item=>tagKey(item.tag)));
@@ -2108,12 +2106,15 @@ function renderFileCandidates(){
     task.addEventListener("input",()=>{const has=!!task.value.trim();taskToggle.classList.toggle("hasTask",has);taskToggle.title=has?"Задание: есть запись":"Задание";});
     line.append(pick,inp,taskToggle,done);row.append(line,taskWrap);box.appendChild(row);
   });
+  importUnitHeaders(box,fileCandidates.map(c=>String(c.tag||"")));
+  addFormatNote($("fileImportStatus"));
   actions.style.display="flex";
 }
 
 async function processTextImport(text,label="Текст",startProgress=35){
   const status=$("fileImportStatus");
   $("fileProgressWrap").style.display="block";setFileProgress(startProgress);await nextFrame();
+  lastImport={text,label};
   const records=extractTagRecordsFromText(text);
   setFileProgress(Math.max(startProgress+8,78));await nextFrame();
   fileCandidates=records;
@@ -2172,7 +2173,7 @@ async function runFileImport(file){
       text=await file.text();setFileProgress(68);await nextFrame();
     }else throw new Error("Поддерживаются XLSX, XLS, CSV, TSV, TXT и JSON. Для PDF или Word сначала сохрани таблицу как CSV или Excel.");
     await processTextImport(text,file.name||"Файл",Math.max(72,Number($('fileBar').style.width.replace("%",""))||72));
-    setFileProgress(100);status.textContent=`${file.name||"Файл"}: найдено тегов ${fileCandidates.length}. Проверь задания и отметки перед добавлением.`;
+    setFileProgress(100);status.textContent=`${file.name||"Файл"}: найдено тегов ${fileCandidates.length}. Проверь задания и отметки перед добавлением.`;addFormatNote(status);
     setTimeout(()=>{$("fileProgressWrap").style.display="none"},500);
   }catch(error){
     console.error(error);setFileProgress(0);status.textContent=`Не удалось импортировать: ${error.message||error}`;
@@ -2186,8 +2187,10 @@ function importFileCandidates(){
   rows.forEach((row,index)=>{
     const checked=row.querySelector('.importPick');if(!checked?.checked)return;
     const tagInput=row.querySelector('.importTag'),doneInput=row.querySelector('.importDone'),taskInput=row.querySelector('.importTask');
-    const tag=tagInput.value.trim().toUpperCase(),unit=(tag.match(/^(\d{4})-/)||[])[1],key=tagKey(tag);
-    if(!unit||!/^[0-9]{4}-[A-Z]{2,8}-[0-9]{3}[A-Z]?$/.test(tag)){invalid.push(index+1);return;}
+    // v105: тег из списка проверяется по формату (выбранному или любому известному).
+    const r=TagFormat.anyValid(tagInput.value);
+    if(!r||!r.ok){invalid.push(index+1);return;}
+    const tag=r.tag,unit=r.unit||"",key=tagKey(tag);
     if(existing.has(key)){duplicates.push(tag);return;}
     existing.add(key);additions.push({unit,tag,done:!!doneInput?.checked,task:String(taskInput?.value||"").trim()});
   });
@@ -2457,6 +2460,7 @@ async function runOCR(file){
         const out=await r.json();
         if(out.IsErroredOnProcessing)throw new Error(out.ErrorMessage||out.ErrorDetails||'OCR.space error');
         const text=(out.ParsedResults||[]).map(x=>x.ParsedText||'').join('\n');
+        lastOcrText=text;
         const records=extractTagRecordsFromText(text);
         ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(text);
         ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
@@ -2501,7 +2505,7 @@ function loadLocalOcr(){
 
 function resetOcrPhoto(){
   setReviewing(false);
-  ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();
+  ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();lastOcrText="";
   ++ocrRunToken;updateOcrPhotoUi();
 }
 async function showOcrPhoto(file){
@@ -2509,7 +2513,7 @@ async function showOcrPhoto(file){
     let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"});}catch(_){bmp=await createImageBitmap(file);}
     ++ocrRunToken;
     ocrPhoto={name:file.name||"Фото",source:bmp,crop:null};ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
-    ocrCandidates=[];ocrCandidateMeta=new Map();setReviewing(false);
+    ocrCandidates=[];ocrCandidateMeta=new Map();setReviewing(false);lastOcrText="";
     $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
     $("ocrProgressWrap").style.display="none";setProgress(0);
     $("ocrStatus").textContent="При необходимости выделите участок, затем нажмите «Распознать».";
@@ -2652,6 +2656,7 @@ async function runLocalOcr(){
     await loadLocalOcr();
     const res=await window.LocalOCR.recognize(ocrPhoto.source,ocrRegion(),{stage:status,progress:v=>{if(runToken===ocrRunToken)setProgress(6+92*v);}});
     if(runToken!==ocrRunToken)return;
+    lastOcrText=res.text;
     const records=extractTagRecordsFromText(res.text);
     ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(res.text);
     ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
@@ -2717,7 +2722,8 @@ function renderImportCandidates(){
   box.innerHTML='';
   $("photoImportLegend").classList.remove("ready");
   if(!ocrCandidates.length){
-    box.innerHTML='<div class="mini">Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или использовать «Загрузка фото» с оригиналом.</div>';
+    box.innerHTML=lastOcrText&&TagFormat.scanNow(lastOcrText).skipped.length?emptyFormatHtml(lastOcrText):'<div class="mini">Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или выдели участок со списком.</div>';
+    addFormatNote($("ocrStatus"));
     actions.style.display='none'; return;
   }
   const existing=new Set(data.map(x=>tagKey(x.tag)));
@@ -2766,6 +2772,8 @@ function renderImportCandidates(){
     line.append(pick,inp,taskToggle,done);
     row.append(line,taskWrap); box.appendChild(row);
   });
+  importUnitHeaders(box,ocrCandidates.map(c=>String(c||"")));
+  addFormatNote($("ocrStatus"));
   actions.style.display='flex';
 }
 
@@ -2775,9 +2783,9 @@ function importCandidates(){
   rows.forEach((row,index)=>{
     const cb=row.querySelector('.importPick');if(!cb?.checked)return;
     const inp=row.querySelector('.importTag');const done=row.querySelector('.importDone');const task=row.querySelector('.importTask');
-    const tag=inp.value.trim().toUpperCase();const m=tag.match(/^(\d{4})-/);
-    if(!m||!/^[0-9]{4}-[A-Z]{2,8}-[0-9]{3}[A-Z]?$/.test(tag)){invalid.push(index+1);return;}
-    selected.push({unit:m[1],tag,done:!!done?.checked,task:String(task?.value||"").trim()});
+    const r=TagFormat.anyValid(inp.value);
+    if(!r||!r.ok){invalid.push(index+1);return;}
+    selected.push({unit:r.unit||"",tag:r.tag,done:!!done?.checked,task:String(task?.value||"").trim()});
   });
   if(invalid.length){showToast(`Исправь тег(и) №${invalid.join(", ")} перед добавлением`);return;}
   if(!selected.length){showToast("Ничего не выбрано для добавления");return;}
@@ -3098,7 +3106,7 @@ ${hLi(hS("install"),"<b>Установить</b> — на главный экр�
 <h3>Страницы</h3>
 <p>Отдельные списки — например, по установкам или сменам. Нажми — открыть, <b>+</b> — новая. Удержи страницу — «Изменить» (название), «Выбрать» (все) и «Удалить».</p>
 <h3>Фильтры и прогресс</h3>
-<p>Все, Задания, Выполненные, Невыполненные и по установке — по первым четырём цифрам тега. В скобках — сколько тегов. «Общий прогресс» считает всю страницу.</p>
+<p>Все, Задания, Выполненные, Невыполненные и по установке — по номеру установки в теге (цифры перед буквами: <span class="nw">2131-PT-102</span> → «2131»). В скобках — сколько тегов. «Общий прогресс» считает всю страницу.</p>
 <h3>Карточка тега</h3>
 <ul>
 ${hLi(hS("check"),"<b>Квадрат слева</b> — выполнено / не выполнено.")}
@@ -3156,10 +3164,34 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 ${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото распознаётся прямо на телефоне, без интернета; значком в углу фото можно выделить нужный участок. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
+${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS и свой образец. Выбор хранится на телефоне; подробности — в справке меню формата.")}
 </ul>
 <h3>Вручную</h3>
-<p>Тег, задание и статус. Тег начинается с номера установки из четырёх цифр — например, <span class="nw">2131-PZT-414A</span>: по нему работают фильтры по установкам.</p>
-<p class="helpNote">Дубликаты не добавляются — приложение предложит изменить тег или удалить прежнюю запись.</p>`}
+<p>Тег, задание и статус. Под полем сразу видно, подходит ли тег под формат и в какую вкладку он попадёт: вкладки строятся по номеру установки — <span class="nw">21-PT-1001</span> → «21».</p>
+<p class="helpNote">Дубликаты не добавляются — приложение предложит изменить тег или удалить прежнюю запись.</p>`},
+  fmt:{title:"Формат тегов — справка",html:`
+<p class="helpLead">Формат — правило, по которому приложение находит теги во вставленном тексте, в файлах и на фото и проверяет ручной ввод. Выбор хранится на этом телефоне.</p>
+<h3>ISA-5.1</h3>
+<p>Международное обозначение приборов; у нас те же буквы по ГОСТ 21.208.</p>
+<div class="isaTag" aria-label="Пример: 21-PT-1001A"><span><b>21</b><small>установка</small></span><span><b>P</b><small>величина</small></span><span><b>T</b><small>функция</small></span><span><b>1001</b><small>контур</small></span><span><b>A</b><small>дубль</small></span></div>
+<ul>
+${hLi(hT("1-я"),"<b>Измеряемая величина:</b> P давление, T температура, F расход, L уровень, A анализ, V вибрация, Z положение, H ручное.")}
+${hLi(hT("далее"),"<b>Функция:</b> T датчик, I показание, C регулятор, V клапан, S сигнализатор, E первичный элемент, Y преобразователь; H/L — верх/низ: <code>LSHH</code> — уровень, сигнал верхний аварийный.")}
+</ul>
+<p><b>Установка</b> — цифры перед буквами, любой длины: <code>2131-PT-102</code>, <code>21-PT-1001</code>, <code>100-FT-0012</code>. По ней строятся вкладки. Переключатель <b>Установка</b>: «Любая» — берутся теги с установкой и без; «Есть» — только с установкой; «Нет» — только <code>PT-101</code>.</p>
+<h3>KKS</h3>
+<p>Электростанции: <code>10LBA10CP001</code> — блок 10, система LBA, датчик CP001. Вкладка — блок и система: «10LBA».</p>
+<h3>Свой образец</h3>
+<p>Впишите тег из своего списка — правило построится само: первая группа цифр становится установкой, буквы — типом прибора. Можно 2–3 образца через запятую.</p>
+<h3>Что не считается тегом</h3>
+<ul>
+${hLi(hT("1 буква"),"Оборудование и крепёж: <code>P-101</code> насос, <code>V-201</code> ёмкость, <code>M-20</code> болт.")}
+${hLi(hT("DN PN"),"Размер и давление трубы. Маркировки и стандарты: IP65, RS485, Pt100.")}
+${hLi(hT("DWG"),"Номера документов: DWG, REV, ITP. Слова вроде AREA 21, SKID 100.")}
+</ul>
+<h3>Исправляется само</h3>
+<p>Кириллица в теге → латиница: <code>РТ</code> → <code>PT</code>. На фото в номере буква O → 0, I и L → 1.</p>
+<p class="helpNote"><b>Проверить на тексте</b> — вставьте кусок перечня: зелёным — тег, жёлтым — исправлен, зачёркнуто — не взят; коснитесь, чтобы увидеть причину.</p>`}
 };
 // Проверки на null: при обновлении браузер может на минуту взять старый index.html из кэша.
 function openInfo(title,html){
@@ -3184,6 +3216,170 @@ $("helpOverlay")?.addEventListener("click",e=>{if(e.target===$("helpOverlay"))cl
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&$("helpOverlay")?.classList.contains("show")){closeInfo();e.stopImmediatePropagation();}
 },true);
+
+// ===== v105: формат тегов — кнопка у тумблера OCR, строка проверки под полем «Тег», меню «Формат тегов» =====
+// Сам разбор — js/tag-format.js (TagFormat). Здесь — интерфейс и повторный разбор уже открытого текста.
+let lastImport=null,lastOcrText="";
+const FMT_SEEN_KEY="kip-tag-format-seen-v1";
+function fmtModeName(){return TagFormat.name();}
+function updateFmtButton(){
+  const [l,s]=TagFormat.button(),btn=$("fmtBtn");if(!btn)return;
+  $("fmtBtnLong").textContent=l;$("fmtBtnShort").textContent=s;
+  btn.setAttribute("aria-label",`Формат тегов: ${fmtModeName()}`);btn.title=`Формат тегов: ${fmtModeName()}`;
+  btn.classList.toggle("isNew",!safeGetStorage(FMT_SEEN_KEY,""));
+  tagInput.placeholder=TagFormat.placeholder();
+  layoutAddHead();
+}
+// Шапка «Добавить»: заголовок, кнопка формата и OCR — в одну строку. Не помещается — короткие подписи,
+// затем без слова «OCR»; совсем не помещается (крупный шрифт) — кнопки строкой ниже.
+function layoutAddHead(){
+  const tools=$("headTools"),t=$("modalTitleText");
+  if(!tools||!t||!overlay.classList.contains("show"))return;
+  if(!overlay.classList.contains("addMenu")){tools.classList.remove("compact","tight","stack");modalTitle.style.paddingRight="";return;}
+  const padL=parseFloat(getComputedStyle(modalTitle).paddingLeft)||0;
+  for(const step of [[],["compact"],["compact","tight"],["stack"]]){
+    tools.classList.remove("compact","tight","stack");tools.classList.add(...step);
+    if(step[0]==="stack"){modalTitle.style.paddingRight="84px";break;}
+    const pr=91+tools.offsetWidth+12;modalTitle.style.paddingRight=pr+"px";
+    if(t.offsetWidth<=modalTitle.clientWidth-pr-padL+.5)break;
+  }
+}
+window.addEventListener("resize",()=>layoutAddHead(),{passive:true});
+if(typeof ResizeObserver==="function"){try{new ResizeObserver(()=>layoutAddHead()).observe($("modalTitleText"));}catch(_){}}
+(document.fonts?.ready||Promise.resolve()).then(()=>layoutAddHead());
+
+// Строка под полем «Тег»: подходит ли тег и в какую вкладку попадёт.
+function checkTagLine(){
+  const el=$("tagCheck");if(!el)return;
+  const v=tagInput.value;
+  if(!v.trim()){el.className="tagCheck";el.textContent="";return;}
+  const r=manualTagCheck(v);
+  if(r&&r.ok){
+    if(r.same){el.className="tagCheck";el.textContent="";return;}
+    el.className="tagCheck ok";
+    el.innerHTML=`✓ <code>${escapeHtml(r.tag)}</code> → ${r.unit?`вкладка «${escapeHtml(r.unit)}»`:"без установки"}${r.fixes&&r.fixes.length?` · исправлено: ${escapeHtml(r.fixes.join(", "))}`:""}`;
+  }else{el.className="tagCheck no";el.textContent=`Не подходит под формат «${fmtModeName()}»: ${r?r.reason:"не похоже на тег"}`;}
+}
+tagInput.addEventListener("input",checkTagLine);
+
+// Подпись формата в строке «найдено тегов…» и пустой результат с подсказкой.
+function addFormatNote(el){
+  if(!el)return;
+  el.querySelector(".fmtNote")?.remove();
+  el.insertAdjacentHTML("beforeend",` <span class="fmtNote">· формат <b>«${escapeHtml(fmtModeName())}»</b> <button class="fmtLink" data-fmt-open type="button">Изменить</button></span>`);
+}
+function emptyFormatHtml(text){
+  const h=TagFormat.hint(TagFormat.scanNow(text||""),TagFormat.mode);
+  return `<div class="mini">Тегов в формате «${escapeHtml(fmtModeName())}» не найдено. ${h?`${escapeHtml(h.text)} — <button class="fmtLink" data-fmt-set="${h.to}" type="button">${escapeHtml(h.btn)}</button>`:`<button class="fmtLink" data-fmt-open type="button">Сменить формат</button>`}</div>`;
+}
+// Заголовки «Вкладка «21»» в списке найденного — когда установок больше одной.
+function importUnitHeaders(box,tags){
+  const units=tags.map(t=>unitFromTag(t));
+  if(new Set(units).size<2)return;
+  const items=[...box.querySelectorAll(".importItem")];let last=null;
+  items.forEach((row,i)=>{const u=units[i];if(u===last)return;last=u;
+    const h=document.createElement("div");h.className="importUnit";h.textContent=u?`Вкладка «${u}»`:"Без установки";row.before(h);});
+}
+document.addEventListener("click",e=>{
+  const open=e.target.closest?.("[data-fmt-open]");if(open){e.preventDefault();openFmtMenu();return;}
+  const set=e.target.closest?.("[data-fmt-set]");if(set){e.preventDefault();TagFormat.setMode(set.dataset.fmtSet);showToast(`Формат тегов: ${fmtModeName()}`);}
+});
+// Формат сменился — открытый текст (вставка, файл, фото) разбирается заново, без повторного распознавания.
+function refreshImportsForFormat(){
+  if(!overlay.classList.contains("show"))return;
+  if(addMode==="file"&&lastImport&&$("fileForm").style.display!=="none"){processTextImport(lastImport.text,lastImport.label,72);return;}
+  if((addMode==="camera"||addMode==="photo")&&lastOcrText){
+    const records=extractTagRecordsFromText(lastOcrText);
+    ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(lastOcrText);
+    ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
+    $("ocrStatus").textContent=`Найдено кандидатов ${ocrCandidates.length}. Проверь отметки и задания перед добавлением.`;
+    renderImportCandidates();
+  }
+}
+TagFormat.onChange(()=>{updateFmtButton();checkTagLine();if($("fmtOverlay").classList.contains("show"))renderFmtMenu(false);refreshImportsForFormat();});
+
+// ---- меню «Формат тегов» ----
+function openFmtMenu(){
+  safeSetStorage(FMT_SEEN_KEY,"1");$("fmtBtn")?.classList.remove("isNew");
+  renderFmtMenu(true);$("fmtOverlay").classList.add("show");$("fmtSheet").scrollTop=0;
+}
+function closeFmtMenu(){$("fmtOverlay").classList.remove("show");}
+const fmtFamily=()=>TagFormat.mode==="kks"?"kks":TagFormat.mode==="custom"?"custom":"isa";
+function renderFmtMenu(full){
+  const st=TagFormat.state,fam=fmtFamily(),isaMode=fam==="isa"?TagFormat.mode:st.isaLast;
+  $("fmtIsa").checked=fam==="isa";$("fmtKks").checked=fam==="kks";$("fmtCustom").checked=fam==="custom";
+  $("unitSeg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.u===isaMode)));
+  $("fmtIsaEx").textContent=TagFormat.FORMATS[isaMode].ex;
+  const c=TagFormat.custom;
+  $("fmtCustomEx").textContent=c.ok?c.rules.map(r=>r.src).join(", "):"";
+  if(full){$("fmtExample").value=st.example||"";$("fmtCheck").open=!!st.check;renderFmtSamples();}
+  renderRuleLine();renderFmtCheck();
+}
+function renderRuleLine(){
+  const el=$("ruleLine"),st=TagFormat.state,c=TagFormat.custom;
+  if(!String(st.example||"").trim()){el.className="ruleLine";el.textContent="Например, 21-PT-1001 или 100-FT-0012A. Можно 2–3 через запятую.";return;}
+  if(!c.ok){el.className="ruleLine err";el.textContent=c.error;return;}
+  el.className="ruleLine";
+  el.innerHTML=escapeHtml(TagFormat.describe(c)).replace(/(\d+ цифр[аы]? — установка)/g,"<b>$1</b>");
+}
+$("fmtBtn").addEventListener("click",openFmtMenu);
+$("fmtClose").addEventListener("click",closeFmtMenu);
+$("fmtOverlay").addEventListener("click",e=>{if(e.target===$("fmtOverlay"))closeFmtMenu();});
+$("fmtIsa").addEventListener("change",()=>TagFormat.setMode(TagFormat.state.isaLast||"auto"));
+$("fmtKks").addEventListener("change",()=>TagFormat.setMode("kks"));
+$("fmtCustom").addEventListener("change",()=>{TagFormat.setMode("custom");if(!String(TagFormat.state.example||"").trim())setTimeout(()=>$("fmtExample").focus(),30);});
+$("unitSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();TagFormat.setMode(b.dataset.u);});
+$("fmtExample").addEventListener("focus",()=>{if(TagFormat.mode!=="custom")TagFormat.setMode("custom");});
+$("fmtExample").addEventListener("input",()=>TagFormat.setExample($("fmtExample").value));
+$("fmtCheck").addEventListener("toggle",()=>TagFormat.setPref("check",$("fmtCheck").open));
+// Проверка на тексте: примеры и свой текст, подсветка найденного.
+function renderFmtSamples(){
+  const st=TagFormat.state,box=$("fmtSamples");
+  const list=[...TagFormat.SAMPLES,{id:"own",name:"Свой текст"}];
+  if(!list.some(x=>x.id===st.sample))st.sample="me";
+  box.innerHTML=list.map(x=>`<button aria-pressed="${st.sample===x.id}" data-id="${x.id}" type="button">${escapeHtml(x.name)}</button>`).join("");
+}
+$("fmtSamples").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TagFormat.setPref("sample",b.dataset.id);
+  $("fmtSamples").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));renderFmtCheck();});
+function fmtHighlight(text,res){
+  const marks=[...res.found.map(x=>({...x,t:"ok"})),...res.skipped.map(x=>({...x,t:"no"}))].sort((a,b)=>a.start-b.start);
+  let out="",p=0;
+  for(const m of marks){
+    if(m.start<p)continue;out+=escapeHtml(text.slice(p,m.start));const seg=escapeHtml(text.slice(m.start,m.end));
+    out+=m.t==="ok"
+      ?`<mark${m.fixes.length?' class="fix"':""} data-say="${escapeHtml(`${m.tag} → ${m.unit?`вкладка «${m.unit}»`:"без установки"}${m.fixes.length?" · "+m.fixes.join(", "):""}`)}">${seg}</mark>`
+      :`<s data-say="${escapeHtml(`${m.text.replace(/\s+/g," ")}: ${m.reason}`)}">${seg}</s>`;
+    p=m.end;
+  }
+  return out+escapeHtml(text.slice(p));
+}
+function renderFmtCheck(){
+  const st=TagFormat.state,wrap=$("fmtCheckWrap"),own=st.sample==="own";
+  const text=own?String(st.own||""):(TagFormat.SAMPLES.find(x=>x.id===st.sample)||TagFormat.SAMPLES[1]).text;
+  if(own){
+    if(!$("fmtOwnText")){
+      wrap.innerHTML='<textarea aria-label="Свой текст для проверки" class="fmtOwn" id="fmtOwnText" placeholder="Вставьте кусок своего перечня" spellcheck="false"></textarea><div class="fmtPreview" hidden id="fmtPreview"></div>';
+      $("fmtOwnText").value=st.own||"";
+      $("fmtOwnText").addEventListener("input",()=>{TagFormat.setPref("own",$("fmtOwnText").value);renderFmtCheck();});
+    }
+  }else wrap.innerHTML='<div class="fmtPreview" id="fmtPreview"></div>';
+  const res=TagFormat.scanNow(text),pv=$("fmtPreview");
+  pv.hidden=!text.trim();pv.innerHTML=fmtHighlight(text,res);
+  const out=$("fmtRes");
+  if(res.error){out.innerHTML=`<span class="zero">${escapeHtml(res.error)}</span>`;return;}
+  if(!text.trim()){out.innerHTML='<span class="muted">Найденные теги подсветятся зелёным.</span>';return;}
+  const units=new Map();res.found.forEach(t=>units.set(t.unit||"без установки",(units.get(t.unit||"без установки")||0)+1));
+  const h=TagFormat.hint(res,TagFormat.mode);
+  out.innerHTML=`<b class="${res.found.length?"":"zero"}">Найдено тегов: ${res.found.length}</b>${units.size?` → ${[...units].map(([u,n])=>`${escapeHtml(u)} (${n})`).join(" · ")}`:""}`
+    +(res.skipped.length?`<br><span class="muted">Не взято: ${res.skipped.length}. Коснитесь зачёркнутого — будет видна причина.</span>`:"")
+    +(h?`<br>${escapeHtml(h.text)} — <button class="fmtLink" data-fmt-set="${h.to}" type="button">${escapeHtml(h.btn)}</button>`:"");
+}
+$("fmtCheckWrap").addEventListener("click",e=>{const m=e.target.closest("[data-say]");if(m)showToast(m.dataset.say);});
+// Esc: справка поверх меню закрывается своим обработчиком выше; здесь — только меню формата.
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&$("fmtOverlay")?.classList.contains("show")&&!$("helpOverlay")?.classList.contains("show")){closeFmtMenu();e.stopImmediatePropagation();}
+},true);
+updateFmtButton();
 
 document.querySelectorAll("[data-dry-kind]").forEach(btn=>btn.addEventListener("click",()=>openDryReport(btn.dataset.dryKind)));
 $("dryListClose").onclick=()=>$("dryListOverlay").classList.remove("show");
@@ -3969,6 +4165,9 @@ function tagSearchKey(t){return resultTagKey(t).replace(/[^A-Z0-9]/g,"");}
 const FULL_TAG_RE=/^\d{3,5}-[A-Z]{1,8}-?\d{3,5}[A-Z]{0,2}$/;
 function plainTagName(t){
   const up=String(t||"").trim().toUpperCase().replace(/[–—−_]/g,"-").replace(/\s+/g,"");
+  // v105: тег в любом известном формате — в канонический вид (латиница, дефисы).
+  const r=window.TagFormat?TagFormat.anyValid(up):null;
+  if(r&&r.ok)return r.tag;
   const latin=resultTagKey(up);
   return FULL_TAG_RE.test(latin)?latin:up;
 }
@@ -4249,6 +4448,8 @@ if(window.AndroidApp){
       const menuOpen=$("pageContextMenu")?.classList.contains("show");
       const editorOpen=list.querySelector(".taskEditorWrap.open");
       if(confirmOpen){finishConfirm(false);return true;}
+      if($("helpOverlay")?.classList.contains("show")){closeInfo();return true;}
+      if($("fmtOverlay")?.classList.contains("show")){closeFmtMenu();return true;}
       if($("reportPickOverlay")?.classList.contains("show")){closeReportPick(true);return true;}
       if(reportEditing){exitReportEdit();return true;}
       if($("netOverlay")?.classList.contains("show")){closeNetWarning();return true;}
