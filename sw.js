@@ -1,11 +1,11 @@
-// Tag list — service worker (v105).
+// Tag list — service worker (v106).
 // Даёт работу без интернета: приложение открывается из кэша, когда сети нет.
 // Свежие файлы берутся из сети (network-first с таймаутом), кэш — запасной путь.
 // OCR (api.ocr.space) никогда не кэшируется и всегда идёт напрямую в сеть.
 // v101: движок и модели локального распознавания (js/ocr-local/, ~16 МБ) кэшируются при установке,
 // чтобы фото распознавалось без интернета с первого же раза.
 const CACHE_PREFIX = 'tag-list-';
-const CACHE_NAME = CACHE_PREFIX + 'v105-1'; // v105: формат тегов (ISA-5.1, KKS, свой образец)
+const CACHE_NAME = CACHE_PREFIX + 'v106-1'; // v106: раздел «Электроэнергетика», переключатель одной кнопкой
 const APP_SHELL = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const APP_SHELL = [
   './js/ocr.js',
   './js/gas.js',
   './js/loop.js',
+  './js/elec.js', // v106: конвертор «Электроэнергетика»
   './js/ocr-local.js',
   './js/ocr-local/worker.js',
   './js/ocr-local/tesseract-core-simd-lstm.wasm.js',

@@ -88,7 +88,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <div class="tlSpGlow"></div>
 <div class="tlSpTags"><span class="tlSpShadow"></span><div class="tlSpSwing"><img alt="" decoding="async" onerror="this.onerror=null;this.src='./icon-512.png?v=96-3'" src="./splash-tags.webp"/><span class="tlSpGlint"></span></div></div>
 <div class="tlSpTitle">Tag list</div>
-<div class="tlSpSub">Чек-лист КИП · Газ · 4–20 мА</div>
+<div class="tlSpSub">Чек-лист КИП · Газ · 4–20 мА · Электро</div>
 <div class="tlSpBar"><i></i></div>
 </div>
 </div>
@@ -142,11 +142,12 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <div class="top">
 <div class="titleRow">
 <h1 class="appTitle" id="appTitle"><span class="appTitleText" id="docTitle">Tag list</span><span class="appTitleText viewTitle" hidden id="viewTitle"></span></h1>
-<nav aria-label="Разделы" class="viewSwitch" id="viewSwitch" role="tablist">
-<span aria-hidden="true" class="viewSwitchThumb" id="viewSwitchThumb"></span>
-<button aria-controls="list" aria-selected="true" class="viewSwitchBtn active" data-view="list" role="tab" title="Список тэгов" type="button">Тэги</button>
-<button aria-controls="gasView" aria-selected="false" class="viewSwitchBtn" data-view="gas" role="tab" title="Газоанализ: ppm, мг/м³, % НКПР" type="button">Газ</button>
-<button aria-controls="loopView" aria-selected="false" class="viewSwitchBtn" data-view="loop" role="tab" title="Токовая петля 4–20 мА: TT, PT, FT, LT" type="button">4–20</button>
+<nav aria-label="Разделы" class="viewSwitch" id="viewSwitch">
+<button aria-current="page" aria-expanded="false" aria-label="Тэги" class="viewSwitchBtn active" data-view="list" title="Список тэгов" type="button">Т</button>
+<button aria-expanded="false" aria-label="Газоанализ" class="viewSwitchBtn" data-view="gas" tabindex="-1" title="Газоанализ: ppm, мг/м³, % НКПР" type="button">Газ</button>
+<button aria-expanded="false" aria-label="Токовая петля 4–20 мА" class="viewSwitchBtn" data-view="loop" tabindex="-1" title="Токовая петля 4–20 мА: TT, PT, FT, LT" type="button">4–20</button>
+<button aria-expanded="false" aria-label="Электроэнергетика" class="viewSwitchBtn" data-view="elec" tabindex="-1" title="Электроэнергетика: мощность, двигатель, кабель, учёт" type="button"><svg aria-hidden="true" class="viewBolt" viewBox="0 0 24 24"><path d="M13.2 2.5 5.5 13.4h5.6l-1.3 8.1 7.7-10.9h-5.6Z"></path></svg></button>
+<span aria-hidden="true" class="viewSwitchTimer" id="viewSwitchTimer"></span>
 </nav>
 <div aria-label="Настройки вида документа" class="titleActions">
 <button aria-label="Сменить тему" class="iconBtn" id="themeBtn" title="Сменить тему"><span aria-hidden="true" id="themeIcon">☼</span></button>
@@ -155,6 +156,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <div class="sub" id="lastSaved"><span id="lastSavedText">Сохранено на устройстве: —</span><button aria-label="Справка: раздел «Тэги»" class="helpBtn subHelp" data-help="list" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="sub viewSub gasSub" id="gasSub"><span>ppm · мг/м³ · % об. · % НКПР · 4–20 мА</span><button aria-label="Справка: раздел «Газоанализ»" class="helpBtn subHelp" data-help="gas" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="sub viewSub loopSub" id="loopSub"><span>TT · PT · FT · LT → 4–20 мА · NAMUR NE 43</span><button aria-label="Справка: раздел «4–20 мА»" class="helpBtn subHelp" data-help="loop" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
+<div class="sub viewSub elecSub" id="elecSub"><span>P·I · двигатель · ΔU кабеля · учёт ТТ/ТН</span><button aria-label="Справка: раздел «Электроэнергетика»" class="helpBtn subHelp" data-help="elec" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="searchPanel" id="searchPanel">
 <input class="search" id="search" placeholder="Поиск по тегу или установке" type="search"/>
 <button aria-label="Закрыть поиск" class="searchClose" id="searchClose" type="button">×</button>
@@ -183,6 +185,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 <section aria-label="Конвертор газоанализа" class="gasView convView" hidden id="gasView"></section>
 <section aria-label="Конвертор 4–20 мА" class="gasView convView loopView" hidden id="loopView"></section>
+<section aria-label="Конвертор электроэнергетики" class="gasView convView elecView" hidden id="elecView"></section>
 <section aria-label="Прогресс чек-листа" class="summaryCard">
 <div class="summaryHead">
 <div>

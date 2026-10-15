@@ -3143,6 +3143,38 @@ ${hLi(hT("✎"),"<b>Изменить</b> — тег, задание, стату�
 <h3>Точки поверки</h3>
 <p>0, 25, 50, 75 и 100 % шкалы с ожидаемым током. Нажми строку — значения перейдут в «Значение».</p>
 <p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>`},
+  elec:{title:"Электроэнергетика — справка",html:`
+<p class="helpLead">Электрические расчёты: в каждой вкладке введите любые значения, кроме одного, — оно посчитается. Поле с меткой «расчёт» — то, которое вы трогали давнее всех. Считается на телефоне, без интернета.</p>
+<div class="hpTabs" role="tablist" aria-label="Страницы справки"><span class="hpThumb" aria-hidden="true"></span><button type="button" class="hpTab active" data-page="0" role="tab" aria-selected="true">P·I · M — мощность</button><button type="button" class="hpTab" data-page="1" role="tab" aria-selected="false">ΔU · ТТ — кабель</button></div>
+<div class="hpPager">
+<section class="hpPage" aria-label="Страница 1 из 2">
+<h3>Сеть</h3>
+<p>3 фазы — напряжение линейное (между фазами), 1 фаза — фазное. Кнопки 400 В, 690 В, 6 кВ, 10 кВ подставляют типовые значения.</p>
+<h3><span class="hpKind">P·I</span>Мощность и ток</h3>
+<p>Четыре поля: U, I, P, cosφ — любые три, четвёртое считается. Под ними S (кВА), Q (квар) и ток на 1 кВт. Единицы (В/кВ, А/кА, Вт/кВт/МВт) — касанием по подписи справа в поле.</p>
+<div class="hpEx"><span class="k">Пример: ток двигателя насоса</span>3 фазы, <b>400 В</b>, P <b>75 кВт</b>, cosφ <b>0,86</b> → I <b>125,9 А</b>, S 87,2 кВА, Q 44,5 квар.</div>
+<div class="hpEx"><span class="k">Пример: нагрузка по клещам</span>3 фазы, <b>10 кВ</b>, клещи <b>40 А</b>, cosφ <b>0,9</b> → P <b>623,5 кВт</b>.</div>
+<h3><span class="hpKind">M</span>Двигатель</h3>
+<p>P₂ на валу (как на шильдике), номинальный ток, cosφ и КПД η — любые три. Ниже — пусковой ток по кратности, пуск звезда → треугольник и скольжение по оборотам.</p>
+<div class="hpEx"><span class="k">Пример: проверить автомат</span><b>75 кВт</b>, 400 В, cosφ <b>0,86</b>, η <b>0,94</b> → Iн <b>133,9 А</b>. Кратность 7 → пуск ≈ <b>937 А</b>, через звезду ≈ 312 А. Обороты 1480 → синхронные 1500, скольжение 1,33 %.</div>
+<p class="hpSwipe">Листайте влево — кабель и учёт →</p>
+</section>
+<section class="hpPage" aria-label="Страница 2 из 2">
+<h3><span class="hpKind">ΔU</span>Кабель</h3>
+<p>Сечение, длина, ток и потеря напряжения ΔU % — любые три. Материал — медь или алюминий, cosφ нагрузки — в «Параметрах». Если сечение посчиталось нестандартным, ниже — ближайшее большее.</p>
+<div class="hpEx"><span class="k">Пример: хватит ли кабеля</span>Медь <b>35 мм²</b>, <b>120 м</b>, <b>136 А</b>, 400 В, cosφ 0,86 → ΔU <b>3,93 %</b> (15,7 В).</div>
+<div class="hpEx"><span class="k">Пример: сколько можно протянуть</span>Введите сечение, ток и ΔU <b>5 %</b> — посчитается длина: ≈ <b>152 м</b>.</div>
+<p class="mini">AWG → мм²: AWG 10 = 5,26 мм² → ближайшее 6 мм². Допустимый ток по нагреву (ПУЭ, гл. 1.3) не проверяется. Предел ΔU задаёт проект, частый ориентир — 5 %.</p>
+<h3><span class="hpKind">ТТ</span>Учёт</h3>
+<p>Начальное и конечное показание, расход — любые два. Множитель K = Kтт × Kтн. Если в счётчик при наладке занесли коэффициенты, выберите «первичку» — множитель не нужен.</p>
+<div class="hpEx"><span class="k">Пример: расход за месяц</span>ТТ <b>600/5</b>, без ТН → K <b>120</b>. 12 345,6 → 12 512,3: разность 166,7 → <b>20 004 кВт·ч</b>. За 30 дней средняя мощность 27,8 кВт.</div>
+<div class="hpEx"><span class="k">С трансформатором напряжения</span>ТТ 600/5 и ТН <b>10000/100</b> → K = 120 × 100 = <b>12 000</b>.</div>
+<h3>Таблица, тэг и кнопки</h3>
+<p>Нажмите строку таблицы — подставится мощность, сечение или трансформатор тока. «Тэг» — куда «В задание» допишет результат (нет такого тега — он будет создан). Копировать и «Отправить» — как в «Газе» и «4–20».</p>
+<p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>
+</section>
+</div>
+<div class="hpDots" aria-hidden="true"><i class="on"></i><i></i></div>`},
   export:{title:"Отправка — справка",html:`
 <h3>Состояние — все страницы целиком</h3>
 <ul>
@@ -3201,6 +3233,36 @@ function openInfo(title,html){
   body.innerHTML=html;
   body.scrollTop=0;
   ov.classList.add("show");
+  initHelpPager(body);
+}
+// v106: справка в несколько страниц — листается свайпом в сторону (scroll-snap) или
+// вкладками сверху; высота листалки — по текущей странице.
+function initHelpPager(body){
+  const pager=body.querySelector(".hpPager");
+  if(!pager)return;
+  const pages=[...pager.querySelectorAll(".hpPage")],tabs=[...body.querySelectorAll(".hpTab")],dots=[...body.querySelectorAll(".hpDots i")];
+  const tabsBox=body.querySelector(".hpTabs");
+  let cur=-1;
+  const fit=()=>{const p=pages[Math.max(0,cur)];if(p)pager.style.height=p.offsetHeight+"px";};
+  const setPage=i=>{
+    if(i===cur)return;
+    cur=i;
+    tabs.forEach((t,k)=>{t.classList.toggle("active",k===i);t.setAttribute("aria-selected",String(k===i));});
+    dots.forEach((d,k)=>d.classList.toggle("on",k===i));
+    fit();
+  };
+  pager.addEventListener("scroll",()=>{
+    const x=pager.scrollLeft/Math.max(1,pager.clientWidth);
+    tabsBox?.style.setProperty("--hp",String(Math.min(pages.length-1,Math.max(0,x))));
+    setPage(Math.round(x));
+  },{passive:true});
+  tabs.forEach(t=>t.addEventListener("click",()=>{
+    const smooth=!matchMedia("(prefers-reduced-motion: reduce)").matches;
+    pager.scrollTo({left:Number(t.dataset.page)*pager.clientWidth,behavior:smooth?"smooth":"auto"});
+    body.scrollTo({top:0,behavior:smooth?"smooth":"auto"});
+  }));
+  setPage(0);
+  requestAnimationFrame(fit);
 }
 function closeInfo(){$("helpOverlay")?.classList.remove("show");}
 function openHelp(key){const h=HELP[key];if(h)openInfo(h.title,h.html);}
@@ -3899,12 +3961,13 @@ refreshAfterViewportChange();
 if($("search")) $("search").value=query;
 render();
 
-// v96: разделы «Теги · Газ · 4–20». Переключатель в шапке, у конверторов — свои модули,
-// они загружаются по требованию (и заранее, когда устройство свободно).
-const VIEW_ORDER=["list","gas","loop"];
+// v96: разделы «Теги · Газ · 4–20» (v106: + «Электроэнергетика»). Переключатель в шапке,
+// у конверторов — свои модули, они загружаются по требованию (и заранее, когда устройство свободно).
+const VIEW_ORDER=["list","gas","loop","elec"];
 const VIEW_MODULES={
   gas:{file:"./js/gas.js",global:"TagListGas",el:"gasView",title:"Газоанализ",name:"конвертор газоанализа"},
-  loop:{file:"./js/loop.js",global:"TagListLoop",el:"loopView",title:"Токовая петля",name:"конвертор 4–20 мА"}
+  loop:{file:"./js/loop.js",global:"TagListLoop",el:"loopView",title:"Токовая петля",name:"конвертор 4–20 мА"},
+  elec:{file:"./js/elec.js",global:"TagListElec",el:"elecView",title:"Электроэнергетика",name:"конвертор электроэнергетики"}
 };
 const viewLoads={};
 let currentView="list",viewHistoryPushed=false;
@@ -3945,32 +4008,33 @@ function allTagNames(){
   try{pages.forEach(page=>(page.id===activePageId?data:page.data||[]).forEach(x=>{if(x&&x.tag)out.push(String(x.tag));}));}catch(_){}
   return out;
 }
-// v100: положение бегунка измеряется один раз (и заново — только когда меняется ширина
-// кнопок: шрифт, поворот, размер окна). Раньше каждое переключение читало offsetLeft
-// и заставляло браузер пересчитывать раскладку всей страницы.
-let viewThumbGeom=null;
-function measureViewThumb(){
+// v106: переключатель разделов — одна кнопка текущего раздела («Т», «Газ», «4–20», молния).
+// Касание раскрывает выбор влево в той же строке; после выбора он сворачивается сам через
+// 3 с без касаний. Касание текущего раздела, касание мимо, Esc и «Назад» сворачивают сразу.
+const VIEW_SWITCH_DELAY_MS=3000;
+let viewSwitchOpen=false,viewSwitchTimer=0;
+function setViewSwitchOpen(on){
+  on=!!on;
+  clearTimeout(viewSwitchTimer);
   const nav=$("viewSwitch");
-  if(!nav)return null;
-  const geom={};
-  for(const b of nav.querySelectorAll(".viewSwitchBtn")){
-    if(!b.offsetWidth)return null; // ещё не размечено — измерим позже
-    geom[b.dataset.view]={x:b.offsetLeft,w:b.offsetWidth};
+  if(!nav)return;
+  if(on!==viewSwitchOpen){
+    viewSwitchOpen=on;
+    nav.classList.toggle("open",on);
+    nav.closest(".titleRow")?.classList.toggle("swOpen",on);
+    nav.querySelectorAll(".viewSwitchBtn").forEach(b=>{
+      b.setAttribute("aria-expanded",String(on));
+      b.tabIndex=on||b.dataset.view===currentView?0:-1;
+    });
   }
-  return geom;
+  if(on)armViewSwitch();
 }
-function moveViewThumb(instant=false){
-  const thumb=$("viewSwitchThumb");
-  if(!thumb)return;
-  if(!viewThumbGeom)viewThumbGeom=measureViewThumb();
-  const g=viewThumbGeom&&viewThumbGeom[currentView];
-  if(!g)return;
-  if(instant)thumb.classList.add("instant");
-  thumb.style.setProperty("--thumb-x",`${g.x}px`);
-  thumb.style.setProperty("--thumb-w",`${g.w}px`);
-  if(instant)requestAnimationFrame(()=>requestAnimationFrame(()=>thumb.classList.remove("instant")));
+function armViewSwitch(){
+  clearTimeout(viewSwitchTimer);
+  const bar=$("viewSwitchTimer");
+  if(bar){bar.classList.remove("run");void bar.offsetWidth;bar.classList.add("run");}
+  viewSwitchTimer=setTimeout(()=>setViewSwitchOpen(false),VIEW_SWITCH_DELAY_MS);
 }
-function remeasureViewThumb(){viewThumbGeom=null;moveViewThumb(true);}
 // v100: въезд раздела — та же анимация (сдвиг 18 px + прозрачность, время и кривая из
 // --ui-motion / --ui-ease), но через Web Animations: без принудительного пересчёта
 // раскладки (void el.offsetWidth) на каждый элемент и без «залипания» после окончания.
@@ -4006,16 +4070,16 @@ function playViewIn(el,from){
 function updateViewChrome(prev){
   document.querySelectorAll(".viewSwitchBtn").forEach(b=>{
     const on=b.dataset.view===currentView;
-    b.classList.toggle("active",on);b.setAttribute("aria-selected",String(on));
+    b.classList.toggle("active",on);
+    if(on)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current");
+    b.tabIndex=on||viewSwitchOpen?0:-1;
   });
-  moveViewThumb();
   const titleEl=$("viewTitle"),docEl=$("docTitle");
   const mod=VIEW_MODULES[currentView];
   if(titleEl){titleEl.textContent=mod?mod.title:"";titleEl.hidden=!mod;}
   if(docEl)docEl.hidden=!!mod;
   document.body.classList.toggle("conv-mode",!!mod);
-  document.body.classList.toggle("gas-mode",currentView==="gas");
-  document.body.classList.toggle("loop-mode",currentView==="loop");
+  for(const key of Object.keys(VIEW_MODULES))document.body.classList.toggle(`${key}-mode`,currentView===key);
   document.body.dataset.view=currentView;
   if(currentView==="list")requestAnimationFrame(updateTabsFade);
   // Направление анимации: вправо по порядку разделов — новый раздел въезжает справа.
@@ -4343,14 +4407,22 @@ window.TagListApp={addResultToTag,tagNames:allTagNames,tagEntries,findTagEntry,a
 function closeGasView(fromHistory=false){return setView("list",{fromHistory});}
 $("viewSwitch").addEventListener("click",e=>{
   const b=e.target.closest(".viewSwitchBtn");
-  if(b)setView(b.dataset.view);
+  if(!b)return;
+  if(!viewSwitchOpen){setViewSwitchOpen(true);return;}                 // свёрнут — раскрыть
+  if(b.dataset.view===currentView){setViewSwitchOpen(false);return;}    // тот же раздел — свернуть
+  armViewSwitch();setView(b.dataset.view);                              // другой — перейти, свернуть через 3 с
 });
+// Касание мимо раскрытого выбора сворачивает его (само касание срабатывает как обычно).
+document.addEventListener("pointerdown",e=>{
+  if(viewSwitchOpen&&!e.target.closest?.("#viewSwitch"))setViewSwitchOpen(false);
+},true);
 // Стрелки влево/вправо на переключателе — как у обычных вкладок.
 $("viewSwitch").addEventListener("keydown",e=>{
   if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
   const i=VIEW_ORDER.indexOf(currentView)+(e.key==="ArrowRight"?1:-1);
   const next=VIEW_ORDER[(i+VIEW_ORDER.length)%VIEW_ORDER.length];
-  e.preventDefault();setView(next).then(()=>document.querySelector(`.viewSwitchBtn[data-view="${next}"]`)?.focus());
+  e.preventDefault();setViewSwitchOpen(true);
+  setView(next).then(()=>document.querySelector(`.viewSwitchBtn[data-view="${next}"]`)?.focus());
 });
 window.addEventListener("popstate",()=>{
   // Свой шаг назад (переход к «Тэгам» кнопкой) — раздел уже переключён, только сверяем историю.
@@ -4372,20 +4444,11 @@ if(!VIEW_NATIVE_BACK){
 // Esc: сначала закрываются окна, затем раздел-конвертор (обработчик в фазе захвата,
 // чтобы увидеть окна до того, как их закроет общий обработчик).
 window.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&viewSwitchOpen&&!document.querySelector(".overlay.show")){setViewSwitchOpen(false);e.stopPropagation();return;}
   if(e.key==="Escape"&&currentView!=="list"&&!document.querySelector(".overlay.show")&&!e.target.closest?.("input,textarea,select"))setView("list");
 },true);
-window.addEventListener("resize",remeasureViewThumb,{passive:true});
-(document.fonts?.ready||Promise.resolve()).then(remeasureViewThumb);
-// Ширина кнопок меняется и без resize (смена шрифта «Aa») — следим за самими кнопками.
-if(typeof ResizeObserver==="function"){
-  try{
-    const ro=new ResizeObserver(()=>remeasureViewThumb());
-    document.querySelectorAll(".viewSwitchBtn").forEach(b=>ro.observe(b));
-  }catch(_){}
-}
-moveViewThumb(true);
 // Прогрев модулей, пока пользователь ничего не делает: первое открытие — мгновенное.
-(window.requestIdleCallback||((fn)=>setTimeout(fn,2500)))(()=>{ensureViewModule("gas").catch(()=>{});ensureViewModule("loop").catch(()=>{});},{timeout:6000});
+(window.requestIdleCallback||((fn)=>setTimeout(fn,2500)))(()=>{ensureViewModule("gas").catch(()=>{});ensureViewModule("loop").catch(()=>{});ensureViewModule("elec").catch(()=>{});},{timeout:6000});
 
 // v81: интеграция с Android-приложением (APK). В браузере этот блок не выполняется.
 if(window.AndroidApp){
@@ -4461,6 +4524,7 @@ if(window.AndroidApp){
         if(still&&still===overlayOpen)still.classList.remove("show");
         return true;
       }
+      if(viewSwitchOpen){setViewSwitchOpen(false);return true;}
       if(currentView!=="list"){setView("list");return true;}
       if(menuOpen&&typeof closePageContextMenu==="function"){closePageContextMenu();return true;}
       if(pageManageMode){exitPageManage();return true;}
