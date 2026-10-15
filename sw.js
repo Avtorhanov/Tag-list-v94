@@ -1,15 +1,16 @@
-// Tag list — service worker (v104).
+// Tag list — service worker (v105).
 // Даёт работу без интернета: приложение открывается из кэша, когда сети нет.
 // Свежие файлы берутся из сети (network-first с таймаутом), кэш — запасной путь.
 // OCR (api.ocr.space) никогда не кэшируется и всегда идёт напрямую в сеть.
 // v101: движок и модели локального распознавания (js/ocr-local/, ~16 МБ) кэшируются при установке,
 // чтобы фото распознавалось без интернета с первого же раза.
 const CACHE_PREFIX = 'tag-list-';
-const CACHE_NAME = CACHE_PREFIX + 'v104-1'; // v104: iPhone — клавиатура при правке отчёта, контакты
+const CACHE_NAME = CACHE_PREFIX + 'v105-1'; // v105: формат тегов (ISA-5.1, KKS, свой образец)
 const APP_SHELL = [
   './',
   './index.html',
   './css/app.css',
+  './js/tag-format.js', // v105: разбор тегов по формату
   './js/app.js',
   './js/ocr.js',
   './js/gas.js',

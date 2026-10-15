@@ -138,13 +138,18 @@ function namur(mA){
   return {cls:"gasBad",text:"Сигнал отказа: ≥ 21 мА (NAMUR NE 43)"};
 }
 
-// Тип прибора по буквам тега: 2131-TT-434 → TT, 2132-PDT-402 → PT.
+// Тип прибора по буквам тега: 2131-TT-434 → TT, 2132-PDT-402 → PT, FT101A → FT.
+// v105: KKS — по коду датчика: 10LBA10CP001 → PT (CP давление, CT температура, CF расход, CL уровень).
 // OCR часто подставляет кириллицу вместо латиницы — приводим к латинице.
 const CYR={"Т":"T","Р":"P","Е":"E","А":"A","С":"C","К":"K","М":"M","Н":"H","О":"O","Х":"X","В":"B","І":"I"};
+const KIND={T:"TT",P:"PT",F:"FT",L:"LT"};
 function detectKind(tag){
   const s=String(tag||"").toUpperCase().replace(/[ТРЕАСКМНОХВІ]/g,ch=>CYR[ch]);
+  const kks=s.replace(/\s+/g,"").match(/^\d{1,2}[A-Z]{3}\d{2}C([TPFL])\d{3}$/);
+  if(kks)return KIND[kks[1]];
   for(const part of s.split(/[-_\s./]+/)){
-    if(/^[A-Z]{1,5}$/.test(part))return {T:"TT",P:"PT",F:"FT",L:"LT"}[part[0]]||null;
+    const m=part.match(/^([A-Z]{1,5})(?:\d+[A-Z]{0,2})?$/);
+    if(m)return KIND[m[1][0]]||null;
   }
   return null;
 }

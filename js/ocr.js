@@ -75,6 +75,7 @@ async function runOCR(file){
         const out=await r.json();
         if(out.IsErroredOnProcessing)throw new Error(out.ErrorMessage||out.ErrorDetails||'OCR.space error');
         const text=(out.ParsedResults||[]).map(x=>x.ParsedText||'').join('\n');
+        if(typeof lastOcrText!=="undefined")lastOcrText=text; // v105: повторный разбор при смене формата
         const records=extractTagRecordsFromText(text);
         ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(text);
         ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
