@@ -2285,3 +2285,17 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
 /* Метка «есть задание» у кнопки «Задание» карточки тега. */
 html[lang="en"] .taskToggle.hasTask::after{content:'✓'}
+
+/* v109: дубликат с буквой — пояснение в строке найденного и подсказка свободной буквы */
+.importItem.isDup{opacity:1;border-style:dashed}
+.importItem.isDup .importTag{color:var(--muted)}
+.importDup{margin:4px 2px 1px 31px;font-size:calc(12.5px * var(--fontScale));line-height:1.4;color:var(--muted)}
+.importDup.dup{color:var(--fmt-fix)}
+.importDup.bad{color:var(--fmt-no)}
+.importDup.ok{color:var(--fmt-ok)}
+.importDupNote{grid-column:1/-1;margin:0 0 4px;padding:8px 10px;border-radius:9px;background:var(--fmt-fix-bg);color:var(--fmt-fix);font-size:calc(13px * var(--fontScale));line-height:1.4}
+.importDupNote b{font-family:var(--f-mono)}
+.dupFix{display:inline-block;border:1px solid currentColor;border-radius:7px;background:none;color:var(--accent-text,var(--accent));font:700 1em var(--f-mono);padding:1px 6px;margin:1px 0;cursor:pointer;touch-action:manipulation;vertical-align:baseline}
+.duplicateActions .duplicateSuffix{grid-column:1/-1}
+.duplicateActions .duplicateSuffix[hidden]{display:none}
+:root[data-theme]:not([data-theme="light"]) .importItem.isDup .importTag{color:var(--muted)}
