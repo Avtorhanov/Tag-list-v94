@@ -904,7 +904,13 @@ function findDuplicateTag(tag,ignoreId=null){
 
 function openDuplicateDialog(duplicate,pending){
   pendingDuplicate={duplicateId:duplicate.id,pending};
-  $("duplicateMessage").innerHTML=TX("Тег <strong>{0}</strong> уже есть в списке (позиция №{1}, {2}).<br><br>Измени новый тег или удали существующую запись, если она больше не нужна.",escapeHtml(pending.tag),duplicate.id,escapeHtml(duplicate.tag));
+  const sug=dupSuffixSuggest(pending.tag,new Set(data.map(x=>tagKey(x.tag))));
+  pendingDuplicate.suggest=sug;
+  $("duplicateMessage").innerHTML=TX("Тег <strong>{0}</strong> уже есть на этой странице (позиция №{1}, {2}).",escapeHtml(pending.tag),duplicate.id,escapeHtml(duplicate.tag))
+    +"<br><br>"+TX("Если это другой прибор с тем же номером (резерв, пара A/B), добавьте букву вплотную к номеру — это уже не дубликат: <b>{0}</b>.",escapeHtml(sug||pending.tag+"A"))
+    +"<br>"+TX("Если запись та же — удалите прежнюю или измените новый тег.");
+  const asBtn=$("duplicateSuffixBtn");
+  if(asBtn){asBtn.hidden=!sug;asBtn.textContent=TX("Добавить как {0}",sug);}
   $("duplicateOverlay").classList.add("show");
 }
 
@@ -2089,6 +2095,80 @@ function loadSheetJs(){
   return sheetJsPromise;
 }
 
+// v109: дубликат с буквой. Тег, который уже есть на этой странице, — не повод запрещать строку навсегда:
+// второй прибор с тем же номером (резерв, A/B) отличается буквой вплотную к номеру — 2131-PT-414A.
+// Флажок «Добавить» строки-дубликата выключен, пока тег совпадает; после правки он включается сам.
+// Свободная буква: 2131-PT-414 → 414A; если 414A занят — 414B; для 414A → 414B.
+function dupSuffixSuggest(tag,taken){
+  const t=String(tag||"").trim().toUpperCase();if(!t)return "";
+  const m=t.match(/^(.*\d)([A-Z])$/);
+  const base=m?m[1]:t;const from=m?m[2].charCodeAt(0)-64:0;
+  const tries=[];
+  for(let i=from;i<26;i++)tries.push(String.fromCharCode(65+i));
+  if(m)for(let i=0;i<from-1;i++)tries.push(String.fromCharCode(65+i));
+  for(const L of tries){
+    const cand=base+L,key=tagKey(cand);
+    if(taken&&taken.has(key))continue;
+    const r=window.TagFormat?TagFormat.anyValid(cand):{ok:true,tag:cand};
+    if(r&&r.ok&&tagKey(r.tag)===key)return r.tag;
+  }
+  return "";
+}
+// Строки списка найденного: флажок, подсветка и пояснение под тегом — по текущему тексту поля.
+function refreshImportRows(box){
+  if(!box)return;
+  const rows=[...box.querySelectorAll(".importItem")];
+  const existing=new Map(data.map(x=>[tagKey(x.tag),x]));
+  const pageName=String(getActivePage()?.name||"").trim();
+  const keys=rows.map(row=>{const v=row.querySelector(".importTag")?.value||"";const r=v.trim()?TagFormat.anyValid(v):null;return r&&r.ok?tagKey(r.tag):"";});
+  const taken=new Set([...existing.keys(),...keys.filter(Boolean)]);
+  const seen=new Map();
+  rows.forEach((row,i)=>{
+    const inp=row.querySelector(".importTag"),pick=row.querySelector(".importPick");if(!inp||!pick)return;
+    const raw=inp.value.trim(),key=keys[i];
+    let state="ok",html="";
+    if(!raw){state="bad";html=TX("Пустой тег — впишите тег или снимите отметку.");}
+    else if(!key){const r=TagFormat.anyValid(raw);state="bad";html=TX("Не похоже на тег: {0}.",escapeHtml(TX(r?r.reason:"не похоже на тег")));}
+    else if(existing.has(key)){
+      state="dup";const prev=existing.get(key);const sug=dupSuffixSuggest(raw,taken);
+      html=TX("Уже есть на странице «{0}» (строка №{1}).",escapeHtml(pageName),prev.id)+" "+(sug?TX("Второй прибор с тем же номером — допишите букву к номеру: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):TX("Измените тег, чтобы добавить его."));
+    }else if(seen.has(key)){
+      state="dup";const sug=dupSuffixSuggest(raw,taken);
+      html=TX("Повтор: этот тег уже выше в списке (№{0}).",seen.get(key)+1)+(sug?" "+TX("Допишите букву: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):"");
+    }else if(row.dataset.wasDup==="1"){html=TX("✓ Новый тег — будет добавлен.");}
+    if(key&&!seen.has(key))seen.set(key,i);
+    const prev=row.dataset.state||"";
+    if(state==="dup"){pick.checked=false;pick.disabled=true;if(!prev||prev==="ok")row.dataset.wasDup="1";}
+    else{pick.disabled=false;if(prev==="dup")pick.checked=true;}
+    row.dataset.state=state;row.classList.toggle("isDup",state==="dup");row.classList.toggle("isBad",state==="bad"&&pick.checked);
+    inp.style.borderColor="";
+    let hint=row.querySelector(".importDup");
+    if(!html){hint?.remove();return;}
+    if(!hint){hint=document.createElement("div");hint.className="importDup";hint.setAttribute("aria-live","polite");row.querySelector(".importRow").after(hint);}
+    hint.className="importDup"+(state==="dup"?" dup":state==="bad"?" bad":" ok");
+    if(hint.innerHTML!==html)hint.innerHTML=html;
+  });
+  const dups=rows.filter(r=>r.dataset.state==="dup").length;
+  const note=box.querySelector(".importDupNote");
+  if(dups){
+    const n=note||document.createElement("div");n.className="importDupNote";
+    const html=TX("Повторы ({0}) не отмечены: такие теги уже есть на этой странице. Если это другой прибор с тем же номером (резерв, пара A/B), допишите букву вплотную к номеру — <b>414A</b>, <b>414B</b> — и строка добавится.",dups);
+    if(n.innerHTML!==html)n.innerHTML=html;
+    if(!note)box.prepend(n);
+  }else note?.remove();
+}
+function wireImportRow(box,row){
+  const inp=row.querySelector(".importTag");
+  inp?.addEventListener("input",()=>refreshImportRows(box));
+  row.querySelector(".importPick")?.addEventListener("change",()=>refreshImportRows(box));
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest?.("[data-dup-fix]");if(!b)return;
+  e.preventDefault();
+  if(b.closest(".importItem")){const row=b.closest(".importItem"),inp=row.querySelector(".importTag");inp.value=b.dataset.dupFix;refreshImportRows(row.closest(".importList"));inp.focus();return;}
+  if(b.closest("#tagCheck")){tagInput.value=b.dataset.dupFix;checkTagLine();tagInput.focus();}
+});
+
 function renderFileCandidates(){
   const box=$("fileImportList"),actions=$("fileImportActions");
   box.innerHTML="";
@@ -2113,8 +2193,9 @@ function renderFileCandidates(){
     const task=document.createElement("textarea");task.className="importTask";task.rows=1;task.placeholder=TX("Опишите задание");task.value=candidate.task||"";taskWrap.appendChild(task);
     taskToggle.addEventListener("click",()=>{const open=taskWrap.classList.toggle("open");taskToggle.setAttribute("aria-expanded",String(open));if(open)setTimeout(()=>{task.scrollTop=0;autosizeTaskTextarea(task,104);task.focus();requestAnimationFrame(()=>task.scrollTop=0);},20);});
     task.addEventListener("input",()=>{const has=!!task.value.trim();taskToggle.classList.toggle("hasTask",has);taskToggle.title=has?TX("Задание: есть запись"):TX("Задание");});
-    line.append(pick,inp,taskToggle,done);row.append(line,taskWrap);box.appendChild(row);
+    line.append(pick,inp,taskToggle,done);row.append(line,taskWrap);box.appendChild(row);wireImportRow(box,row);
   });
+  refreshImportRows(box);
   importUnitHeaders(box,fileCandidates.map(c=>String(c.tag||"")));
   addFormatNote($("fileImportStatus"));
   actions.style.display="flex";
@@ -2779,8 +2860,9 @@ function renderImportCandidates(){
       taskToggle.title=has?TX('Задание: есть запись'):TX('Задание');
     });
     line.append(pick,inp,taskToggle,done);
-    row.append(line,taskWrap); box.appendChild(row);
+    row.append(line,taskWrap); box.appendChild(row); wireImportRow(box,row);
   });
+  refreshImportRows(box);
   importUnitHeaders(box,ocrCandidates.map(c=>String(c||"")));
   addFormatNote($("ocrStatus"));
   actions.style.display='flex';
@@ -3209,7 +3291,7 @@ ${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с O
 </ul>
 <h3>Вручную</h3>
 <p>Тег, задание и статус. Под полем сразу видно, подходит ли тег под формат и в какую вкладку он попадёт: вкладки строятся по номеру установки — <span class="nw">21-PT-1001</span> → «21».</p>
-<p class="helpNote">Дубликаты не добавляются — приложение предложит изменить тег или удалить прежнюю запись.</p>`},
+<p class="helpNote">Тег, который уже есть на этой странице, не добавляется второй раз. Если это другой прибор с тем же номером (резерв, пара A/B), допишите букву вплотную к номеру — <span class="nw">2131-PT-414A</span>: это уже новый тег. Приложение подскажет свободную букву под полем, в окне повтора и в списке найденного — коснитесь её. На другой странице тот же тег можно добавлять без изменений.</p>`},
   fmt:{title:"Формат тегов — справка",html:`
 <p class="helpLead">Формат — правило, по которому приложение находит теги во вставленном тексте, в файлах и на фото и проверяет ручной ввод. Выбор хранится на этом телефоне.</p>
 <h3>ISA-5.1</h3>
@@ -3345,7 +3427,7 @@ ${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it t
 </ul>
 <h3>Manually</h3>
 <p>Tag, task and status. Under the field you see at once whether the tag matches the format and which tab it goes to: tabs are built from the unit number — <span class="nw">21-PT-1001</span> → “21”.</p>
-<p class="helpNote">Duplicates are not added — the app offers to change the tag or delete the previous entry.</p>`},
+<p class="helpNote">A tag that already exists on this page is not added twice. If it is another instrument with the same number (standby, A/B pair), add a letter right after the number — <span class="nw">2131-PT-414A</span>: that is a new tag. The app suggests a free letter under the field, in the duplicate window and in the found list — tap it. On another page the same tag can be added as is.</p>`},
   fmt:{title:"Tag format — help",html:`
 <p class="helpLead">The format is the rule the app uses to find tags in pasted text, files and photos and to check manual input. The choice is stored on this phone.</p>
 <h3>ISA-5.1</h3>
@@ -3463,6 +3545,14 @@ function checkTagLine(){
   const r=manualTagCheck(v);
   if(r&&r.ok){
     if(r.same){el.className="tagCheck";el.textContent="";return;}
+    // v109: такой тег уже есть на странице — сразу сказать и предложить букву.
+    const dup=findDuplicateTag(r.tag,editId);
+    if(dup){
+      const sug=dupSuffixSuggest(r.tag,new Set(data.map(x=>tagKey(x.tag))));
+      el.className="tagCheck no";
+      el.innerHTML=TX("Уже есть на этой странице (№{0}).",dup.id)+" "+(sug?TX("Другой прибор с тем же номером — допишите букву: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):TX("Измените тег."));
+      return;
+    }
     el.className="tagCheck ok";
     el.innerHTML=`✓ <code>${escapeHtml(r.tag)}</code> → ${r.unit?TX("вкладка «{0}»",escapeHtml(r.unit)):TX("без установки")}${r.fixes&&r.fixes.length?TX(" · исправлено: {0}",escapeHtml(r.fixes.join(", "))):""}`;
   }else{el.className="tagCheck no";el.textContent=TX("Не подходит под формат «{0}»: {1}",fmtModeName(),TX(r?r.reason:"не похоже на тег"));}
@@ -3947,6 +4037,22 @@ $("duplicateDeleteBtn").onclick=()=>{
     if(item){item.unit=pending.unit;item.tag=pending.tag;item.done=pending.done;item.task=pending.task||"";save();closeModal();render();showToast(TX("Дубликат удалён, запись обновлена"));return;}
   }
   const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);data.push({id:max+1,unit:pending.unit,tag:pending.tag,done:pending.done,task:pending.task||""});save();closeModal();render();showToast(TX("Дубликат удалён, новый прибор добавлен"));
+};
+// v109: «Добавить как …A» — сохранить с первой свободной буквой.
+$("duplicateSuffixBtn").onclick=()=>{
+  const pd=pendingDuplicate;if(!pd||!pd.suggest)return;
+  const pending=pd.pending,sug=pd.suggest;closeDuplicateDialog();
+  const r=TagFormat.anyValid(sug);const tag=r&&r.ok?r.tag:sug,unit=(r&&r.unit)||pending.unit||"";
+  editId=pending.editId;
+  if(editId!==null){
+    const item=data.find(x=>x.id===editId);
+    if(item){item.unit=unit;item.tag=tag;item.done=pending.done;item.task=pending.task||"";}
+  }else{
+    const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);
+    data.push({id:max+1,unit,tag,done:pending.done,task:pending.task||""});
+  }
+  const wasEdit=editId!==null;
+  save();closeModal();render();showToast(wasEdit?TX("Сохранено как {0}",tag):TX("Прибор добавлен как {0}",tag));
 };
 $("duplicateCloseBtn").onclick=closeDuplicateDialog;
 $("duplicateOverlay").addEventListener("click",e=>{if(e.target===$("duplicateOverlay"))closeDuplicateDialog();});

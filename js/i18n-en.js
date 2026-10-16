@@ -862,5 +862,28 @@ I.add({
 "Неизвестная команда":"Unknown command"
 });
 
+// ---------------------------------------------------------------- v109: дубликат с буквой
+I.add({
+"Пустой тег — впишите тег или снимите отметку.":"Empty tag — type a tag or untick it.",
+"Не похоже на тег: {0}.":"Does not look like a tag: {0}.",
+"Уже есть на странице «{0}» (строка №{1}).":"Already on page “{0}” (row No. {1}).",
+"Второй прибор с тем же номером — допишите букву к номеру: {0}":"A second instrument with the same number — add a letter to the number: {0}",
+"Измените тег, чтобы добавить его.":"Change the tag to add it.",
+"Повтор: этот тег уже выше в списке (№{0}).":"Repeat: this tag is already higher in the list (No. {0}).",
+"Допишите букву: {0}":"Add a letter: {0}",
+"✓ Новый тег — будет добавлен.":"✓ New tag — it will be added.",
+"Повторы ({0}) не отмечены: такие теги уже есть на этой странице. Если это другой прибор с тем же номером (резерв, пара A/B), допишите букву вплотную к номеру — <b>414A</b>, <b>414B</b> — и строка добавится.":"Repeats ({0}) are unticked: these tags are already on this page. If it is another instrument with the same number (standby, A/B pair), add a letter right after the number — <b>414A</b>, <b>414B</b> — and the row will be added.",
+"Уже есть на этой странице (№{0}).":"Already on this page (No. {0}).",
+"Другой прибор с тем же номером — допишите букву: {0}":"Another instrument with the same number — add a letter: {0}",
+"Измените тег.":"Change the tag.",
+"Тег <strong>{0}</strong> уже есть на этой странице (позиция №{1}, {2}).":"Tag <strong>{0}</strong> is already on this page (item No. {1}, {2}).",
+"Если это другой прибор с тем же номером (резерв, пара A/B), добавьте букву вплотную к номеру — это уже не дубликат: <b>{0}</b>.":"If it is another instrument with the same number (standby, A/B pair), add a letter right after the number — it is no longer a duplicate: <b>{0}</b>.",
+"Если запись та же — удалите прежнюю или измените новый тег.":"If it is the same entry — delete the previous one or change the new tag.",
+"Добавить как {0}":"Add as {0}",
+"Добавить с буквой":"Add with a letter",
+"Сохранено как {0}":"Saved as {0}",
+"Прибор добавлен как {0}":"Instrument added as {0}"
+});
+
 I._init();
 })();
