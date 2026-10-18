@@ -490,10 +490,13 @@ function renderList(){
   // v102: карточка тега создаётся один раз и дальше переиспользуется (вкладки, поиск,
   // выбор, отметки только переставляют и подправляют готовые карточки). Раньше весь
   // список собирался заново при каждом действии — на 250+ тегах это и тормозило.
+  // v110: номер строки — порядковый номер в списке страницы (1, 2, 3…), а не внутренний id.
+  // После выборочного удаления id оставляли дыры (1, 2, 3, 4, 7, 8…), а номера должны идти подряд.
+  const pos=new Map();data.forEach((x,i)=>pos.set(x,i+1));
   const rowEls=rows.map(item=>{
     let row=rowCache.get(item);
     if(!row){row=buildRow(item);rowCache.set(item,row);}
-    syncRow(row,item);
+    syncRow(row,item,pos.get(item));
     // Поле задания, открытое до ухода карточки из списка, как и раньше, возвращается закрытым.
     if(row.classList.contains("taskOpen")&&!openEditors.has(item.id))setTaskEditor(row,item,false,false,{instant:true});
     return row;
@@ -557,11 +560,11 @@ function buildRow(item){
 }
 
 // Подправляет готовую карточку под текущие данные; ничего не трогает, если состояние то же.
-function syncRow(row,item){
+function syncRow(row,item,no=itemNo(item)){
   const ui=row._ui,selected=selectedTagIds.has(item.id);
   // Текст задания мог измениться в другом месте (правка тега, «В задание» из конвертора).
   if(ui.ta&&document.activeElement!==ui.ta&&ui.ta.value!==(item.task||""))ui.ta.value=item.task||"";
-  const state=`${item.id}\u0001${item.tag}\u0001${item.done?1:0}\u0001${item.task?1:0}\u0001${selectionMode?1:0}\u0001${selected?1:0}`;
+  const state=`${item.id}\u0001${no}\u0001${item.tag}\u0001${item.done?1:0}\u0001${item.task?1:0}\u0001${selectionMode?1:0}\u0001${selected?1:0}`;
   if(ui.state===state)return;
   ui.state=state;
   row.dataset.id=item.id;
@@ -569,7 +572,7 @@ function syncRow(row,item){
   row.classList.toggle("selection-mode",selectionMode);
   ui.check.classList.toggle("on",!!item.done);
   ui.check.setAttribute("aria-label",item.done?TX("Отметить как невыполненное"):TX("Отметить как выполненное"));
-  if(ui.num.textContent!==String(item.id))ui.num.textContent=item.id;
+  if(ui.num.textContent!==String(no))ui.num.textContent=no;
   if(ui.tag.textContent!==item.tag)ui.tag.textContent=item.tag;
   ui.taskToggle.classList.toggle("hasTask",!!item.task);
   ui.selectBtn.classList.toggle("selected",selected);
@@ -897,6 +900,9 @@ function tagKey(v){
   return String(v||"").toUpperCase().replace(/[–—−_]/g,"-").replace(/\s+/g,"").trim();
 }
 
+// v110: видимый номер строки — позиция в списке страницы.
+function itemNo(item){const i=data.indexOf(item);return i<0?"":i+1;}
+
 function findDuplicateTag(tag,ignoreId=null){
   const key=tagKey(tag);
   return data.find(item=>tagKey(item.tag)===key && item.id!==ignoreId)||null;
@@ -906,7 +912,7 @@ function openDuplicateDialog(duplicate,pending){
   pendingDuplicate={duplicateId:duplicate.id,pending};
   const sug=dupSuffixSuggest(pending.tag,new Set(data.map(x=>tagKey(x.tag))));
   pendingDuplicate.suggest=sug;
-  $("duplicateMessage").innerHTML=TX("Тег <strong>{0}</strong> уже есть на этой странице (позиция №{1}, {2}).",escapeHtml(pending.tag),duplicate.id,escapeHtml(duplicate.tag))
+  $("duplicateMessage").innerHTML=TX("Тег <strong>{0}</strong> уже есть на этой странице (позиция №{1}, {2}).",escapeHtml(pending.tag),itemNo(duplicate),escapeHtml(duplicate.tag))
     +"<br><br>"+TX("Если это другой прибор с тем же номером (резерв, пара A/B), добавьте букву вплотную к номеру — это уже не дубликат: <b>{0}</b>.",escapeHtml(sug||pending.tag+"A"))
     +"<br>"+TX("Если запись та же — удалите прежнюю или измените новый тег.");
   const asBtn=$("duplicateSuffixBtn");
@@ -2131,7 +2137,7 @@ function refreshImportRows(box){
     else if(!key){const r=TagFormat.anyValid(raw);state="bad";html=TX("Не похоже на тег: {0}.",escapeHtml(TX(r?r.reason:"не похоже на тег")));}
     else if(existing.has(key)){
       state="dup";const prev=existing.get(key);const sug=dupSuffixSuggest(raw,taken);
-      html=TX("Уже есть на странице «{0}» (строка №{1}).",escapeHtml(pageName),prev.id)+" "+(sug?TX("Второй прибор с тем же номером — допишите букву к номеру: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):TX("Измените тег, чтобы добавить его."));
+      html=TX("Уже есть на странице «{0}» (строка №{1}).",escapeHtml(pageName),itemNo(prev))+" "+(sug?TX("Второй прибор с тем же номером — допишите букву к номеру: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):TX("Измените тег, чтобы добавить его."));
     }else if(seen.has(key)){
       state="dup";const sug=dupSuffixSuggest(raw,taken);
       html=TX("Повтор: этот тег уже выше в списке (№{0}).",seen.get(key)+1)+(sug?" "+TX("Допишите букву: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):"");
@@ -3550,7 +3556,7 @@ function checkTagLine(){
     if(dup){
       const sug=dupSuffixSuggest(r.tag,new Set(data.map(x=>tagKey(x.tag))));
       el.className="tagCheck no";
-      el.innerHTML=TX("Уже есть на этой странице (№{0}).",dup.id)+" "+(sug?TX("Другой прибор с тем же номером — допишите букву: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):TX("Измените тег."));
+      el.innerHTML=TX("Уже есть на этой странице (№{0}).",itemNo(dup))+" "+(sug?TX("Другой прибор с тем же номером — допишите букву: {0}",`<button class="dupFix" data-dup-fix="${escapeHtml(sug)}" type="button">${escapeHtml(sug)}</button>`):TX("Измените тег."));
       return;
     }
     el.className="tagCheck ok";
