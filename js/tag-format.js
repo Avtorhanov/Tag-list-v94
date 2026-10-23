@@ -96,6 +96,10 @@
       const la=a+(unit?unit.length+(s1||"").length:0),orig=src.slice(la,la+L.length);
       let cyr=false;for(const c of orig)if(isCyr(c)){cyr=true;break;}
       if(cyr&&(s2===" "||!s2&&L.length>2&&!unit))continue;       // русское слово: «смену 15», «СТО 123»
+      // v111: «345L», «345I» — буква после настоящих цифр — это суффикс, а не цифра 1.
+      // O и Q в конце по-прежнему читаются как 0 (частая ошибка фото).
+      {const t=num.match(/^([0-9OQILSZ]*\d)([ILSZ]{1,2})$/);
+       if(t&&t[1].length>=2&&(t[2]+(suf||"")).length<=2){num=t[1];suf=t[2]+(suf||"");}}
       if(!digitsOk(num))continue;
       let reason="";
       if(L.length===1)reason="оборудование или крепёж: одна буква";
