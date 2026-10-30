@@ -373,15 +373,11 @@ h1.editing{background:#fff;border:1px dashed var(--accent);border-radius:10px;pa
 
 .taskToggle{display:inline-flex;align-items:center;gap:5px;min-width:0;border:0;background:transparent;color:var(--accent);padding:2px 0;cursor:pointer;font-size:calc(13.5px * var(--fontScale));font-weight:800;line-height:1.2;user-select:none}
 
-.taskToggle::before{content:"▾";font-size:11px;transition:transform var(--ui-motion) var(--ui-ease)}
 
-.taskToggle.open::before{transform:rotate(180deg)}
 
 .taskToggle.hasTask{color:var(--accent-strong)}
 
-.taskToggle.hasTask::after{content:'есть';display:inline-block;margin-left:4px;color:var(--accent-strong);font-size:13.5px;line-height:1;font-weight:800;letter-spacing:0;transform:none}
 
-.row.done .taskToggle.hasTask::after{display:none}
 
 .taskSave{display:none;border:0;border-radius:8px;background:#1f2937;color:#fff;padding:5px 9px;cursor:pointer;font-size:calc(11px * var(--fontScale));font-weight:800;line-height:1.2;white-space:nowrap}
 
@@ -2284,7 +2280,6 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 /* Пока английский словарь не применён — без мелькания русского текста (снимается в js/i18n.js). */
 html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
 /* Метка «есть задание» у кнопки «Задание» карточки тега. */
-html[lang="en"] .taskToggle.hasTask::after{content:'✓'}
 
 /* v109: дубликат с буквой — пояснение в строке найденного и подсказка свободной буквы */
 .importItem.isDup{opacity:1;border-style:dashed}
@@ -2299,3 +2294,41 @@ html[lang="en"] .taskToggle.hasTask::after{content:'✓'}
 .duplicateActions .duplicateSuffix{grid-column:1/-1}
 .duplicateActions .duplicateSuffix[hidden]{display:none}
 :root[data-theme]:not([data-theme="light"]) .importItem.isDup .importTag{color:var(--muted)}
+
+/* ===== v112 — значки задания и фото в карточке тега =====
+   Высота строки та же, что у прежнего «▾ Задание»: значок по высоте строки текста.
+   Задания нет — планшет с карандашом, тускло; есть — планшет с отметкой, цвет акцента.
+   Фото — мини-значки одного цвета; в раскрытом поле значки фото прячутся (фото — в ряду под полем). */
+.row .taskLine .taskToggle{gap:0;padding-right:8px;color:var(--muted);opacity:.72;line-height:0}
+.row .taskLine .taskToggle.hasTask,.row .taskLine .taskToggle.open{color:var(--accent);opacity:1}
+/* 16.2 px = прежняя строка «Задание» (13.5 px × 1.2); вертикальные отступы — от прежних правил (в т. ч. Android). */
+.taskToggle svg{width:calc(16.2px * var(--fontScale));height:calc(16.2px * var(--fontScale));display:block}
+.taskToggle .tiSet,.taskToggle.hasTask .tiEmpty{display:none}
+.taskToggle.hasTask .tiSet{display:block}
+.taskPhotos{display:inline-flex;align-items:center;gap:3px;min-width:0}
+.taskPhotos:empty{display:none}
+.row.taskOpen .taskPhotos{display:none}
+.taskPhotoIcon{display:inline-grid;place-items:center;border:0;background:transparent;color:var(--accent);padding:0 1px;cursor:pointer;line-height:0}
+.taskPhotoIcon svg{width:calc(16px * var(--fontScale));height:calc(16px * var(--fontScale));display:block}
+.taskPhotoRow{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:6px}
+.taskPhotoThumb,.taskPhotoAdd{width:32px;height:32px;box-sizing:border-box;display:grid;place-items:center;border-radius:8px;padding:0;cursor:pointer;line-height:0}
+.taskPhotoThumb{border:1px solid var(--line);background:var(--card);color:var(--accent)}
+.taskPhotoAdd{border:1px dashed var(--line);background:transparent;color:var(--muted)}
+.taskPhotoThumb svg{width:18px;height:18px}.taskPhotoAdd svg{width:15px;height:15px}
+.taskPhotoCount{font-size:calc(11.5px * var(--fontScale));color:var(--muted);margin-left:2px;font-variant-numeric:tabular-nums}
+.taskPhotoIcon:focus-visible,.taskPhotoThumb:focus-visible,.taskPhotoAdd:focus-visible,.taskToggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+/* Просмотр фото — на весь экран, поверх всего, кнопки в стиле приложения. */
+.photoViewer{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;background:rgba(4,8,16,.94);
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+.photoViewer[hidden]{display:none}
+.pvStage{flex:1;min-height:0;display:grid;place-items:center;padding:12px}
+.pvImg{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+.pvMissing{color:#c9d3e3;text-align:center;max-width:300px;font-size:14px;line-height:1.4}
+.pvBar{padding:10px 12px 14px;display:grid;gap:8px}
+.pvCap{color:#c9d3e3;font-size:12.5px;text-align:center;overflow-wrap:anywhere}
+.pvBtns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.pvBtn{min-width:44px;min-height:40px;padding:0 14px;border-radius:11px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#edf4ff;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.pvBtn:disabled{opacity:.35;cursor:default}
+.pvBtn.pvClose{background:var(--accent);border-color:var(--accent);color:#fff}
+.pvBtn.pvDel.armed{background:#c9332c;border-color:#c9332c;color:#fff}
+body.photo-viewing{overflow:hidden}

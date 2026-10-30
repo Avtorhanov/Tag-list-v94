@@ -51,13 +51,17 @@ function cloneInitial(){ return INITIAL_DATA.map(x => ({...x, task:String(x.task
 function normalizeItem(value,index=0){
   const x=(value&&typeof value==="object")?value:{};
   const numericId=Number(x.id);
-  return {
+  const item={
     id:Number.isFinite(numericId)&&numericId>=0?numericId:index+1,
     unit:String(x.unit??"").trim(),
     tag:String(x.tag??"").trim(),
     done:x.done===true || x.done===1 || x.done==="true",
     task:String(x.task??"")
   };
+  // v112: фото к заданию — только id (сами фото в IndexedDB, js/tag-photos.js), до 5 на тег.
+  const photos=Array.isArray(x.photos)?x.photos.filter(p=>typeof p==="string"&&p).slice(0,5):[];
+  if(photos.length)item.photos=photos;
+  return item;
 }
 
 function cloneItems(items){
@@ -525,14 +529,18 @@ function buildRow(item){
   const tag=document.createElement("div");tag.className="tag";
 
   const taskLine=document.createElement("div");taskLine.className="taskLine";
+  // v112: вместо «▾ Задание» — значок: планшет с карандашом (задания нет, тускло)
+  // или планшет с отметкой (задание есть). Рядом — мини-значки фото, до 5.
+  // Касание значка задания или фото раскрывает поле задания, как раньше «Задание».
   const taskToggle=document.createElement("button");
   taskToggle.type="button";
   taskToggle.className="taskToggle";
-  taskToggle.textContent=TX("Задание");
+  taskToggle.innerHTML=TASK_ICON_EMPTY+TASK_ICON_SET;
   taskToggle.setAttribute("aria-expanded","false");
+  const photoIcons=document.createElement("span");photoIcons.className="taskPhotos";
   const saveTask=document.createElement("button");
   saveTask.type="button";saveTask.className="taskSave";saveTask.textContent=TX("Сохранить");
-  taskLine.append(taskToggle,saveTask);
+  taskLine.append(taskToggle,photoIcons,saveTask);
   // v102: поле задания (textarea) создаётся при первом открытии — ensureTaskEditor().
   info.append(tag,taskLine);
   const actions=document.createElement("div");
@@ -555,8 +563,88 @@ function buildRow(item){
 
   actions.append(cancelBtn,selectBtn,copyBtn,editBtn);
   row.append(check,num,info,actions);
-  row._ui={check,num,tag,taskToggle,selectBtn,copyBtn,editBtn,state:""};
+  row._ui={check,num,tag,taskToggle,photoIcons,selectBtn,copyBtn,editBtn,state:""};
   return row;
+}
+
+const TASK_ICON_EMPTY='<svg class="tiEmpty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3" width="12" height="17" rx="2"/><path d="M6.5 7.5h6M6.5 11h6M6.5 14.5h3"/><path d="M15.4 14l4.7-4.7 2 2-4.7 4.7-2.7.7z"/></svg>';
+const TASK_ICON_SET='<svg class="tiSet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><path d="M8 3.5V2.5h8v1"/><path d="M8 9h8M8 12.5h8"/><path d="M8.2 16.6l1.9 1.8 3.8-3.9"/></svg>';
+const PHOTO_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.2"/><circle cx="9" cy="10" r="1.7"/><path d="M4 17.5l5-5 4 4 2.2-2.2L20 19"/></svg>';
+const itemPhotos=item=>Array.isArray(item?.photos)?item.photos:[];
+
+function paintTaskToggle(toggle,item){
+  const has=!!String(item.task||"").trim();
+  toggle.classList.toggle("hasTask",has);
+  const label=has?TX("Задание: есть запись"):TX("Задание");
+  toggle.title=label;toggle.setAttribute("aria-label",TX("{0}: {1}",label,item.tag));
+}
+function paintPhotoIcons(box,item){
+  const n=itemPhotos(item).length;
+  if(box.childElementCount===n)return;
+  let html="";
+  for(let i=0;i<n;i++)html+=`<button type="button" class="taskPhotoIcon" data-photo="${i}" aria-label="${escapeHtml(TX("Фото {0} из {1}",i+1,n))}">${PHOTO_ICON}</button>`;
+  box.innerHTML=html;
+}
+// Ряд фото в раскрытом поле: значки фото (касание — просмотр), «+» и счётчик.
+function paintEditorPhotos(row,item){
+  const box=row.querySelector(".taskPhotoRow");
+  if(!box)return;
+  const ids=itemPhotos(item),n=ids.length,max=window.TagPhotos?.MAX||5;
+  let html="";
+  for(let i=0;i<n;i++)html+=`<button type="button" class="taskPhotoThumb" data-photo="${i}" aria-label="${escapeHtml(TX("Открыть фото {0}",i+1))}">${PHOTO_ICON}</button>`;
+  if(n<max)html+=`<button type="button" class="taskPhotoAdd" aria-label="${escapeHtml(TX("Добавить фото"))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>`;
+  html+=`<span class="taskPhotoCount">${n}/${max}</span>`;
+  box.innerHTML=html;
+}
+function refreshRowPhotos(row,item){
+  paintPhotoIcons(row._ui.photoIcons,item);
+  paintEditorPhotos(row,item);
+  row._ui.state="";
+}
+
+let photoPickTarget=null;
+function pickTaskPhotos(row,item){
+  const room=(window.TagPhotos?.MAX||5)-itemPhotos(item).length;
+  if(room<=0){showToast(TX("Не больше 5 фото на тег"));return;}
+  let input=$("taskPhotoInput");
+  if(!input){
+    input=document.createElement("input");
+    input.type="file";input.accept="image/*";input.multiple=true;input.id="taskPhotoInput";input.hidden=true;
+    document.body.appendChild(input);
+    input.addEventListener("change",async()=>{
+      const files=Array.from(input.files||[]);input.value="";
+      const target=photoPickTarget;photoPickTarget=null;
+      if(!target||!files.length||!window.TagPhotos)return;
+      const it=target.item,left=(window.TagPhotos.MAX)-itemPhotos(it).length;
+      if(files.length>left)showToast(TX("Добавлено {0} из {1}: не больше 5 фото на тег",left,files.length));
+      try{
+        const ids=await window.TagPhotos.addFiles(files,left);
+        if(!ids.length)return;
+        it.photos=itemPhotos(it).concat(ids).slice(0,window.TagPhotos.MAX);
+        save();
+        const r=rowCache.get(it);
+        if(r)refreshRowPhotos(r,it);
+        renderTabs(false);
+      }catch(err){showToast(err?.message||TX("Не удалось добавить фото"));}
+    });
+  }
+  photoPickTarget={row,item};
+  input.click();
+}
+function openTaskPhoto(row,item,index){
+  if(!window.TagPhotos)return;
+  window.TagPhotos.open({
+    title:item.tag,index,
+    ids:()=>itemPhotos(item),
+    onDelete:id=>{
+      item.photos=itemPhotos(item).filter(x=>x!==id);
+      if(!item.photos.length)delete item.photos;
+      save();
+      const r=rowCache.get(item);
+      if(r)refreshRowPhotos(r,item);
+      renderTabs(false);
+    }
+  });
 }
 
 // Подправляет готовую карточку под текущие данные; ничего не трогает, если состояние то же.
@@ -564,7 +652,7 @@ function syncRow(row,item,no=itemNo(item)){
   const ui=row._ui,selected=selectedTagIds.has(item.id);
   // Текст задания мог измениться в другом месте (правка тега, «В задание» из конвертора).
   if(ui.ta&&document.activeElement!==ui.ta&&ui.ta.value!==(item.task||""))ui.ta.value=item.task||"";
-  const state=`${item.id}\u0001${no}\u0001${item.tag}\u0001${item.done?1:0}\u0001${item.task?1:0}\u0001${selectionMode?1:0}\u0001${selected?1:0}`;
+  const state=`${item.id}\u0001${no}\u0001${item.tag}\u0001${item.done?1:0}\u0001${item.task?1:0}\u0001${itemPhotos(item).length}\u0001${selectionMode?1:0}\u0001${selected?1:0}`;
   if(ui.state===state)return;
   ui.state=state;
   row.dataset.id=item.id;
@@ -574,7 +662,8 @@ function syncRow(row,item,no=itemNo(item)){
   ui.check.setAttribute("aria-label",item.done?TX("Отметить как невыполненное"):TX("Отметить как выполненное"));
   if(ui.num.textContent!==String(no))ui.num.textContent=no;
   if(ui.tag.textContent!==item.tag)ui.tag.textContent=item.tag;
-  ui.taskToggle.classList.toggle("hasTask",!!item.task);
+  paintTaskToggle(ui.taskToggle,item);
+  paintPhotoIcons(ui.photoIcons,item);
   ui.selectBtn.classList.toggle("selected",selected);
   ui.selectBtn.title=selected?TX("Снять выбор"):TX("Выбрать тег");
   ui.selectBtn.setAttribute("aria-label",selected?TX("Снять выбор {0}",item.tag):TX("Выбрать {0}",item.tag));
@@ -590,8 +679,10 @@ function ensureTaskEditor(row,item){
   const ta=document.createElement("textarea");
   ta.placeholder=TX(TASK_PLACEHOLDER);
   ta.value=item?.task||"";
-  box.appendChild(ta);editor.appendChild(box);
+  const photoRow=document.createElement("div");photoRow.className="taskPhotoRow";
+  box.append(ta,photoRow);editor.appendChild(box);
   row.querySelector(".info").appendChild(editor);
+  paintEditorPhotos(row,item);
   if(row._ui)row._ui.ta=ta;
   // Закрытое состояние должно попасть в стили до открытия — иначе нет плавного раскрытия.
   // Читаем стиль, а не размер: пересчёт стилей без раскладки всей страницы.
@@ -742,7 +833,7 @@ function commitTaskEditor(row,item){
   if(ta)item.task=String(ta.value||"").trim();
   if(ta&&ta.value!==item.task)ta.value=item.task;
   flushSave();
-  row.querySelector(".taskToggle")?.classList.toggle("hasTask",!!item.task.trim());
+  const tgl=row.querySelector(".taskToggle");if(tgl)paintTaskToggle(tgl,item);
   const keep=ta?ta.scrollTop:0;
   if(ta&&document.activeElement===ta)ta.blur();
   setTaskEditor(row,item,true,false,{editing:false,scrollTop:keep});
@@ -3087,7 +3178,12 @@ list.addEventListener("click",e=>{
     toggleTagSelection(item.id);
     return;
   }
-  const taskToggle=e.target.closest(".taskToggle");
+  // v112: мини-значок фото в строке раскрывает поле так же, как значок задания.
+  // В раскрытом поле: значок фото — просмотр, «+» — добавить фото.
+  const photoThumb=e.target.closest(".taskPhotoThumb");
+  if(photoThumb){e.stopPropagation();openTaskPhoto(row,item,Number(photoThumb.dataset.photo)||0);return;}
+  if(e.target.closest(".taskPhotoAdd")){e.stopPropagation();pickTaskPhotos(row,item);return;}
+  const taskToggle=e.target.closest(".taskToggle,.taskPhotoIcon");
   if(taskToggle){
     e.stopPropagation();
     const editor=row.querySelector(".taskEditorWrap");
@@ -3717,7 +3813,7 @@ document.addEventListener("input",event=>{
     if(item){
       item.task=event.target.value;scheduleSave();autosizeTaskTextarea(event.target);
       const toggle=row.querySelector(".taskToggle");
-      if(toggle)toggle.classList.toggle("hasTask",!!String(item.task).trim());
+      if(toggle)paintTaskToggle(toggle,item);
     }
   }
 });
@@ -4845,3 +4941,14 @@ if(IS_NATIVE_APP){
 // Просим браузер не удалять локальные данные при нехватке места (Android/Chrome, Safari 17+).
 try{navigator.storage?.persist?.().catch(()=>{});}catch(_){}
 
+// v112: фото, на которые не ссылается ни один тег (тег удалён, состояние заменено из файла), удаляются
+// при запуске. Не сразу: сначала приложение показывает список, уборка — в простое.
+(function(){
+  const run=()=>{
+    if(!window.TagPhotos)return;
+    const keep=new Set();
+    pages.forEach(page=>(page.data||[]).forEach(item=>itemPhotos(item).forEach(id=>keep.add(id))));
+    window.TagPhotos.cleanup(keep);
+  };
+  if("requestIdleCallback" in window)requestIdleCallback(run,{timeout:8000});else setTimeout(run,4000);
+})();
