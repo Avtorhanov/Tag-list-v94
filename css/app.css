@@ -2060,10 +2060,14 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .rpTrack{flex:0 0 auto;width:44px;height:26px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
 .rpTrack::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
 .rpSwitch input:checked+.rpTrack{background:var(--accent)}
-.rpSwitchRow{display:flex;gap:12px}
-.rpSwitchRow .rpSwitch{flex:1 1 0;min-width:0}
-.rpSwitchRow .rpSwitchText{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rpSwitchRow .rpSwitchText small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* v114: два тумблера в одну строку, подпись вплотную к своему тумблеру; счётчик фото — в своей
+   ячейке фиксированной ширины, поэтому при включении ничего не сдвигается и высота строки та же. */
+.rpSwitchRow{display:flex;flex-wrap:wrap;column-gap:12px;row-gap:6px;align-items:center}
+/* Каждый тумблер — половина строки; не помещаются (узкий экран, крупный шрифт) — второй уходит на свою строку. */
+.rpSwitchRow .rpSwitch{flex:1 0 auto;min-width:calc(50% - 6px);justify-content:flex-start;gap:10px;padding:4px 0}
+.rpSwitchRow .rpSwitchText{flex:0 0 auto;white-space:nowrap;line-height:1.2}
+.rpCount{flex:0 0 auto;min-width:2.2em;box-sizing:border-box;padding:1px 6px;border:1px solid var(--line);border-radius:99px;text-align:center;font-size:calc(12px * var(--fontScale));font-weight:700;line-height:1.35;color:var(--muted);font-variant-numeric:tabular-nums;visibility:hidden}
+.rpCount.on{visibility:visible}
 .rpSwitch input:checked+.rpTrack::after{transform:translateX(18px)}
 .rpSwitch input:focus-visible+.rpTrack{outline:2px solid var(--accent);outline-offset:2px}
 .rpPeople{display:flex;flex-wrap:wrap;gap:6px}
@@ -2312,16 +2316,20 @@ html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
 .taskPhotos{display:inline-flex;align-items:center;gap:3px;min-width:0}
 .taskPhotos:empty{display:none}
 .row.taskOpen .taskPhotos{display:none}
+/* v114: значки фото ближе к значку задания — промежуток как между самими фото, касание задания не меньше прежнего. */
+.row .taskLine .taskPhotos{margin-left:-5px}
 .taskPhotoIcon{display:inline-grid;place-items:center;border:0;background:transparent;color:var(--accent);padding:0 1px;cursor:pointer;line-height:0}
 .taskPhotoIcon svg{width:calc(16.2px * var(--fontScale));height:calc(16.2px * var(--fontScale));display:block}
 .taskPhotos,.taskToggle{align-self:center}
 .taskPhotoRow{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:6px}
-.taskPhotoThumb,.taskPhotoAdd{width:32px;height:32px;box-sizing:border-box;display:grid;place-items:center;border-radius:8px;padding:0;cursor:pointer;line-height:0}
+.taskPhotoThumb,.taskPhotoAdd,.taskPhotoCam{width:32px;height:32px;box-sizing:border-box;display:grid;place-items:center;border-radius:8px;padding:0;cursor:pointer;line-height:0}
 .taskPhotoThumb{border:1px solid var(--line);background:var(--card);color:var(--accent)}
 .taskPhotoAdd{border:1px dashed var(--line);background:transparent;color:var(--muted)}
+.taskPhotoCam{border:1px solid var(--accent);background:transparent;color:var(--accent)}
+.taskPhotoCam svg{width:18px;height:18px}
 .taskPhotoThumb svg{width:18px;height:18px}.taskPhotoAdd svg{width:15px;height:15px}
 .taskPhotoCount{font-size:calc(11.5px * var(--fontScale));color:var(--muted);margin-left:2px;font-variant-numeric:tabular-nums}
-.taskPhotoIcon:focus-visible,.taskPhotoThumb:focus-visible,.taskPhotoAdd:focus-visible,.taskToggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.taskPhotoIcon:focus-visible,.taskPhotoThumb:focus-visible,.taskPhotoAdd:focus-visible,.taskPhotoCam:focus-visible,.taskToggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 /* Просмотр фото — на весь экран, поверх всего, кнопки в стиле приложения. */
 .photoViewer{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;background:rgba(4,8,16,.94);
   padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
@@ -2339,3 +2347,27 @@ html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
 .pvBtn.pvClose{background:var(--accent);border-color:var(--accent);color:#fff}
 .pvBtn.pvDel.armed{background:#c9332c;border-color:#c9332c;color:#fff}
 body.photo-viewing{overflow:hidden}
+/* v114: серийная съёмка — камера внутри приложения, на весь экран. */
+.camView{position:fixed;inset:0;z-index:95;background:#000;display:flex;flex-direction:column;color:#fff;-webkit-user-select:none;user-select:none}
+.camView[hidden]{display:none}
+body.camera-open{overflow:hidden}
+.camVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+.camFlash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+.camFlash.go{animation:camFlash .25s ease-out}
+@keyframes camFlash{from{opacity:.75}to{opacity:0}}
+.camTop{position:relative;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,0))}
+.camTitle{flex:1;min-width:0;font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.camCount{font-weight:800;font-variant-numeric:tabular-nums;padding:4px 10px;border-radius:99px;background:rgba(255,255,255,.16)}
+.camBtn{border:0;border-radius:12px;padding:9px 14px;font:inherit;font-weight:800;color:#fff;background:rgba(255,255,255,.18);cursor:pointer}
+.camDone{background:#2563eb}
+.camTorch.on{background:#facc15;color:#111}
+.camMsg{position:relative;margin:auto 16px 0;align-self:center;padding:8px 14px;border-radius:12px;background:rgba(0,0,0,.65);font-weight:700;text-align:center}
+.camBottom{position:relative;margin-top:auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:14px 14px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.6))}
+.camMsg:not([hidden])+.camBottom{margin-top:12px}
+.camStrip{display:flex;gap:4px;min-width:0;overflow:hidden}
+.camStrip img{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,.7);flex:0 0 auto}
+.camShutter{width:74px;height:74px;border-radius:50%;border:4px solid #fff;background:transparent;padding:5px;cursor:pointer}
+.camShutter span{display:block;width:100%;height:100%;border-radius:50%;background:#fff;transition:transform .1s}
+.camShutter:active span{transform:scale(.9)}
+.camShutter:disabled{opacity:.4}
+.camBtn:focus-visible,.camShutter:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}

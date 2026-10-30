@@ -1,5 +1,6 @@
 package io.github.avtorhanov.taglist;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -8,6 +9,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
 import android.graphics.Color;
@@ -72,6 +74,11 @@ public class MainActivity extends Activity {
     static final int RC_CAMERA = 102;
     static final int RC_SAVE = 103;
     static final int RC_CONTACT = 104; // v102: выбор исполнителя для отчёта из контактов
+    // v114: разрешение камеры. С объявленным CAMERA системная камера (ACTION_IMAGE_CAPTURE) тоже
+    // требует выданного разрешения, поэтому оно запрашивается и перед ней.
+    static final int RC_PERM_CAMERA = 105; // системная камера (OCR, снимок к тегу)
+    static final int RC_PERM_WEBCAM = 106; // камера внутри страницы (серийная съёмка фото к тегу)
+    PermissionRequest pendingWebPermission;
     static final long MAX_OPEN_BYTES = 10L * 1024 * 1024;
 
     static final String STATE_PENDING_SAVE = "taglist.pendingSavePath";
@@ -318,7 +325,13 @@ public class MainActivity extends Activity {
             }
             if (!anyAccept) imagesOnly = false;
 
-            if (imagesOnly && params.isCaptureEnabled() && launchCamera()) return true;
+            if (imagesOnly && params.isCaptureEnabled()) {
+                if (!hasCameraPermission()) {
+                    requestPermissions(new String[]{Manifest.permission.CAMERA}, RC_PERM_CAMERA);
+                    return true; // камера запустится после ответа (onRequestPermissionsResult)
+                }
+                if (launchCamera()) return true;
+            }
 
             Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
             pick.addCategory(Intent.CATEGORY_OPENABLE);
@@ -381,12 +394,47 @@ public class MainActivity extends Activity {
 
         @Override
         public void onPermissionRequest(PermissionRequest request) {
-            request.deny(); // камера/микрофон из страницы не нужны: фото снимается системной камерой
+            // v114: странице приложения разрешена только камера (серийная съёмка фото к тегу). Микрофон — нет.
+            runOnUiThread(() -> {
+                String host = request.getOrigin() == null ? "" : String.valueOf(request.getOrigin().getHost());
+                boolean video = false;
+                for (String r : request.getResources()) if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) video = true;
+                if (!video || !HOST.equals(host)) { request.deny(); return; }
+                if (hasCameraPermission()) {
+                    request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                } else {
+                    if (pendingWebPermission != null) pendingWebPermission.deny();
+                    pendingWebPermission = request;
+                    requestPermissions(new String[]{Manifest.permission.CAMERA}, RC_PERM_WEBCAM);
+                }
+            });
         }
 
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
             return false;
+        }
+    }
+
+    boolean hasCameraPermission() {
+        return Build.VERSION.SDK_INT < 23 || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        if (requestCode == RC_PERM_CAMERA) {
+            if (!(granted && launchCamera())) {
+                finishFileChooser(null);
+                if (!granted) toast(tr("Нет разрешения на камеру", "No camera permission"));
+            }
+        } else if (requestCode == RC_PERM_WEBCAM) {
+            PermissionRequest r = pendingWebPermission;
+            pendingWebPermission = null;
+            if (r == null) return;
+            if (granted) r.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+            else r.deny();
         }
     }
 

@@ -4,6 +4,9 @@
     <!-- Интернет нужен только для распознавания тегов на фото (api.ocr.space).
          Все остальные адреса заблокированы внутри приложения. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v114: камера внутри приложения — серийная съёмка фото к тегу (до 5 подряд). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries>
         <intent>
