@@ -82,7 +82,7 @@ tasks.register('copyWebAssets', Sync) {
     from(webRoot) {
         include 'index.html', 'manifest.webmanifest', '*.png', '*.webp'
         include 'css/**', 'js/**'
-        exclude '**/.gitkeep', 'icon-1024.png'
+        exclude '**/.gitkeep'
     }
     into layout.buildDirectory.dir("generated/webassets/www")
 }
