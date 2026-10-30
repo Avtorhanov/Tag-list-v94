@@ -1,8 +1,10 @@
-/* Tag list v112 — фото в задании тега (до 5 на тег).
+/* Tag list v113 — фото в задании тега (до 5 на тег).
    Фото сжимаются на телефоне (длинная сторона до 1600 px, JPEG) и хранятся в IndexedDB,
    в теге — только их id (item.photos). Без интернета, фото не покидает устройство.
    В JSON-состояние уходят id; на другом телефоне без самих фото просмотр сообщит об этом.
-   Окно просмотра: листание, удаление (второе касание подтверждает), закрытие. */
+   Окно просмотра: листание, удаление (второе касание подтверждает), закрытие.
+   v113: увеличение — щипок двумя пальцами (1–4×), двойное касание (1× ↔ 2.5×), колесо мыши;
+   при увеличении фото тянется пальцем. Кнопки «←/→» и стрелки работают как прежде. */
 (function(){
   "use strict";
   const TX=(s,...a)=>typeof window.TX==="function"?window.TX(s,...a):String(s).replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
@@ -89,6 +91,11 @@
 
   // ---------- окно просмотра
   let viewer=null,state=null,currentUrl="";
+  const ZOOM_MIN=1,ZOOM_MAX=4,ZOOM_DOUBLE=2.5,DOUBLE_TAP_MS=320,DOUBLE_TAP_PX=40;
+  const zm={s:1,tx:0,ty:0};          // масштаб и сдвиг относительно центра изображения (px экрана)
+  const ptrs=new Map();              // активные касания
+  let pinch=null,lastTap={t:0,x:0,y:0},moved=false,suppressUntil=0,downAt=0,tapConsumed=false;
+
   function build(){
     viewer=document.createElement("div");
     viewer.className="photoViewer";viewer.hidden=true;
@@ -102,6 +109,7 @@
       </div></div>`;
     document.body.appendChild(viewer);
     viewer.addEventListener("click",e=>{
+      if(Date.now()<suppressUntil)return; // после щипка или перетаскивания это не «закрыть»
       const b=e.target.closest("[data-pv]");
       if(!b){if(e.target===viewer||e.target.classList.contains("pvStage"))close();return;}
       const a=b.dataset.pv;
@@ -114,7 +122,107 @@
       if(!state||viewer.hidden)return;
       if(e.key==="Escape")close();else if(e.key==="ArrowLeft")show(state.index-1);else if(e.key==="ArrowRight")show(state.index+1);
     });
+    const stage=viewer.querySelector(".pvStage");
+    stage.addEventListener("pointerdown",onDown);
+    stage.addEventListener("pointermove",onMove);
+    stage.addEventListener("pointerup",onUp);
+    stage.addEventListener("pointercancel",onUp);
+    stage.addEventListener("wheel",onWheel,{passive:false});
   }
+
+  // ----- увеличение
+  function imgEl(){return viewer.querySelector(".pvImg");}
+  function stageEl(){return viewer.querySelector(".pvStage");}
+  function paintZoom(){
+    imgEl().style.transform=`translate(${zm.tx}px,${zm.ty}px) scale(${zm.s})`;
+    viewer.classList.toggle("zoomed",zm.s>1.01);
+  }
+  function resetZoom(){zm.s=1;zm.tx=0;zm.ty=0;paintZoom();}
+  // Сдвиг ограничен краями изображения: при увеличении оно не уходит за экран.
+  function clampPan(){
+    const img=imgEl(),st=stageEl();
+    const mx=Math.max(0,(zm.s*img.offsetWidth-st.clientWidth)/2);
+    const my=Math.max(0,(zm.s*img.offsetHeight-st.clientHeight)/2);
+    zm.tx=Math.max(-mx,Math.min(mx,zm.tx));
+    zm.ty=Math.max(-my,Math.min(my,zm.ty));
+  }
+  // (cx,cy) — точка экрана относительно центра изображения: она остаётся на месте при масштабе.
+  function zoomAt(ns,cx,cy){
+    ns=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,ns));
+    const k=ns/zm.s;
+    zm.tx=cx-(cx-zm.tx)*k;
+    zm.ty=cy-(cy-zm.ty)*k;
+    zm.s=ns;
+    if(zm.s<=1.01)resetZoom();else{clampPan();paintZoom();}
+  }
+  function centreOffset(clientX,clientY){
+    const r=stageEl().getBoundingClientRect();
+    return{x:clientX-(r.left+r.width/2),y:clientY-(r.top+r.height/2)};
+  }
+  function onDown(e){
+    if(!state)return;
+    ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY});
+    // Без setPointerCapture: захват перенаправляет «отпускание» на сцену, и касание по фото
+    // превращается в клик по фону (окно закрывалось бы). События и так всплывают от фото к сцене.
+    if(ptrs.size===1){
+      moved=false;
+      const now=Date.now();
+      downAt=now;
+      if(now-lastTap.t<DOUBLE_TAP_MS&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<DOUBLE_TAP_PX){
+        lastTap.t=0;tapConsumed=true;suppressUntil=now+350;
+        const p=centreOffset(e.clientX,e.clientY);
+        if(zm.s>1.01)resetZoom();else zoomAt(ZOOM_DOUBLE,p.x,p.y);
+        return;
+      }
+    }
+    if(ptrs.size===2){
+      const [a,b]=[...ptrs.values()];
+      pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,mid:centreOffset((a.x+b.x)/2,(a.y+b.y)/2)};
+    }
+  }
+  function onMove(e){
+    const p=ptrs.get(e.pointerId);
+    if(!p)return;
+    const dx=e.clientX-p.x,dy=e.clientY-p.y;
+    p.x=e.clientX;p.y=e.clientY;
+    if(Math.hypot(p.x-p.x0,p.y-p.y0)>8)moved=true;
+    if(ptrs.size>=2&&pinch){
+      const [a,b]=[...ptrs.values()];
+      const d=Math.hypot(a.x-b.x,a.y-b.y)||1;
+      const mid=centreOffset((a.x+b.x)/2,(a.y+b.y)/2);
+      zoomAt(zm.s*(d/pinch.d),mid.x,mid.y);
+      zm.tx+=mid.x-pinch.mid.x;zm.ty+=mid.y-pinch.mid.y;
+      clampPan();paintZoom();
+      pinch.d=d;pinch.mid=mid;
+      suppressUntil=Date.now()+350;
+      e.preventDefault();
+      return;
+    }
+    if(ptrs.size===1&&zm.s>1.01){
+      zm.tx+=dx;zm.ty+=dy;clampPan();paintZoom();
+      suppressUntil=Date.now()+350;
+      e.preventDefault();
+    }
+  }
+  function onUp(e){
+    ptrs.delete(e.pointerId);
+    if(ptrs.size<2)pinch=null;
+    if(moved||ptrs.size>0)suppressUntil=Date.now()+350;
+    // Двойным касанием считается только короткое касание без движения: после щипка или
+    // тяги следующее касание не должно сбрасывать масштаб.
+    if(ptrs.size===0){
+      // Касание, которое уже сработало как двойное, не начинает новую пару.
+      if(tapConsumed)tapConsumed=false;
+      else if(!moved&&Date.now()-downAt<400)lastTap={t:Date.now(),x:e.clientX,y:e.clientY};
+    }
+  }
+  function onWheel(e){
+    if(!state)return;
+    e.preventDefault();
+    const p=centreOffset(e.clientX,e.clientY);
+    zoomAt(zm.s*(e.deltaY<0?1.15:1/1.15),p.x,p.y);
+  }
+
   function labels(){
     viewer.querySelector('[data-pv="prev"]').textContent="←";
     viewer.querySelector('[data-pv="prev"]').setAttribute("aria-label",TX("Предыдущее фото"));
@@ -128,11 +236,12 @@
     if(!ids.length){close();return;}
     state.index=Math.max(0,Math.min(ids.length-1,i));
     resetDel();
+    resetZoom();
     const id=ids[state.index];
     viewer.querySelector(".pvCap").textContent=TX("{0} · фото {1} из {2}",state.title,state.index+1,ids.length);
     viewer.querySelector('[data-pv="prev"]').disabled=state.index===0;
     viewer.querySelector('[data-pv="next"]').disabled=state.index>=ids.length-1;
-    const img=viewer.querySelector(".pvImg"),miss=viewer.querySelector(".pvMissing");
+    const img=imgEl(),miss=viewer.querySelector(".pvMissing");
     const blob=await get(id);
     if(currentUrl){URL.revokeObjectURL(currentUrl);currentUrl="";}
     if(blob){currentUrl=URL.createObjectURL(blob);img.src=currentUrl;img.hidden=false;miss.hidden=true;}
@@ -158,7 +267,9 @@
     if(!viewer)return;
     viewer.hidden=true;document.body.classList.remove("photo-viewing");
     if(currentUrl){URL.revokeObjectURL(currentUrl);currentUrl="";}
-    viewer.querySelector(".pvImg").removeAttribute("src");
+    imgEl().removeAttribute("src");
+    resetZoom();
+    ptrs.clear();pinch=null;
     state=null;
   }
 
