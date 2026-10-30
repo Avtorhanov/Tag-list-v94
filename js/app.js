@@ -1590,6 +1590,7 @@ function applyReportOps(auto){
 }
 
 function regenerateReport(){
+  reportPhotoStep=null;
   reportAutoLines=buildReportLines();
   const text=applyReportOps(reportAutoLines),ta=$("reportText");
   if(ta.value!==text)ta.value=text;
@@ -1614,6 +1615,7 @@ function paintReportEditState(){
   const has=!!ta.value.trim();
   $("reportSend").disabled=!has;
   $("reportSend").textContent=has?TX("Отправить"):TX("Выберите страницу");
+  if(has)paintReportSendStep();
 }
 
 function renderReportPages(){
@@ -1687,7 +1689,7 @@ function openReport(){
   safeSetStorage(REPORT_SEEN_KEY,"1");
   $("reportBtn")?.classList.remove("isNew");
   exitReportEdit();
-  reportPhotoOff=new Set();reportPhotoCache=null;
+  reportPhotoOff=new Set();reportPhotoCache=null;reportPhotoStep=null;
   renderReport();
   $("reportBody").scrollTop=0;
   $("reportText").scrollTop=0;
@@ -1903,6 +1905,9 @@ window.__tagListContactPicked=name=>{
 const REPORT_MAX_PHOTOS=30;
 let reportPhotoOff=new Set();   // фото, убранные из этого отчёта касанием значка (только на время окна)
 let reportPhotoCache=null;      // {sig, files} — подписанные фото, готовые к отправке
+// v116: отправка в два шага — сначала текст, затем фото (так в чате текст идёт первым).
+// reportPhotoStep — {sig, files}: текст уже отправлен, кнопка отправляет фото.
+let reportPhotoStep=null;
 // Фото строк, которые реально попадают в текст (строки, удалённые вручную, пропускаются).
 function reportPhotoIds(){
   const ids=[];
@@ -1925,10 +1930,6 @@ function renderReportPhotoPanel(){
   const rows=reportState?.withPhotos?reportAutoLines.filter(l=>l.item&&!reportOps.del[l.k]&&itemPhotos(l.item).length):[];
   box.hidden=!rows.length;
   if(!rows.length){box.replaceChildren();return;}
-  const head=document.createElement("div");head.className="rpLabel";
-  const hs=document.createElement("span");hs.textContent=TX("Фото в отчёте");
-  const hint=document.createElement("small");hint.className="rpPhHint";hint.textContent=TX("касание — убрать или вернуть");
-  head.append(hs,hint);
   const list=document.createElement("div");list.className="rpPhList";
   rows.forEach(l=>{
     const row=document.createElement("div");row.className="rpPhRow";
@@ -1946,7 +1947,7 @@ function renderReportPhotoPanel(){
     });
     row.append(tag,icons);list.appendChild(row);
   });
-  box.replaceChildren(head,list);
+  box.replaceChildren(list);
 }
 // Снимок с подписью снизу: «Фото 3 — 2109-XZV-730». Полоса добавляется под фото, не закрывая его.
 async function stampReportPhoto(blob,num,tag){
@@ -1984,6 +1985,17 @@ function downloadBlob(blob,name){
   a.href=url;a.download=name;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
+function reportPhotoSig(text){return text+"\u0001"+reportPhotoIds().join(",");}
+async function reportPhotoFilesFor(sig){
+  if(reportPhotoCache?.sig===sig)return reportPhotoCache.files;
+  const files=await buildReportPhotoFiles();
+  if(files.length)reportPhotoCache={sig,files};
+  return files;
+}
+function paintReportSendStep(){
+  const btn=$("reportSend");
+  if(reportPhotoStep)btn.textContent=TX("Отправить фото · {0}",reportPhotoStep.files.length);
+}
 async function sendReport(){
   const ta=$("reportText"),btn=$("reportSend");
   const text=ta.value.replace(/\s+$/,"");
@@ -1992,42 +2004,47 @@ async function sendReport(){
   const title=chosen.length===1?pageTitleForReport(chosen[0]):TX("{0} — отчёт",cleanReportField(docTitle)||"Tag list");
   if(document.activeElement===ta)ta.blur();
   const ids=reportState.withPhotos?reportPhotoIds():[];
-  if(ids.length){
-    // Текст — в буфер обмена сразу, пока нажатие «свежее»: если мессенджер отбросит текст
-    // рядом с фото (WhatsApp на iPhone), его можно вставить подписью.
-    const copied=navigator.clipboard?.writeText?navigator.clipboard.writeText(text).then(()=>true,()=>false):Promise.resolve(false);
-    const sig=text+"\u0001"+ids.join(",");
-    let files=reportPhotoCache?.sig===sig?reportPhotoCache.files:null;
-    if(!files){
-      btn.disabled=true;btn.textContent=TX("Готовлю фото…");
-      try{files=await buildReportPhotoFiles();}catch(_){files=null;}
-      btn.disabled=false;btn.textContent=TX("Отправить");
-      if(files&&files.length)reportPhotoCache={sig,files};
+  const sig=ids.length?reportPhotoSig(text):"";
+  // ---- шаг 2: текст уже ушёл — отправляем фото (в тот же чат)
+  if(reportPhotoStep&&reportPhotoStep.sig===sig){
+    try{
+      await navigator.share({title,files:reportPhotoStep.files});
+      const n=reportPhotoStep.files.length;
+      reportPhotoStep=null;reportPhotoCache=null;closeReport();
+      showToast(TX("Фото отправлены: {0}",n));
+    }catch(err){
+      if(err?.name==="AbortError")return;
+      showToast(TX("Фото не передаются этим способом"));
     }
-    if(files&&files.length){
-      if(typeof navigator.share==="function"){
-        try{
-          await navigator.share({title,text,files});
-          reportPhotoCache=null;closeReport();
-          showToast(await copied?TX("Отчёт и фото переданы: {0}. Текст также в буфере обмена",files.length):TX("Отчёт и фото переданы: {0}",files.length));
-          return;
-        }catch(err){
-          if(err?.name==="AbortError")return;
-          if(err?.name==="NotAllowedError"){
-            // Подготовка фото заняла время, и браузер больше не считает это нажатием — нужно ещё одно.
-            btn.textContent=TX("Отправить с фото");
-            showToast(TX("Фото готовы — нажмите «Отправить с фото»"));
-            return;
-          }
-          showToast(TX("Фото не передаются этим способом — отправлен только текст"));
-        }
-      }else{
-        files.forEach(f=>downloadBlob(f,f.name));
-        await copied;
-        reportPhotoCache=null;closeReport();showToast(TX("Фото сохранены, текст отчёта скопирован"));return;
-      }
-    }
+    return;
   }
+  reportPhotoStep=null;
+  // ---- с фото: подписанные снимки готовятся параллельно с отправкой текста
+  if(ids.length&&window.TagPhotos){
+    const filesP=reportPhotoFilesFor(sig).catch(()=>[]);
+    if(typeof navigator.share!=="function"){
+      // ПК без «Поделиться»: фото сохраняются файлами, текст — в буфер.
+      const files=await filesP;
+      files.forEach(f=>downloadBlob(f,f.name));
+      try{await navigator.clipboard?.writeText(text);}catch(_){}
+      closeReport();showToast(TX("Фото сохранены, текст отчёта скопирован"));return;
+    }
+    try{await navigator.share({title,text});}
+    catch(err){
+      if(err?.name==="AbortError")return;
+      try{ta.focus({preventScroll:true});ta.select();}catch(_){}
+      showToast(TX("Не удалось передать — текст выделен, скопируйте его"));return;
+    }
+    btn.disabled=true;btn.textContent=TX("Готовлю фото…");
+    const files=await filesP;
+    btn.disabled=false;
+    if(!files.length){btn.textContent=TX("Отправить");closeReport();showToast(TX("Отчёт передан"));return;}
+    reportPhotoStep={sig,files};
+    paintReportSendStep();
+    showToast(TX("Текст отправлен. Нажмите «Отправить фото» и выберите тот же чат"));
+    return;
+  }
+  // ---- только текст
   try{
     if(navigator.share){await navigator.share({title,text});closeReport();showToast(TX("Отчёт передан"));return;}
     if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);closeReport();showToast(TX("Текст отчёта скопирован"));return;}
@@ -3460,7 +3477,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
-${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: фото уходят вместе с текстом, на каждом снизу подпись «Фото 3 — тег», в тексте у тега — «фото 3»; под текстом значки фото по тегам, касание убирает фото из отчёта; текст отчёта также копируется в буфер), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: сначала уходит текст, затем кнопка «Отправить фото» — фото в тот же чат; на каждом снизу подпись «Фото 3 — тег», в тексте у тега — «фото 3»; под текстом значки фото по тегам, касание убирает фото из отчёта), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -3596,7 +3613,7 @@ ${hLi(hS("eye"),"<b>Plain list</b> — full-screen list: all, done, pending, tas
 ${hLi(hT("Aa"),"<b>Font</b> — cycles through. Only fonts available on this phone are listed.")}
 ${hLi(hS("send"),"<b>Save / send</b> — text report to a messenger or a .json state file.")}
 ${hLi(hT("A±"),"<b>Text size</b> — smaller / larger.")}
-${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: photos go with the text, each captioned “Photo 3 — tag”, the tag line says “photo 3”; below the text — photo icons per tag, tap to leave a photo out; the report text is also copied to the clipboard), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
+${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: the text goes first, then “Send photos” sends the photos to the same chat; each captioned “Photo 3 — tag”, the tag line says “photo 3”; below the text — photo icons per tag, tap to leave a photo out), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
 ${hLi(hS("search"),"<b>Search</b> — by tag or unit number.")}
 ${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the browser allows it.")}
 </ul>
