@@ -2043,10 +2043,11 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .rpPage .rpCheck{display:none;font-size:12px}
 .rpPage[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}
 .rpPage[aria-pressed="true"] .rpCheck{display:inline}
-.rpTiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.rpTile{display:grid;gap:2px;justify-items:start;text-align:left;padding:10px 11px;border-radius:14px;border:1.5px solid var(--line);background:var(--control,#f7f9fc);color:var(--text);cursor:pointer;min-width:0}
-.rpTile .rpNum{font-size:calc(24px * var(--fontScale));font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-.rpTile .rpCap{font-size:calc(12.5px * var(--fontScale));font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.rpTiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+/* v116: плитки компактные — число и подпись в одну строку, место отдано тексту отчёта. */
+.rpTile{display:flex;align-items:baseline;gap:6px;text-align:left;padding:7px 10px;border-radius:11px;border:1.5px solid var(--line);background:var(--control,#f7f9fc);color:var(--text);cursor:pointer;min-width:0}
+.rpTile .rpNum{flex:none;font-size:calc(17px * var(--fontScale));font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.rpTile .rpCap{min-width:0;font-size:calc(11.5px * var(--fontScale));font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .rpTile.done .rpNum{color:var(--ok,#1d8a4e)}
 .rpTile.todo .rpNum{color:var(--amp,#b26a00)}
 .rpTile[aria-pressed="true"]{border-color:var(--accent);background:var(--soft)}
@@ -2070,12 +2071,12 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .rpCount.on{visibility:visible}
 /* v115: значки фото по тегам под текстом отчёта; касание убирает фото из отчёта или возвращает. */
 .rpPhotos[hidden]{display:none}
-.rpPhHint{font-weight:500;font-size:calc(11.5px * var(--fontScale));color:var(--muted);text-transform:none;letter-spacing:0}
-.rpPhList{display:grid;gap:6px}
-.rpPhRow{display:flex;align-items:center;gap:10px;min-width:0}
+/* v116: видна одна строка тега с фото; остальные — прокруткой внутри полосы. */
+.rpPhList{display:grid;gap:0;max-height:46px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scroll-snap-type:y mandatory}
+.rpPhRow{display:flex;align-items:center;gap:10px;min-width:0;min-height:46px;scroll-snap-align:start}
 .rpPhTag{flex:0 1 auto;min-width:0;font-weight:700;font-size:calc(14px * var(--fontScale));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rpPhIcons{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto;padding:6px 6px 0 0}
-.rpPh{position:relative;width:34px;height:34px;display:grid;place-items:center;border:1px dashed var(--line);border-radius:9px;background:transparent;color:var(--muted);padding:0;cursor:pointer;opacity:.6}
+.rpPhIcons{display:flex;flex-wrap:nowrap;gap:8px;margin-left:auto;padding:6px 6px 0 0}
+.rpPh{position:relative;flex:none;width:34px;height:34px;display:grid;place-items:center;border:1px dashed var(--line);border-radius:9px;background:transparent;color:var(--muted);padding:0;cursor:pointer;opacity:.6}
 .rpPh svg{width:19px;height:19px}
 .rpPh.on{border:1px solid var(--accent);color:var(--accent);opacity:1}
 .rpPh b{position:absolute;right:-5px;top:-6px;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:99px;background:var(--accent);color:var(--on-accent,#fff);font-size:10px;line-height:16px;text-align:center}
