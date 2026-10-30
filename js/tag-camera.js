@@ -50,7 +50,7 @@
     if(!view)build();
     opts=o;busy=false;torchOn=false;clearTimeout(closeTimer);
     try{
-      stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1440}}});
+      stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:o.hi?2560:1920},height:{ideal:o.hi?1920:1440}}});
     }catch(err){
       stream=null;
       return false; // нет разрешения или камеры — приложение откроет системную камеру
@@ -82,6 +82,7 @@
     if(busy||!stream||opts.count()>=opts.max)return;
     const video=q(".camVideo"),w=video.videoWidth,h=video.videoHeight;
     if(!w||!h)return;
+    const o=opts; // v118: «Готово» может закрыть камеру, пока снимок сохраняется
     busy=true;paint();
     const f=q(".camFlash");f.classList.remove("go");void f.offsetWidth;f.classList.add("go");
     try{
@@ -90,14 +91,17 @@
       const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.92));
       c.width=c.height=0;
       if(!blob)throw new Error(TX("Не удалось сделать снимок"));
-      await opts.onShot(blob);
+      await o.onShot(blob);
+      if(opts!==o)return;
       const img=document.createElement("img");img.alt="";
       const url=URL.createObjectURL(blob);img.src=url;img.onload=()=>URL.revokeObjectURL(url);
       q(".camStrip").appendChild(img);
-    }catch(err){msg(err?.message||TX("Не удалось сделать снимок"));}
-    busy=false;paint();
-    if(opts&&opts.count()>=opts.max){
-      msg(TX("Снято {0} из {0} — лимит фото на тег",opts.max));
+    }catch(err){if(opts===o)msg(err?.message||TX("Не удалось сделать снимок"));}
+    finally{busy=false;}
+    if(opts!==o)return;
+    paint();
+    if(o.count()>=o.max){
+      msg(o.limitMsg||TX("Снято {0} из {0} — лимит фото на тег",o.max));
       closeTimer=setTimeout(close,900);
     }
   }

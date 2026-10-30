@@ -1003,6 +1003,7 @@ function closeModal(){
   if(active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) active.blur();
   overlay.classList.remove("show");
   editId=null;
+  if(ocrBatchRunning){++ocrRunToken;ocrBatchRunning=false;} // v118: окно закрыто — пакет не читается в фоне
 }
 
 // v105: номер установки — по формату тега (ISA-5.1: цифры перед буквами, KKS: блок и система).
@@ -2097,7 +2098,7 @@ function setOcrEngine(online){
   safeSetStorage(OCR_ENGINE_KEY,online?"online":"local");
   updateOcrConfigStatus();
   if(online)probeOcrNetwork(true);
-  else if(ocrPhoto)loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
+  else if(ocrPhoto||ocrBatch.length)loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
 }
 
 function setProgress(v){ $('ocrBar').style.width=Math.max(0,Math.min(100,v))+'%'; }
@@ -2787,71 +2788,16 @@ function fetchWithTimeout(url,options={},timeoutMs=35000){
     });
 }
 
-async function runOCR(file){
-  const runToken=++ocrRunToken;
-  $("ocrProgressWrap").style.display="block";
-  setProgress(5);
-  try{
-    $("ocrStatus").textContent=TX("Подготавливаю фото…");
-    ocrCandidateMeta=new Map();
-    const image=await fileToJpeg(file,1800,.76,900*1024);
-    if(runToken!==ocrRunToken)return;
-    const key=safeGetStorage('kipOcrSpaceKey','helloworld')||'helloworld';
-    const localPage=location.protocol==='file:' || location.origin==='null' || /android\.fileexplorer\.myprovider/i.test(location.origin);
-    if(localPage){
-      $("ocrStatus").textContent=TX("Для распознавания открой приложение через HTTPS (например GitHub Pages).");
-      setProgress(0);
-      return;
-    }
-    let lastError=null;
-    for(const engine of ['3','2']){
-      try{
-        $("ocrStatus").textContent=engine==='3' ? "OCR.space Engine 3…" : TX("Engine 3 не сработал — пробую Engine 2…");
-        setProgress(engine==='2'?25:55);
-        const fd=new FormData();
-        fd.append('file',image,'kip-photo.jpg');
-        fd.append('apikey',key);
-        fd.append('language','auto');
-        fd.append('OCREngine',engine);
-        fd.append('isTable','true');
-        fd.append('detectOrientation','true');
-        fd.append('scale','true');
-        fd.append('isOverlayRequired','false');
-        const r=await fetchWithTimeout('https://api.ocr.space/parse/image',{method:'POST',body:fd},engine==='2'?20000:30000);
-        if(!r.ok)throw new Error(`OCR.space HTTP ${r.status}`);
-        setProgress(engine==='3'?82:70);
-        const out=await r.json();
-        if(out.IsErroredOnProcessing)throw new Error(out.ErrorMessage||out.ErrorDetails||'OCR.space error');
-        const text=(out.ParsedResults||[]).map(x=>x.ParsedText||'').join('\n');
-        lastOcrText=text;
-        const records=extractTagRecordsFromText(text);
-        ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(text);
-        ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
-        if(runToken!==ocrRunToken)return;
-        setProgress(100);
-        $("ocrStatus").textContent=TX("OCR.space Engine {0}: найдено кандидатов {1}. Проверь отметки и задания перед добавлением.",engine,ocrCandidates.length);
-        renderImportCandidates();
-        return;
-      }catch(e){
-        lastError=e;
-        if(engine==='2')continue;
-      }
-    }
-    throw lastError||new Error(TX('OCR.space не ответил'));
-  }catch(e){
-    if(runToken!==ocrRunToken)return;
-    console.error(e);
-    setProgress(0);
-    $("ocrStatus").textContent=TX("Ошибка распознавания: {0}. Проверь интернет и VPN — нужен доступ к OCR.space.",TX.msg(e.message||e));
-  }
-}
-
 // ---------------------------------------------------------------- v101: фото — превью, обрезка, локальное распознавание
 // По умолчанию фото распознаётся на телефоне (js/ocr-local.js, без интернета).
 // Тумблер «OCR.space» в окне фото включает прежнее онлайн-распознавание (Engine 3 → 2, нужны сеть и VPN).
 const OCR_ENGINE_KEY="kipOcrEngine";
 function ocrEngine(){return safeGetStorage(OCR_ENGINE_KEY,"local")==="online"?"online":"local";}
-let ocrPhoto=null; // {name, source: ImageBitmap, crop: {x,y,w,h}|null}
+let ocrPhoto=null; // {name, source: ImageBitmap, crop: {x,y,w,h}|null, item?: элемент пакета}
+// v118: пакет фото
+const OCR_BATCH_MAX=9;
+const OCR_STORE_PIXELS=8e6; // хранится не больше ~8 Мп на фото: мелкий текст бирки читается, память iPhone не кончается
+let ocrBatch=[],ocrBatchSeq=0,ocrBatchRunning=false,ocrBatchLoading=0;
 let ocrCropMode=false,ocrCropEdit=null,ocrCropGesture=null;const ocrCropPtrs=new Map();
 
 let localOcrPromise=null;
@@ -2868,36 +2814,26 @@ function loadLocalOcr(){
 
 function resetOcrPhoto(){
   setReviewing(false);
+  if(ocrPhoto?.item)try{ocrPhoto.source.close();}catch(_){}
   ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();lastOcrText="";
-  ++ocrRunToken;updateOcrPhotoUi();
-}
-async function showOcrPhoto(file){
-  try{
-    let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"});}catch(_){bmp=await createImageBitmap(file);}
-    ++ocrRunToken;
-    ocrPhoto={name:file.name||TX("Фото"),source:bmp,crop:null};ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
-    ocrCandidates=[];ocrCandidateMeta=new Map();setReviewing(false);lastOcrText="";
-    $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
-    $("ocrProgressWrap").style.display="none";setProgress(0);
-    $("ocrStatus").textContent=TX("При необходимости выделите участок, затем нажмите «Распознать».");
-    updateOcrPhotoUi();drawOcrPhoto();
-    // Пока человек смотрит на фото, движок уже загружается.
-    if(ocrEngine()==="local")loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
-  }catch(e){$("ocrStatus").textContent=TX("Не удалось открыть фото: {0}",TX.msg(e.message||e));}
+  ++ocrRunToken;clearOcrBatch();updateOcrPhotoUi();
 }
 function ocrFullRect(){return{x:0,y:0,w:ocrPhoto.source.width,h:ocrPhoto.source.height};}
 function ocrRegion(){return ocrPhoto.crop||ocrFullRect();}
 function updateOcrPhotoUi(){
   const has=!!ocrPhoto,canvas=$("ocrCanvas"),box=$("ocrPreview");
-  canvas.hidden=!has;$("ocrPickBtn").hidden=has;
-  $("ocrCropBtn").hidden=!has||ocrCropMode;
+  // v118: фото выбираются и обрезаются в сетке миниатюр; холст — только для обрезки одного фото.
+  canvas.hidden=!has;$("ocrPickBtn").hidden=true;$("ocrCropBtn").hidden=true;
+  const grid=$("ocrGrid");if(grid)grid.hidden=has;
   $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;
-  $("ocrRunBtn").disabled=!has;
+  const sel=batchSelected().length,run=$("ocrRunBtn");
+  run.disabled=has||!sel||ocrBatchRunning||ocrBatchLoading>0;
+  run.textContent=sel>1?TX("Распознать · {0}",sel):TX("Распознать");
+  $("ocrBackBtn").textContent=ocrBatchRunning?TX("Стоп"):TX("← Назад");
   box.classList.toggle("cropping",ocrCropMode);
   box.classList.toggle("compact",!ocrCropMode&&!!$("importList").children.length);
   const hint=$("ocrCropHint");
   if(ocrCropMode){hint.hidden=false;hint.textContent=TX("Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.");}
-  else if(has&&ocrPhoto.crop){hint.hidden=false;hint.textContent=TX("Распознаётся выделенный участок.");}
   else hint.hidden=true;
 }
 function drawOcrPhoto(){
@@ -2928,9 +2864,11 @@ function applyOcrCrop(){
   if(!ocrCropMode)return;const src=ocrPhoto.source,r=ocrCropEdit;
   const full=r.x<=1&&r.y<=1&&r.w>=src.width-2&&r.h>=src.height-2;
   ocrPhoto.crop=full?null:{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.w),h:Math.round(r.h)};
-  ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();drawOcrPhoto();
+  ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
+  if(ocrPhoto.item){finishBatchCrop(true);return;}
+  updateOcrPhotoUi();drawOcrPhoto();
 }
-function cancelOcrCrop(){ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();drawOcrPhoto();}
+function cancelOcrCrop(){ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;if(ocrPhoto?.item){finishBatchCrop(false);return;}updateOcrPhotoUi();drawOcrPhoto();}
 function ocrCssPerSrc(){return Math.max(1e-6,$("ocrCanvas").getBoundingClientRect().width/ocrPhoto.source.width);}
 function ocrToSrc(e){const b=$("ocrCanvas").getBoundingClientRect(),src=ocrPhoto.source;return{x:(e.clientX-b.left)/b.width*src.width,y:(e.clientY-b.top)/b.height*src.height};}
 const clampN=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -2988,51 +2926,263 @@ function wireOcrCrop(){
 }
 
 function runSelectedOcr(){
-  if(!ocrPhoto)return;
   if(ocrCropMode)applyOcrCrop();
-  if(ocrEngine()==="local"){runLocalOcr();return;}
-  if(ocrNetworkKnownUp()){runOnlineOcr();return;}
-  pendingOcrPick=runOnlineOcr;
+  if(!batchSelected().length)return;
+  if(ocrEngine()==="local"){runBatchOcr("local");return;}
+  if(ocrNetworkKnownUp()){runBatchOcr("online");return;}
+  pendingOcrPick=()=>runBatchOcr("online");
   $("netOverlay").classList.add("show");
   probeOcrNetwork(true);
 }
-function ocrRegionCanvas(maxSide=3200){
-  const r=ocrRegion(),s=Math.min(1,maxSide/Math.max(r.w,r.h));
-  const c=document.createElement("canvas");c.width=Math.max(1,Math.round(r.w*s));c.height=Math.max(1,Math.round(r.h*s));
-  c.getContext("2d").drawImage(ocrPhoto.source,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
-  return c;
+// ---------------------------------------------------------------- v118: пакет до 9 фото — снимки и галерея вместе
+// Снимки (камера внутри приложения, серией) и фото из галереи собираются в одну сетку квадратных миниатюр.
+// Касание миниатюры — обрезка этого фото, кружок — выбрать/снять, × — убрать.
+// «Распознать» читает выбранные фото по одному (весь текст каждого фото сохраняется), затем теги
+// со всех фото сводятся в один список: повторы объединяются, порядок — по установке, типу и номеру.
+// Смена формата тегов пересобирает список без повторного распознавания.
+function batchSelected(){return ocrBatch.filter(x=>x.on);}
+function batchFree(){return OCR_BATCH_MAX-ocrBatch.length-ocrBatchLoading;}
+async function decodeImage(blob){
+  try{return await createImageBitmap(blob,{imageOrientation:"from-image"});}catch(_){return await createImageBitmap(blob);}
 }
-async function runOnlineOcr(){
-  if(!ocrPhoto)return;
-  const blob=await new Promise(res=>ocrRegionCanvas().toBlob(res,"image/jpeg",.92));
-  if(!blob){$("ocrStatus").textContent=TX("Не удалось подготовить фото");return;}
-  await runOCR(blob);
+function batchThumb(source,crop){
+  const r=crop||{x:0,y:0,w:source.width,h:source.height},side=Math.min(r.w,r.h);
+  const c=document.createElement("canvas");c.width=c.height=240;
+  const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,240,240);
+  g.drawImage(source,r.x+(r.w-side)/2,r.y+(r.h-side)/2,side,side,0,0,240,240);
+  const url=c.toDataURL("image/jpeg",.8);c.width=c.height=0;return url;
+}
+async function addBatchFiles(files){
+  files=[...(files||[])].filter(f=>f&&(!f.type||/^image\//i.test(f.type)));
+  if(!files.length)return 0;
+  const free=batchFree();
+  if(free<=0){showToast(TX("Не больше {0} фото за раз",OCR_BATCH_MAX));return 0;}
+  if(files.length>free)showToast(TX("Не больше {0} фото за раз — добавлены первые {1}",OCR_BATCH_MAX,free));
+  files=files.slice(0,free);
+  ocrBatchLoading+=files.length;renderOcrBatch();
+  let added=0;
+  for(const file of files){
+    try{
+      const bmp=await decodeImage(file);
+      const s=Math.min(1,Math.sqrt(OCR_STORE_PIXELS/(bmp.width*bmp.height)));
+      const c=document.createElement("canvas");c.width=Math.max(1,Math.round(bmp.width*s));c.height=Math.max(1,Math.round(bmp.height*s));
+      const g=c.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(bmp,0,0,c.width,c.height);
+      try{bmp.close();}catch(_){}
+      const blob=await new Promise(res=>c.toBlob(res,"image/jpeg",.92));
+      const item={id:++ocrBatchSeq,name:file.name||TX("Фото"),blob,w:c.width,h:c.height,crop:null,on:true,thumb:batchThumb(c,null),text:null,found:null,err:""};
+      c.width=c.height=0;
+      if(!blob)throw new Error(TX("Не удалось подготовить фото"));
+      ocrBatch.push(item);added++;
+    }catch(e){console.error(e);showToast(TX("Не удалось открыть фото: {0}",TX.msg(e.message||e)));}
+    finally{ocrBatchLoading--;renderOcrBatch();}
+  }
+  if(added){
+    batchResetResults();
+    if(ocrEngine()==="local")loadLocalOcr().then(()=>window.LocalOCR.warmUp()).catch(()=>{});
+  }
+  renderOcrBatch();
+  return added;
+}
+// Новые или убранные фото — прежний результат уже не про этот набор.
+function batchResetResults(){
+  ++ocrRunToken;ocrBatchRunning=false;
+  for(const it of ocrBatch){it.text=null;it.found=null;it.err="";}
+  ocrCandidates=[];ocrCandidateMeta=new Map();lastOcrText="";setReviewing(false);
+  $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
+  $("ocrProgressWrap").style.display="none";setProgress(0);
+  $("ocrStatus").textContent=ocrBatch.length?TX("Касание фото — обрезка, кружок — выбрать. Затем «Распознать»."):"";
+}
+function clearOcrBatch(){ocrBatch=[];ocrBatchLoading=0;ocrBatchRunning=false;renderOcrBatch();}
+function renderOcrBatch(){
+  const grid=$("ocrGrid");if(!grid)return;
+  const n=ocrBatch.length,sel=batchSelected().length;
+  grid.hidden=!(n||ocrBatchLoading)||!!ocrPhoto;
+  const parts=ocrBatch.map((it,i)=>{
+    const st=it.err?`<span class="otStat bad">${TX("ошибка")}</span>`:it.found!=null?`<span class="otStat">${TX("тегов: {0}",it.found)}</span>`:it.busy?`<span class="otStat busy">${TX("читаю…")}</span>`:"";
+    return `<div class="ocrTile${it.on?"":" off"}${it.busy?" busy":""}" data-ot="${it.id}">
+<button class="otImg" type="button" data-ot-crop="${it.id}" aria-label="${escapeHtml(TX("Обрезать фото {0}",i+1))}"><img alt="" src="${it.thumb}"></button>
+<span class="otNo">${i+1}</span>${it.crop?`<span class="otCrop" title="${escapeHtml(TX("Выделен участок"))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 2.5v13a2 2 0 0 0 2 2h13"></path><path d="M2.5 6.5h13a2 2 0 0 1 2 2v13"></path></svg></span>`:""}
+<button class="otPick" type="button" role="checkbox" aria-checked="${it.on}" data-ot-pick="${it.id}" aria-label="${escapeHtml(TX("Распознавать фото {0}",i+1))}"></button>
+<button class="otDel" type="button" data-ot-del="${it.id}" aria-label="${escapeHtml(TX("Убрать фото {0}",i+1))}">×</button>${st}</div>`;
+  });
+  for(let i=0;i<ocrBatchLoading;i++)parts.push(`<div class="ocrTile loading"><span class="otStat busy">${TX("открываю…")}</span></div>`);
+  if(n+ocrBatchLoading<OCR_BATCH_MAX&&!ocrBatchRunning){
+    parts.push(`<button class="ocrAdd" type="button" data-ot-add="camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg><span>${TX("Снять")}</span></button>`);
+    parts.push(`<button class="ocrAdd" type="button" data-ot-add="photo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect><circle cx="9" cy="10" r="1.8"></circle><path d="M20 16l-5-5-8 8"></path></svg><span>${TX("Фото")}</span></button>`);
+  }
+  grid.innerHTML=parts.join("");
+  const cnt=$("ocrBatchCount");
+  if(cnt){cnt.hidden=!n;cnt.textContent=TX("Фото {0} из {1} · выбрано {2}",n,OCR_BATCH_MAX,sel);}
   updateOcrPhotoUi();
 }
-async function runLocalOcr(){
-  const runToken=++ocrRunToken,btn=$("ocrRunBtn");btn.disabled=true;
-  $("ocrProgressWrap").style.display="block";setProgress(3);
-  $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
-  const status=t=>{if(runToken===ocrRunToken)$("ocrStatus").textContent=TX.msg(t);};
-  status(TX("Запускаю распознавание…"));
+function batchItem(id){return ocrBatch.find(x=>String(x.id)===String(id));}
+async function openBatchCrop(it){
+  if(ocrBatchRunning||ocrPhoto)return;
   try{
-    await loadLocalOcr();
-    const res=await window.LocalOCR.recognize(ocrPhoto.source,ocrRegion(),{stage:status,progress:v=>{if(runToken===ocrRunToken)setProgress(6+92*v);}});
-    if(runToken!==ocrRunToken)return;
-    lastOcrText=res.text;
-    const records=extractTagRecordsFromText(res.text);
-    ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(res.text);
-    ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
-    setProgress(100);
-    status(TX("На телефоне: найдено кандидатов {0} за {1} с. Проверь отметки и задания перед добавлением.",ocrCandidates.length,(res.ms/1000).toFixed(1).replace(".",window.I18N?.dec||",")));
-    renderImportCandidates();
+    const bmp=await decodeImage(it.blob);
+    ocrPhoto={name:it.name,source:bmp,crop:it.crop?{...it.crop}:null,item:it};
+    renderOcrBatch();startOcrCrop();
+  }catch(e){showToast(TX("Не удалось открыть фото: {0}",TX.msg(e.message||e)));}
+}
+// Обрезка закончена (Готово или Отмена) — назад к сетке.
+function finishBatchCrop(applied){
+  const p=ocrPhoto;if(!p||!p.item)return;
+  if(applied){
+    const before=JSON.stringify(p.item.crop||null);
+    p.item.crop=p.crop?{...p.crop}:null;p.item.thumb=batchThumb(p.source,p.item.crop);
+    if(before!==JSON.stringify(p.item.crop||null)){p.item.text=null;p.item.found=null;p.item.err="";}
+  }
+  try{p.source.close();}catch(_){}
+  ocrPhoto=null;renderOcrBatch();
+}
+function startBatchCamera(){
+  if(batchFree()<=0){showToast(TX("Не больше {0} фото за раз",OCR_BATCH_MAX));return;}
+  const go=async()=>{
+    const ok=!!window.TagCamera&&await window.TagCamera.open({
+      title:TX("Теги на фото"),max:OCR_BATCH_MAX,hi:true,limitMsg:TX("Снято {0} — больше за раз нельзя",OCR_BATCH_MAX),
+      count:()=>ocrBatch.length+ocrBatchLoading,
+      // Снимок сразу встаёт в очередь (счётчик растёт), сжатие идёт фоном — затвор не ждёт.
+      onShot:blob=>{addBatchFiles([new File([blob],"camera.jpg",{type:"image/jpeg"})]);},
+      onClose:()=>{if(!ocrBatch.length&&!ocrBatchLoading&&addMode==="camera")setAddMode("manual");}
+    });
+    if(ok){if(addMode!=="camera"&&addMode!=="photo")setAddMode("camera");renderOcrBatch();return;}
+    pendingPhotoMode="camera";$("cameraInput").click(); // системная камера — по одному снимку
+  };
+  go();
+}
+async function runBatchOcr(engine){
+  const sel=batchSelected();if(!sel.length||ocrBatchRunning)return;
+  // Повторно читаются только новые или заново обрезанные фото; если все уже прочитаны — все выбранные заново.
+  let list=sel.filter(x=>x.text==null);if(!list.length)list=sel;
+  const runToken=++ocrRunToken,t0=performance.now();ocrBatchRunning=true;
+  $("ocrProgressWrap").style.display="block";setProgress(2);
+  $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");setReviewing(false);
+  const status=t=>{if(runToken===ocrRunToken)$("ocrStatus").textContent=TX.msg(t);};
+  for(const it of list){it.found=null;it.err="";it.text=null;}
+  renderOcrBatch();
+  let done=0;
+  try{
+    if(engine==="local"){status(TX("Запускаю распознавание…"));await loadLocalOcr();}
+    for(let k=0;k<list.length;k++){
+      if(runToken!==ocrRunToken)return;
+      const it=list[k],num=ocrBatch.indexOf(it)+1;
+      it.busy=true;renderOcrBatch();
+      status(TX("Фото {0} из {1} (№{2})…",k+1,list.length,num));
+      let bmp=null;
+      try{
+        bmp=await decodeImage(it.blob);
+        const region=it.crop||{x:0,y:0,w:bmp.width,h:bmp.height};
+        if(engine==="local"){
+          const res=await window.LocalOCR.recognize(bmp,region,{progress:v=>{if(runToken===ocrRunToken)setProgress(2+96*(k+Math.max(0,Math.min(1,v)))/list.length);}});
+          it.text=res.text||"";
+        }else{
+          const s=Math.min(1,3200/Math.max(region.w,region.h)),c=document.createElement("canvas");
+          c.width=Math.max(1,Math.round(region.w*s));c.height=Math.max(1,Math.round(region.h*s));
+          c.getContext("2d").drawImage(bmp,region.x,region.y,region.w,region.h,0,0,c.width,c.height);
+          const blob=await new Promise(res=>c.toBlob(res,"image/jpeg",.92));c.width=c.height=0;
+          const out=await ocrSpaceText(blob,t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,t)),runToken);
+          it.text=out.text||"";
+        }
+        it.found=batchTagsOf(it.text).length;
+      }catch(e){console.error(e);it.err=TX.msg(e.message||e);it.text="";}
+      finally{it.busy=false;try{bmp&&bmp.close();}catch(_){}}
+      if(runToken!==ocrRunToken)return;
+      done++;setProgress(2+96*(k+1)/list.length);renderOcrBatch();
+      await new Promise(r=>setTimeout(r,0)); // дать экрану обновиться между фото
+    }
   }catch(e){
     if(runToken!==ocrRunToken)return;
     console.error(e);setProgress(0);
-    status(TX("Не удалось распознать на телефоне: {0}. Если есть интернет и VPN, включите тумблер OCR.space.",TX.msg(e.message||e)));
-  }finally{
-    if(runToken===ocrRunToken){btn.disabled=!ocrPhoto;updateOcrPhotoUi();}
+    status(engine==="local"?TX("Не удалось распознать на телефоне: {0}. Если есть интернет и VPN, включите тумблер OCR.space.",TX.msg(e.message||e)):TX("Ошибка распознавания: {0}. Проверь интернет и VPN — нужен доступ к OCR.space.",TX.msg(e.message||e)));
+    ocrBatchRunning=false;renderOcrBatch();return;
   }
+  if(runToken!==ocrRunToken)return;
+  ocrBatchRunning=false;setProgress(100);
+  buildBatchCandidates();
+  const errs=list.filter(x=>x.err).length,sec=((performance.now()-t0)/1000).toFixed(1).replace(".",window.I18N?.dec||",");
+  status(TX("Фото: {0}, тегов найдено: {1} за {2} с. Проверь отметки и задания перед добавлением.",done,ocrCandidates.length,sec)+(errs?" "+TX("Не прочитано фото: {0}.",errs):""));
+  renderOcrBatch();renderImportCandidates();
+}
+// Остановка посреди пакета: уже прочитанные фото не пропадают.
+function stopBatchOcr(){
+  if(!ocrBatchRunning)return false;
+  ++ocrRunToken;ocrBatchRunning=false;
+  for(const it of ocrBatch)it.busy=false;
+  const ready=ocrBatch.filter(x=>x.on&&x.text!=null).length;
+  renderOcrBatch();
+  if(ready){buildBatchCandidates();renderImportCandidates();$("ocrStatus").textContent=TX("Остановлено. Прочитано фото: {0}, тегов: {1}.",ready,ocrCandidates.length);}
+  else{$("ocrProgressWrap").style.display="none";$("ocrStatus").textContent=TX("Распознавание остановлено.");}
+  return true;
+}
+function batchTagsOf(text){
+  const records=extractTagRecordsFromText(text||"");
+  if(records.length)return records.map(x=>({tag:x.tag,done:!!x.done,task:x.task||""}));
+  return extractTagsSmart(text||"").map(tag=>({tag,done:false,task:""}));
+}
+// Порядок в списке: установка (вкладка) → буквенный код → номер. Без установки — в конце.
+function batchSortKey(tag){
+  const t=String(tag||"").toUpperCase(),unit=unitFromTag(t)||"";
+  const rest=unit&&t.startsWith(unit)?t.slice(unit.length).replace(/^[-–—_ ]+/,""):t;
+  const m=rest.match(/^([A-Z]+)[-–—_ ]?(\d+)(.*)$/);
+  return {unit,letters:m?m[1]:rest,num:m?Number(m[2]):Infinity,tail:m?m[3]:""};
+}
+function compareBatchTags(a,b){
+  const x=batchSortKey(a),y=batchSortKey(b);
+  if(!x.unit!==!y.unit)return x.unit?-1:1;
+  return x.unit.localeCompare(y.unit,undefined,{numeric:true})||x.letters.localeCompare(y.letters)||(x.num-y.num)||x.tail.localeCompare(y.tail)||a.localeCompare(b);
+}
+function buildBatchCandidates(){
+  const merged=new Map(),texts=[];
+  ocrBatch.forEach((it,i)=>{
+    if(!it.on||it.text==null)return;
+    texts.push(it.text);
+    for(const r of batchTagsOf(it.text)){
+      const key=tagKey(r.tag);let m=merged.get(key);
+      if(!m){m={tag:String(r.tag).toUpperCase(),completed:false,task:"",src:[]};merged.set(key,m);}
+      m.completed=m.completed||r.done;
+      if(r.task&&r.task.length>m.task.length)m.task=r.task;
+      if(!m.src.includes(i+1))m.src.push(i+1);
+    }
+  });
+  lastOcrText=texts.join("\n");
+  const all=[...merged.values()].sort((a,b)=>compareBatchTags(a.tag,b.tag));
+  ocrCandidates=all.map(x=>x.tag);
+  ocrCandidateMeta=new Map(all.map(x=>[tagKey(x.tag),{completed:x.completed,task:x.task,score:0.65,src:x.src}]));
+}
+function batchHasText(){return ocrBatch.some(x=>x.on&&x.text!=null);}
+// OCR.space для одного фото пакета: Engine 3, при сбое — Engine 2 (как в одиночном режиме).
+async function ocrSpaceText(file,stage,runToken){
+  const image=await fileToJpeg(file,1800,.76,900*1024);
+  const key=safeGetStorage('kipOcrSpaceKey','helloworld')||'helloworld';
+  const localPage=location.protocol==='file:'||location.origin==='null'||/android\.fileexplorer\.myprovider/i.test(location.origin);
+  if(localPage)throw new Error(TX("Для распознавания открой приложение через HTTPS (например GitHub Pages)."));
+  let lastError=null;
+  for(const engine of ['3','2']){
+    if(runToken!==ocrRunToken)throw new Error(TX("Распознавание остановлено."));
+    try{
+      stage(engine==='3'?"OCR.space Engine 3…":TX("Engine 3 не сработал — пробую Engine 2…"));
+      const fd=new FormData();
+      fd.append('file',image,'kip-photo.jpg');fd.append('apikey',key);fd.append('language','auto');fd.append('OCREngine',engine);
+      fd.append('isTable','true');fd.append('detectOrientation','true');fd.append('scale','true');fd.append('isOverlayRequired','false');
+      const r=await fetchWithTimeout('https://api.ocr.space/parse/image',{method:'POST',body:fd},engine==='2'?20000:30000);
+      if(!r.ok)throw new Error(`OCR.space HTTP ${r.status}`);
+      const out=await r.json();
+      if(out.IsErroredOnProcessing)throw new Error(out.ErrorMessage||out.ErrorDetails||'OCR.space error');
+      return {text:(out.ParsedResults||[]).map(x=>x.ParsedText||'').join('\n'),engine};
+    }catch(e){lastError=e;}
+  }
+  throw lastError||new Error(TX('OCR.space не ответил'));
+}
+function wireOcrBatch(){
+  $("ocrGrid").addEventListener("click",e=>{
+    const t=e.target.closest("button");if(!t)return;
+    if(t.dataset.otAdd){if(t.dataset.otAdd==="camera")startBatchCamera();else{pendingPhotoMode="photo";$("photoInput").click();}return;}
+    if(ocrBatchRunning)return;
+    const id=t.dataset.otCrop||t.dataset.otPick||t.dataset.otDel,it=batchItem(id);if(!it)return;
+    if(t.dataset.otCrop){openBatchCrop(it);return;}
+    if(t.dataset.otPick){it.on=!it.on;renderOcrBatch();if(batchHasText()){buildBatchCandidates();renderImportCandidates();}return;}
+    if(t.dataset.otDel){ocrBatch=ocrBatch.filter(x=>x!==it);if(batchHasText()){renderOcrBatch();buildBatchCandidates();renderImportCandidates();}else{batchResetResults();renderOcrBatch();}}
+  });
 }
 
 // v101: окно просмотра найденных тегов тянется за ручку (или заголовок) — на весь экран или на половину.
@@ -3133,12 +3283,16 @@ function renderImportCandidates(){
       taskToggle.title=has?TX('Задание: есть запись'):TX('Задание');
     });
     line.append(pick,inp,taskToggle,done);
-    row.append(line,taskWrap); box.appendChild(row); wireImportRow(box,row);
+    row.append(line,taskWrap);
+    // v118: с какого фото пакета тег (номер миниатюры).
+    if(meta.src&&meta.src.length&&ocrBatch.length>1){const src=document.createElement('div');src.className='importSrc';src.textContent=TX('фото {0}',meta.src.join(', '));row.appendChild(src);}
+    box.appendChild(row); wireImportRow(box,row);
   });
   refreshImportRows(box);
   importUnitHeaders(box,ocrCandidates.map(c=>String(c||"")));
   addFormatNote($("ocrStatus"));
   actions.style.display='flex';
+  updateOcrPhotoUi(); // v118: сетка фото сжимается, когда появился список
 }
 
 function importCandidates(){
@@ -3563,7 +3717,7 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — снимок списка или бирок. Фото распознаётся прямо на телефоне, без интернета; значком в углу фото можно выделить нужный участок. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
 ${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS и свой образец. Выбор хранится на телефоне; подробности — в справке меню формата.")}
@@ -3699,7 +3853,7 @@ ${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
 <p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
   add:{title:"Adding — help",html:`
 <ul>
-${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — a shot of a list or tag plates. The photo is recognized right on the phone, offline; the icon in the photo corner lets you select the needed area. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
+${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
 ${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
 ${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
 ${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; KKS and an own sample are available. The choice is stored on the phone; details — in the format menu help.")}
@@ -3864,10 +4018,8 @@ document.addEventListener("click",e=>{
 function refreshImportsForFormat(){
   if(!overlay.classList.contains("show"))return;
   if(addMode==="file"&&lastImport&&$("fileForm").style.display!=="none"){processTextImport(lastImport.text,lastImport.label,72);return;}
-  if((addMode==="camera"||addMode==="photo")&&lastOcrText){
-    const records=extractTagRecordsFromText(lastOcrText);
-    ocrCandidates=records.length?records.map(x=>x.tag):extractTagsSmart(lastOcrText);
-    ocrCandidateMeta=new Map(records.map(x=>[tagKey(x.tag),{completed:!!x.done,task:x.task||"",score:0.65}]));
+  if((addMode==="camera"||addMode==="photo")&&batchHasText()&&!ocrBatchRunning){
+    buildBatchCandidates();
     $("ocrStatus").textContent=TX("Найдено кандидатов {0}. Проверь отметки и задания перед добавлением.",ocrCandidates.length);
     renderImportCandidates();
   }
@@ -4262,22 +4414,25 @@ document.addEventListener("keydown",e=>{
 },true);
 window.addEventListener("online",()=>{if(overlay.classList.contains("show"))probeOcrNetwork(true);});
 let pendingPhotoMode="photo";
-$("cameraChoice").onclick=()=>openPhotoPicker("camera");
-$("photoChoice").onclick=()=>openPhotoPicker("photo");
+// v118: «Камера» — серия снимков внутри приложения (до 9), «Фото» — несколько фото из галереи сразу.
+$("cameraChoice").onclick=()=>{clearOcrBatch();startBatchCamera();};
+$("photoChoice").onclick=()=>{clearOcrBatch();openPhotoPicker("photo");};
 // v101: «Файл» сразу открывает выбор файла, «Вставить» сразу вставляет из буфера обмена.
 $("fileChoice").onclick=()=>$("importFileInput").click();
 $("pasteChoice").onclick=pasteTextImport;
 $("headOcrToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
-$("ocrPickBtn").onclick=()=>openPhotoPicker(addMode==="camera"?"camera":"photo");
+$("ocrPickBtn").onclick=()=>{if(addMode==="camera")startBatchCamera();else openPhotoPicker("photo");};
+wireOcrBatch();
 $("ocrRunBtn").onclick=runSelectedOcr;
 $("ocrCropBtn").onclick=startOcrCrop;
 $("ocrCropDone").onclick=applyOcrCrop;
 $("ocrCropCancel").onclick=cancelOcrCrop;
-$("ocrCropReset").onclick=()=>{if(!ocrPhoto)return;ocrCropEdit=ocrFullRect();drawOcrPhoto();};
+$("ocrCropReset").onclick=()=>{if(!ocrPhoto||!ocrCropMode)return;ocrCropEdit=ocrFullRect();drawOcrPhoto();};
 wireOcrCrop();
 $("ocrOnlineToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
 
 $("ocrBackBtn").onclick=()=>{
+  if(stopBatchOcr())return; // v118: во время пакета кнопка — «Стоп»
   $("importList").innerHTML=""; $("importActions").style.display="none"; ocrCandidateMeta=new Map();
   $("ocrStatus").textContent=""; $("ocrProgressWrap").style.display="none";
   resetOcrPhoto();
@@ -4290,12 +4445,16 @@ $("fileBackBtn").onclick=()=>{
 };
 updateOcrConfigStatus();
 $("cameraInput").addEventListener("change",async e=>{
-  const file=e.target.files && e.target.files[0]; e.target.value="";
-  if(file){setAddMode("camera");showOcrPhoto(file);}
+  const files=[...(e.target.files||[])]; e.target.value="";
+  if(!files.length)return;
+  if(addMode!=="camera"&&addMode!=="photo"){clearOcrBatch();setAddMode("camera");}
+  addBatchFiles(files);
 });
 $("photoInput").addEventListener("change",async e=>{
-  const file=e.target.files && e.target.files[0]; e.target.value="";
-  if(file){setAddMode("photo");showOcrPhoto(file);}
+  const files=[...(e.target.files||[])]; e.target.value="";
+  if(!files.length)return;
+  if(addMode!=="camera"&&addMode!=="photo"){clearOcrBatch();setAddMode("photo");}
+  addBatchFiles(files);
 });
 $("importFileInput").addEventListener("change",event=>{
   const file=event.target.files&&event.target.files[0];event.target.value="";
@@ -4315,7 +4474,8 @@ if("launchQueue" in window && typeof window.launchQueue.setConsumer==="function"
     }catch(e){showToast(TX.msg(e?.message)||TX("Не удалось открыть переданный JSON"));}
   });
 }
-$("importBtn").onclick=async()=>{try{await ensureOcrLoaded();importCandidates();}catch(err){showToast(TX.msg(err.message)||TX("Не удалось загрузить OCR"));}};
+// v118: распознавание и добавление целиком в app.js; старый js/ocr.js не подгружается (он перезаписал бы список найденного).
+$("importBtn").onclick=()=>importCandidates();
 $("cancelImportBtn").onclick=()=>setAddMode("manual");
 $("fileImportBtn").onclick=importFileCandidates;
 $("cancelFileImportBtn").onclick=()=>setAddMode("manual");
@@ -4429,31 +4589,6 @@ let lastViewportWidth=Math.round(window.innerWidth||0);
 window.addEventListener("orientationchange",()=>requestAnimationFrame(refreshAfterViewportChange),{passive:true});
 window.addEventListener("resize",()=>{ if(Math.abs((window.innerWidth||0)-((window.visualViewport&&window.visualViewport.width)||window.innerWidth))>2) return; refreshAfterViewportChange(); },{passive:true});
 if(window.visualViewport) window.visualViewport.addEventListener("resize",refreshAfterViewportChange,{passive:true});
-
-// OCR is loaded only when the user opens the camera/photo OCR path.
-let ocrLoadPromise=null;
-function ensureOcrLoaded(){
-  if(window.runOCR && window.importCandidates) return Promise.resolve();
-  if(ocrLoadPromise) return ocrLoadPromise;
-  ocrLoadPromise=new Promise((resolve,reject)=>{
-    const script=document.createElement("script");
-    const src=new URL("./js/ocr.js",document.baseURI).href;
-    let settled=false;
-    const done=()=>{if(settled)return;settled=true;resolve();};
-    const fail=()=>{
-      if(settled)return;
-      settled=true;
-      script.remove();
-      reject(new Error(TX("Не удалось загрузить OCR-модуль. Проверьте, что файл js/ocr.js опубликован на GitHub Pages.")));
-    };
-    script.async=true;
-    script.src=src;
-    script.onload=done;
-    script.onerror=fail;
-    document.head.appendChild(script);
-  }).catch(err=>{ocrLoadPromise=null;throw err;});
-  return ocrLoadPromise;
-}
 
 // PWA installation.
 // Chromium-based browsers can provide the native install prompt via beforeinstallprompt.

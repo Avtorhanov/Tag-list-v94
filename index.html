@@ -267,9 +267,11 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <span class="ocrEngineSwitch"><span class="ocrEngineName">OCR.space</span><input id="ocrOnlineToggle" role="switch" type="checkbox"/><span aria-hidden="true" class="switchTrack"></span></span>
 </label>
 <input accept="image/*" capture="environment" id="cameraInput" style="display:none" type="file"/>
-<input accept="image/*" id="photoInput" style="display:none" type="file"/>
+<input accept="image/*" id="photoInput" multiple="" style="display:none" type="file"/>
+<div class="mini ocrBatchCount" hidden="" id="ocrBatchCount"></div>
 <div class="ocrPreview" id="ocrPreview">
 <button class="ocrPick" id="ocrPickBtn" type="button">Снимите перечень или бирку либо выберите фото</button>
+<div class="ocrGrid" hidden="" id="ocrGrid"></div>
 <canvas aria-label="Фото для распознавания" id="ocrCanvas" hidden=""></canvas>
 <button aria-label="Выделить участок" class="cropFab" hidden="" id="ocrCropBtn" title="Выделить участок" type="button"><svg aria-hidden="true" class="choiceIcon" viewBox="0 0 24 24"><path d="M6.5 2.5v13a2 2 0 0 0 2 2h13"></path><path d="M2.5 6.5h13a2 2 0 0 1 2 2v13"></path></svg></button>
 </div>
