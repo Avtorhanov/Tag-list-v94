@@ -362,7 +362,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-pressed="false" class="rpTile todo" data-report-kind="todo" type="button"><span class="rpNum">0</span><span class="rpCap">Невыполненные</span></button>
 <button aria-pressed="false" class="rpTile all" data-report-kind="all" type="button"><span class="rpNum">0</span><span class="rpCap">Всё</span></button>
 </div>
-<div class="rpSwitchRow"><label class="rpSwitch" for="reportWithTasks"><span class="rpSwitchText">+ задания</span><input id="reportWithTasks" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span></label><label class="rpSwitch" for="reportWithPhotos"><span class="rpSwitchText">+ фото<small id="reportPhotoNote"></small></span><input id="reportWithPhotos" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span></label></div>
+<div class="rpSwitchRow"><label class="rpSwitch" for="reportWithTasks"><span class="rpSwitchText">+ задания</span><input id="reportWithTasks" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span></label><label class="rpSwitch" for="reportWithPhotos"><span class="rpSwitchText">+ фото</span><input id="reportWithPhotos" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span><span aria-live="polite" class="rpCount" id="reportPhotoNote"></span></label></div>
 <div class="rpGroup">
 <div class="rpLabel"><span>Исполнители</span></div>
 <div class="rpPeople" id="reportPeople"></div>
@@ -465,5 +465,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <script defer src="./js/i18n-en.js"></script>
 <script defer src="./js/tag-format.js"></script>
 <script defer src="./js/tag-photos.js"></script>
+<script defer src="./js/tag-camera.js"></script>
+<script defer src="./js/report-pdf.js"></script>
 <script defer src="./js/app.js"></script></body>
 </html>

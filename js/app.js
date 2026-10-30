@@ -569,7 +569,9 @@ function buildRow(item){
 
 const TASK_ICON_EMPTY='<svg class="tiEmpty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3" width="12" height="17" rx="2"/><path d="M6.5 7.5h6M6.5 11h6M6.5 14.5h3"/><path d="M15.4 14l4.7-4.7 2 2-4.7 4.7-2.7.7z"/></svg>';
 const TASK_ICON_SET='<svg class="tiSet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><path d="M8 3.5V2.5h8v1"/><path d="M8 9h8M8 12.5h8"/><path d="M8.2 16.6l1.9 1.8 3.8-3.9"/></svg>';
-const PHOTO_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="18" height="17" rx="2.4"/><circle cx="9" cy="9.5" r="1.8"/><path d="M4 17.5l4.9-4.9 3.8 3.7 2.3-2.3L20 18.5"/></svg>';
+// v114: рамка фото — та же, что у планшета задания (15×18 в сетке 24), поэтому значки одного размера.
+const PHOTO_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><circle cx="9.4" cy="8.8" r="1.7"/><path d="M4.9 17.4l4.4-4.4 3.3 3.2 2.1-2.1 4.6 4.6"/></svg>';
+const CAMERA_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.4"/></svg>';
 const itemPhotos=item=>Array.isArray(item?.photos)?item.photos:[];
 
 function paintTaskToggle(toggle,item){
@@ -592,6 +594,7 @@ function paintEditorPhotos(row,item){
   const ids=itemPhotos(item),n=ids.length,max=window.TagPhotos?.MAX||5;
   let html="";
   for(let i=0;i<n;i++)html+=`<button type="button" class="taskPhotoThumb" data-photo="${i}" aria-label="${escapeHtml(TX("Открыть фото {0}",i+1))}">${PHOTO_ICON}</button>`;
+  if(n<max)html+=`<button type="button" class="taskPhotoCam" aria-label="${escapeHtml(TX("Снять фото камерой"))}">${CAMERA_ICON}</button>`;
   if(n<max)html+=`<button type="button" class="taskPhotoAdd" aria-label="${escapeHtml(TX("Добавить фото"))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>`;
   html+=`<span class="taskPhotoCount">${n}/${max}</span>`;
   box.innerHTML=html;
@@ -603,7 +606,7 @@ function refreshRowPhotos(row,item){
 }
 
 let photoPickTarget=null;
-function pickTaskPhotos(row,item){
+function pickTaskPhotos(row,item,capture=false){
   const room=(window.TagPhotos?.MAX||5)-itemPhotos(item).length;
   if(room<=0){showToast(TX("Не больше 5 фото на тег"));return;}
   let input=$("taskPhotoInput");
@@ -629,7 +632,29 @@ function pickTaskPhotos(row,item){
     });
   }
   photoPickTarget={row,item};
+  if(capture){input.setAttribute("capture","environment");input.multiple=false;}
+  else{input.removeAttribute("capture");input.multiple=true;}
   input.click();
+}
+// v114: серийная съёмка — камера внутри приложения не закрывается после снимка, до лимита тега.
+// Каждый снимок сохраняется сразу. Нет доступа к камере — системная камера на один снимок.
+async function shootTaskPhotos(row,item){
+  const max=window.TagPhotos?.MAX||5;
+  if(itemPhotos(item).length>=max){showToast(TX("Не больше 5 фото на тег"));return;}
+  const ok=!!window.TagCamera&&await window.TagCamera.open({
+    title:item.tag,max,
+    count:()=>itemPhotos(item).length,
+    onShot:async blob=>{
+      const ids=await window.TagPhotos.addFiles([new File([blob],"camera.jpg",{type:"image/jpeg"})],1);
+      if(!ids.length)return;
+      item.photos=itemPhotos(item).concat(ids).slice(0,max);
+      save();
+      const r=rowCache.get(item);
+      if(r)refreshRowPhotos(r,item);
+    },
+    onClose:()=>renderTabs(false)
+  });
+  if(!ok)pickTaskPhotos(row,item,true);
 }
 function openTaskPhoto(row,item,index){
   if(!window.TagPhotos)return;
@@ -1858,7 +1883,7 @@ window.__tagListContactPicked=name=>{
 
 // v113: фото тегов отчёта — только если включён тумблер «+ фото». Не больше REPORT_MAX_PHOTOS за раз:
 // мессенджеры и мост APK не принимают сотни мегабайт сразу.
-const REPORT_MAX_PHOTOS=20;
+const REPORT_MAX_PHOTOS=30;
 // Фото строк, которые реально попадают в текст (строки, удалённые вручную, пропускаются).
 function reportPhotoIds(){
   const ids=[];
@@ -1871,38 +1896,90 @@ function reportPhotoIds(){
 function paintReportPhotoNote(){
   const note=$("reportPhotoNote");
   if(!note)return;
-  const n=reportState?.withPhotos?reportPhotoIds().length:0;
-  note.textContent=!reportState?.withPhotos?"":n?(n>REPORT_MAX_PHOTOS?TX("{0} фото, отправятся первые {1}",n,REPORT_MAX_PHOTOS):TX("{0} фото",n)):TX("фото нет");
+  const on=!!reportState?.withPhotos,n=on?reportPhotoIds().length:0;
+  note.classList.toggle("on",on);
+  note.textContent=on?String(Math.min(n,REPORT_MAX_PHOTOS)):"";
+  note.title=on?(n>REPORT_MAX_PHOTOS?TX("{0} фото, в PDF войдут первые {1}",n,REPORT_MAX_PHOTOS):n?TX("{0} фото — отчёт уйдёт одним PDF",n):TX("фото нет")):"";
 }
-async function reportPhotoFiles(ids){
-  const files=[];
-  if(!window.TagPhotos||!ids.length)return files;
-  for(let i=0;i<ids.length;i++){
-    const blob=await window.TagPhotos.get(ids[i]);
-    if(blob)files.push(new File([blob],`tag-photo-${String(files.length+1).padStart(2,"0")}.jpg`,{type:"image/jpeg"}));
-  }
-  return files;
+// v114: строки отчёта (как в поле, с ручными правками) + фото их тегов → один PDF.
+let reportPdfCache=null;
+async function buildReportPdfFile(text,title){
+  if(!window.ReportPdf||!window.TagPhotos)return null;
+  const byTag=new Map();
+  reportAutoLines.forEach(l=>{
+    if(!l.item||reportOps.del[l.k]||!itemPhotos(l.item).length)return;
+    const tag=cleanReportField(l.item.tag);
+    if(!byTag.has(tag))byTag.set(tag,[]);
+    byTag.get(tag).push(l.item);
+  });
+  let left=REPORT_MAX_PHOTOS,total=0;
+  const lines=text.split("\n").map(t=>{
+    const m=t.match(/^\s*\d+\.\s+(\S+)/);
+    let photos=[];
+    if(m&&left>0&&byTag.get(m[1])?.length){
+      photos=itemPhotos(byTag.get(m[1]).shift()).slice(0,left);
+      left-=photos.length;total+=photos.length;
+    }
+    return {t,photos};
+  });
+  if(!total)return null;
+  const blob=await window.ReportPdf.build({
+    title,lines,
+    footer:`Tag list · ${reportDateTime()} · ${TX("нажмите на фото — откроется целиком")}`,
+    backLabel:TX("← К отчёту"),
+    getBlob:id=>window.TagPhotos.get(id)
+  });
+  return new File([blob],`${safeFileBase(title)}.pdf`,{type:"application/pdf"});
+}
+function downloadBlob(blob,name){
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=name;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 async function sendReport(){
-  const ta=$("reportText");
+  const ta=$("reportText"),btn=$("reportSend");
   const text=ta.value.replace(/\s+$/,"");
   if(!text.trim())return;
   const chosen=reportChosenPages();
   const title=chosen.length===1?pageTitleForReport(chosen[0]):TX("{0} — отчёт",cleanReportField(docTitle)||"Tag list");
   if(document.activeElement===ta)ta.blur();
-  const wantPhotos=!!reportState.withPhotos;
-  const files=wantPhotos?await reportPhotoFiles(reportPhotoIds().slice(0,REPORT_MAX_PHOTOS)):[];
-  try{
-    if(files.length&&typeof navigator.share==="function"){
-      try{
-        await navigator.share({title,text,files});
-        closeReport();showToast(TX("Отчёт с фото передан: {0}",files.length));return;
-      }catch(err){
-        if(err?.name==="AbortError")return;
-        // Этот способ не принял файлы — отправим хотя бы текст ниже.
+  if(reportState.withPhotos&&reportPhotoIds().length){
+    const sig=text+"\u0001"+reportPhotoIds().join(",");
+    let file=reportPdfCache?.sig===sig?reportPdfCache.file:null;
+    if(!file){
+      btn.disabled=true;btn.textContent=TX("Готовлю PDF…");
+      try{file=await buildReportPdfFile(text,title);}
+      catch(_){file=null;showToast(TX("Не удалось собрать PDF — отправляю только текст"));}
+      btn.disabled=false;btn.textContent=TX("Отправить");
+      if(file)reportPdfCache={sig,file};
+    }
+    if(file){
+      if(typeof navigator.share==="function"){
+        // На iPhone текст рядом с файлом мессенджеры часто отбрасывают (или наоборот) —
+        // отправляем только PDF: в нём весь отчёт. На Android текст уходит подписью к файлу.
+        const data={title,files:[file]};
+        if(/Android/i.test(navigator.userAgent||""))data.text=text;
+        try{
+          await navigator.share(data);
+          reportPdfCache=null;closeReport();showToast(TX("Отчёт PDF передан"));return;
+        }catch(err){
+          if(err?.name==="AbortError")return;
+          if(err?.name==="NotAllowedError"){
+            // Сборка PDF заняла время, и браузер больше не считает это нажатием — нужно ещё одно.
+            btn.textContent=TX("Отправить PDF");
+            showToast(TX("PDF готов — нажмите «Отправить PDF»"));
+            return;
+          }
+          showToast(TX("Этот способ не принимает файлы — отправлен только текст"));
+        }
+      }else{
+        downloadBlob(file,file.name);
+        try{await navigator.clipboard?.writeText(text);}catch(_){}
+        reportPdfCache=null;closeReport();showToast(TX("PDF сохранён, текст отчёта скопирован"));return;
       }
     }
-    if(wantPhotos&&files.length)showToast(TX("Фото не передаются этим способом — отправлен только текст"));
+  }
+  try{
     if(navigator.share){await navigator.share({title,text});closeReport();showToast(TX("Отчёт передан"));return;}
     if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);closeReport();showToast(TX("Текст отчёта скопирован"));return;}
     throw new Error("share-unavailable");
@@ -3224,6 +3301,7 @@ list.addEventListener("click",e=>{
   const photoThumb=e.target.closest(".taskPhotoThumb");
   if(photoThumb){e.stopPropagation();openTaskPhoto(row,item,Number(photoThumb.dataset.photo)||0);return;}
   if(e.target.closest(".taskPhotoAdd")){e.stopPropagation();pickTaskPhotos(row,item);return;}
+  if(e.target.closest(".taskPhotoCam")){e.stopPropagation();shootTaskPhotos(row,item);return;}
   const taskToggle=e.target.closest(".taskToggle,.taskPhotoIcon");
   if(taskToggle){
     e.stopPropagation();
@@ -3333,7 +3411,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
-${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: в мессенджер уйдут миниатюры, по нажатию — полный размер), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: отчёт уходит одним PDF — тег, задание и миниатюры фото, нажатие на миниатюру открывает фото целиком), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -3344,7 +3422,7 @@ ${hLi(hS("install"),"<b>Установить</b> — на главный экр�
 <h3>Карточка тега</h3>
 <ul>
 ${hLi(hS("check"),"<b>Квадрат слева</b> — выполнено / не выполнено.")}
-${hLi(hT("▾"),"<b>Задание</b> — открыть поле. Нажми в текст, чтобы писать, «Сохранить» — закончить. «есть» — задание записано.")}
+${hLi(hT("▾"),"<b>Задание</b> — открыть поле. Нажми в текст, чтобы писать, «Сохранить» — закончить. «есть» — задание записано. Под полем — фото тега (до 5): значок камеры снимает серией, камера не закрывается между снимками; «+» — из галереи.")}
 ${hLi(hT("✎"),"<b>Изменить</b> — тег, задание, статус или удалить прибор.")}
 </ul>
 <h3>Выбор нескольких</h3>
@@ -3469,7 +3547,7 @@ ${hLi(hS("eye"),"<b>Plain list</b> — full-screen list: all, done, pending, tas
 ${hLi(hT("Aa"),"<b>Font</b> — cycles through. Only fonts available on this phone are listed.")}
 ${hLi(hS("send"),"<b>Save / send</b> — text report to a messenger or a .json state file.")}
 ${hLi(hT("A±"),"<b>Text size</b> — smaller / larger.")}
-${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: thumbnails go to the messenger, tap for full size), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
+${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: the report goes as one PDF — tag, task and photo thumbnails, tap a thumbnail to open the full photo), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
 ${hLi(hS("search"),"<b>Search</b> — by tag or unit number.")}
 ${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the browser allows it.")}
 </ul>
@@ -3480,7 +3558,7 @@ ${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the bro
 <h3>Tag card</h3>
 <ul>
 ${hLi(hS("check"),"<b>Square on the left</b> — done / not done.")}
-${hLi(hT("▾"),"<b>Task</b> — open the field. Tap the text to write, “Save” to finish. “✓” — a task is written.")}
+${hLi(hT("▾"),"<b>Task</b> — open the field. Tap the text to write, “Save” to finish. “✓” — a task is written. Below the field — tag photos (up to 5): the camera icon shoots a series, the camera stays open between shots; “+” — from the gallery.")}
 ${hLi(hT("✎"),"<b>Edit</b> — tag, task, status, or delete the instrument.")}
 </ul>
 <h3>Multiple selection</h3>
@@ -4938,6 +5016,8 @@ if(window.AndroidApp){
   // Системная кнопка «Назад»: сначала закрывает окна/режимы, затем сворачивает приложение.
   window.__tagListBack=()=>{
     try{
+      if(window.TagCamera?.isOpen()){window.TagCamera.close();return true;}
+      if(document.body.classList.contains("photo-viewing")){window.TagPhotos?.close();return true;}
       const confirmOpen=$("confirmOverlay")?.classList.contains("show");
       const overlayOpen=document.querySelector(".overlay.show");
       const searchOpen=$("searchPanel")?.classList.contains("show");
