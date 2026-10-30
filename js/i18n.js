@@ -76,6 +76,8 @@ function syncButton(){
   const b=document.getElementById("langBtn");
   if(!b)return;
   b.dataset.lang=lang;
+  // v115: одна кнопка — показывает текущий язык, нажатие переключает RU ↔ EN.
+  const cur=b.querySelector(".langCur");if(cur)cur.textContent=lang==="en"?"EN":"RU";
   b.setAttribute("aria-pressed",String(lang==="en"));
   b.setAttribute("aria-label",lang==="en"?"Interface language: English. Переключить на русский":"Язык интерфейса: русский. Switch to English");
   b.title=lang==="en"?"English → Русский":"Русский → English";

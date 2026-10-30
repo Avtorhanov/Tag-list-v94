@@ -1477,18 +1477,32 @@ const reportHasOps=()=>Object.keys(reportOps.rep).length+Object.keys(reportOps.d
 function buildReportLines(){
   const chosen=reportChosenPages(),multi=chosen.length>1,L=[];
   if(!chosen.length)return L;
-  const push=(t,k,num=false,item=null)=>L.push({t,k,num,item});
+  const push=(t,k,num=false,item=null,extra=null)=>L.push({t,k,num,item,...(extra||{})});
+  // v115: одна пустая строка между блоками (без «Выполнено X из Y»).
+  const blank=k=>{if(L.length&&L[L.length-1].t!=="")push("",k);};
+  // v115: фото по порядку всего отчёта: «Фото 3 — тег» на снимке, «· фото 3–4» в строке тега.
+  let photoNo=0;
+  const photoMark=x=>{
+    if(!reportState.withPhotos)return {ids:[],mark:""};
+    const ids=[];
+    for(const id of itemPhotos(x)){
+      if(reportPhotoOff.has(id)||photoNo>=REPORT_MAX_PHOTOS)continue;
+      ids.push(id);photoNo++;
+    }
+    if(!ids.length)return {ids,mark:""};
+    const a=photoNo-ids.length+1,b=photoNo;
+    return {ids,first:a,mark:" · "+(a===b?TX("фото {0}",a):TX("фото {0}–{1}",a,b))};
+  };
   if(!multi)push(pageTitleForReport(chosen[0]),"p:"+chosen[0].id);
   const who=reportState.people.filter(n=>reportState.on.includes(n));
   if(who.length)push(TX("Исполнители: {0}",who.join(", ")),"who");
   chosen.forEach(page=>{
     const items=page.data||[],pid=String(page.id);
     const done=items.filter(x=>x.done),todo=items.filter(x=>!x.done);
-    if(L.length)push("","b:"+pid+":0");
+    blank("b:"+pid+":0");
     if(multi)push(pageTitleForReport(page),"p:"+pid);
-    push(TX("Выполнено {0} из {1}",done.length,items.length),"stat:"+pid);
     const section=(head,list,kind)=>{
-      push("","b:"+pid+":"+kind);
+      blank("b:"+pid+":"+kind);
       push(`${head} (${list.length})`,"sec:"+pid+":"+kind);
       if(!list.length){push("—","dash:"+pid+":"+kind);return;}
       const groups=new Map();
@@ -1498,7 +1512,8 @@ function buildReportLines(){
         if(groups.size>1)push(`▸ ${unit}`,"u:"+pid+":"+kind+":"+unit);
         group.forEach(x=>{
           const tag=cleanReportField(x.tag)||TX("Без тега"),task=cleanReportField(x.task);
-          push(`${++n}. ${tag}${reportState.withTasks&&task?` — ${task}`:""}`,"t:"+pid+":"+x.id+":"+tag,true,x);
+          const ph=photoMark(x);
+          push(`${++n}. ${tag}${reportState.withTasks&&task?` — ${task}`:""}${ph.mark}`,"t:"+pid+":"+x.id+":"+tag,true,x,{photoIds:ph.ids,photoFirst:ph.first});
         });
       });
     };
@@ -1580,6 +1595,7 @@ function regenerateReport(){
   if(ta.value!==text)ta.value=text;
   paintReportEditState();
   paintReportPhotoNote();
+  renderReportPhotoPanel();
 }
 function paintReportEditState(){
   const edited=reportHasOps(),ta=$("reportText");
@@ -1671,6 +1687,7 @@ function openReport(){
   safeSetStorage(REPORT_SEEN_KEY,"1");
   $("reportBtn")?.classList.remove("isNew");
   exitReportEdit();
+  reportPhotoOff=new Set();reportPhotoCache=null;
   renderReport();
   $("reportBody").scrollTop=0;
   $("reportText").scrollTop=0;
@@ -1881,16 +1898,15 @@ window.__tagListContactPicked=name=>{
   else if($("reportOverlay")?.classList.contains("show"))renderReport();
 };
 
-// v113: фото тегов отчёта — только если включён тумблер «+ фото». Не больше REPORT_MAX_PHOTOS за раз:
-// мессенджеры и мост APK не принимают сотни мегабайт сразу.
+// v113–v115: фото тегов отчёта — только с тумблером «+ фото», не больше REPORT_MAX_PHOTOS за раз
+// (мессенджеры и мост APK не принимают сотни мегабайт сразу).
 const REPORT_MAX_PHOTOS=30;
+let reportPhotoOff=new Set();   // фото, убранные из этого отчёта касанием значка (только на время окна)
+let reportPhotoCache=null;      // {sig, files} — подписанные фото, готовые к отправке
 // Фото строк, которые реально попадают в текст (строки, удалённые вручную, пропускаются).
 function reportPhotoIds(){
   const ids=[];
-  reportAutoLines.forEach(l=>{
-    if(!l.item||reportOps.del[l.k])return;
-    itemPhotos(l.item).forEach(id=>ids.push(id));
-  });
+  reportAutoLines.forEach(l=>{if(l.photoIds&&!reportOps.del[l.k])ids.push(...l.photoIds);});
   return ids;
 }
 function paintReportPhotoNote(){
@@ -1898,38 +1914,70 @@ function paintReportPhotoNote(){
   if(!note)return;
   const on=!!reportState?.withPhotos,n=on?reportPhotoIds().length:0;
   note.classList.toggle("on",on);
-  note.textContent=on?String(Math.min(n,REPORT_MAX_PHOTOS)):"";
-  note.title=on?(n>REPORT_MAX_PHOTOS?TX("{0} фото, в PDF войдут первые {1}",n,REPORT_MAX_PHOTOS):n?TX("{0} фото — отчёт уйдёт одним PDF",n):TX("фото нет")):"";
+  note.textContent=on?String(n):"";
+  note.title=on?(n?TX("{0} фото уйдут вместе с текстом",n):TX("фото нет")):"";
 }
-// v114: строки отчёта (как в поле, с ручными правками) + фото их тегов → один PDF.
-let reportPdfCache=null;
-async function buildReportPdfFile(text,title){
-  if(!window.ReportPdf||!window.TagPhotos)return null;
-  const byTag=new Map();
-  reportAutoLines.forEach(l=>{
-    if(!l.item||reportOps.del[l.k]||!itemPhotos(l.item).length)return;
+// v115: под текстом — теги и значки их фото. Касание значка убирает фото из отчёта или возвращает.
+const REPORT_PHOTO_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><circle cx="9.4" cy="8.8" r="1.7"/><path d="M4.9 17.4l4.4-4.4 3.3 3.2 2.1-2.1 4.6 4.6"/></svg>';
+function renderReportPhotoPanel(){
+  const box=$("reportPhotos");
+  if(!box)return;
+  const rows=reportState?.withPhotos?reportAutoLines.filter(l=>l.item&&!reportOps.del[l.k]&&itemPhotos(l.item).length):[];
+  box.hidden=!rows.length;
+  if(!rows.length){box.replaceChildren();return;}
+  const head=document.createElement("div");head.className="rpLabel";
+  const hs=document.createElement("span");hs.textContent=TX("Фото в отчёте");
+  const hint=document.createElement("small");hint.className="rpPhHint";hint.textContent=TX("касание — убрать или вернуть");
+  head.append(hs,hint);
+  const list=document.createElement("div");list.className="rpPhList";
+  rows.forEach(l=>{
+    const row=document.createElement("div");row.className="rpPhRow";
+    const tag=document.createElement("span");tag.className="rpPhTag";tag.textContent=cleanReportField(l.item.tag);
+    const icons=document.createElement("span");icons.className="rpPhIcons";
+    let k=0;
+    itemPhotos(l.item).forEach(id=>{
+      const on=(l.photoIds||[]).includes(id),num=on?l.photoFirst+(k++):0;
+      const b=document.createElement("button");
+      b.type="button";b.className="rpPh"+(on?" on":"");b.dataset.photo=id;
+      b.innerHTML=REPORT_PHOTO_SVG+(on?`<b>${num}</b>`:"");
+      b.setAttribute("aria-pressed",String(on));
+      b.setAttribute("aria-label",on?TX("Убрать фото {0} из отчёта",num):TX("Вернуть фото в отчёт"));
+      icons.appendChild(b);
+    });
+    row.append(tag,icons);list.appendChild(row);
+  });
+  box.replaceChildren(head,list);
+}
+// Снимок с подписью снизу: «Фото 3 — 2109-XZV-730». Полоса добавляется под фото, не закрывая его.
+async function stampReportPhoto(blob,num,tag){
+  const src=await (window.createImageBitmap?createImageBitmap(blob):Promise.reject()).catch(()=>new Promise((res,rej)=>{
+    const u=URL.createObjectURL(blob),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);res(im);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("decode"));};im.src=u;}));
+  const w=src.width||src.naturalWidth,h=src.height||src.naturalHeight;
+  const bar=Math.max(40,Math.round(Math.min(w,h)*0.075));
+  const c=document.createElement("canvas");c.width=w;c.height=h+bar;
+  const ctx=c.getContext("2d");
+  ctx.drawImage(src,0,0,w,h);if(src.close)src.close();
+  ctx.fillStyle="#0b1220";ctx.fillRect(0,h,w,bar);
+  ctx.fillStyle="#ffffff";ctx.textBaseline="middle";
+  ctx.font=`700 ${Math.round(bar*0.46)}px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif`;
+  ctx.fillText(TX("Фото {0} — {1}",num,tag),Math.round(bar*0.4),h+bar/2,w-bar*0.8);
+  const out=await new Promise(r=>c.toBlob(r,"image/jpeg",0.88));
+  c.width=c.height=0;
+  if(!out)throw new Error("stamp");
+  return new File([out],`${String(num).padStart(2,"0")}_${safeFileBase(tag)}.jpg`,{type:"image/jpeg"});
+}
+async function buildReportPhotoFiles(){
+  const files=[];
+  if(!window.TagPhotos)return files;
+  for(const l of reportAutoLines){
+    if(!l.photoIds||!l.photoIds.length||reportOps.del[l.k])continue;
     const tag=cleanReportField(l.item.tag);
-    if(!byTag.has(tag))byTag.set(tag,[]);
-    byTag.get(tag).push(l.item);
-  });
-  let left=REPORT_MAX_PHOTOS,total=0;
-  const lines=text.split("\n").map(t=>{
-    const m=t.match(/^\s*\d+\.\s+(\S+)/);
-    let photos=[];
-    if(m&&left>0&&byTag.get(m[1])?.length){
-      photos=itemPhotos(byTag.get(m[1]).shift()).slice(0,left);
-      left-=photos.length;total+=photos.length;
+    for(let i=0;i<l.photoIds.length;i++){
+      const blob=await window.TagPhotos.get(l.photoIds[i]);
+      if(blob)files.push(await stampReportPhoto(blob,l.photoFirst+i,tag));
     }
-    return {t,photos};
-  });
-  if(!total)return null;
-  const blob=await window.ReportPdf.build({
-    title,lines,
-    footer:`Tag list · ${reportDateTime()} · ${TX("нажмите на фото — откроется целиком")}`,
-    backLabel:TX("← К отчёту"),
-    getBlob:id=>window.TagPhotos.get(id)
-  });
-  return new File([blob],`${safeFileBase(title)}.pdf`,{type:"application/pdf"});
+  }
+  return files;
 }
 function downloadBlob(blob,name){
   const url=URL.createObjectURL(blob),a=document.createElement("a");
@@ -1943,39 +1991,40 @@ async function sendReport(){
   const chosen=reportChosenPages();
   const title=chosen.length===1?pageTitleForReport(chosen[0]):TX("{0} — отчёт",cleanReportField(docTitle)||"Tag list");
   if(document.activeElement===ta)ta.blur();
-  if(reportState.withPhotos&&reportPhotoIds().length){
-    const sig=text+"\u0001"+reportPhotoIds().join(",");
-    let file=reportPdfCache?.sig===sig?reportPdfCache.file:null;
-    if(!file){
-      btn.disabled=true;btn.textContent=TX("Готовлю PDF…");
-      try{file=await buildReportPdfFile(text,title);}
-      catch(_){file=null;showToast(TX("Не удалось собрать PDF — отправляю только текст"));}
+  const ids=reportState.withPhotos?reportPhotoIds():[];
+  if(ids.length){
+    // Текст — в буфер обмена сразу, пока нажатие «свежее»: если мессенджер отбросит текст
+    // рядом с фото (WhatsApp на iPhone), его можно вставить подписью.
+    const copied=navigator.clipboard?.writeText?navigator.clipboard.writeText(text).then(()=>true,()=>false):Promise.resolve(false);
+    const sig=text+"\u0001"+ids.join(",");
+    let files=reportPhotoCache?.sig===sig?reportPhotoCache.files:null;
+    if(!files){
+      btn.disabled=true;btn.textContent=TX("Готовлю фото…");
+      try{files=await buildReportPhotoFiles();}catch(_){files=null;}
       btn.disabled=false;btn.textContent=TX("Отправить");
-      if(file)reportPdfCache={sig,file};
+      if(files&&files.length)reportPhotoCache={sig,files};
     }
-    if(file){
+    if(files&&files.length){
       if(typeof navigator.share==="function"){
-        // На iPhone текст рядом с файлом мессенджеры часто отбрасывают (или наоборот) —
-        // отправляем только PDF: в нём весь отчёт. На Android текст уходит подписью к файлу.
-        const data={title,files:[file]};
-        if(/Android/i.test(navigator.userAgent||""))data.text=text;
         try{
-          await navigator.share(data);
-          reportPdfCache=null;closeReport();showToast(TX("Отчёт PDF передан"));return;
+          await navigator.share({title,text,files});
+          reportPhotoCache=null;closeReport();
+          showToast(await copied?TX("Отчёт и фото переданы: {0}. Текст также в буфере обмена",files.length):TX("Отчёт и фото переданы: {0}",files.length));
+          return;
         }catch(err){
           if(err?.name==="AbortError")return;
           if(err?.name==="NotAllowedError"){
-            // Сборка PDF заняла время, и браузер больше не считает это нажатием — нужно ещё одно.
-            btn.textContent=TX("Отправить PDF");
-            showToast(TX("PDF готов — нажмите «Отправить PDF»"));
+            // Подготовка фото заняла время, и браузер больше не считает это нажатием — нужно ещё одно.
+            btn.textContent=TX("Отправить с фото");
+            showToast(TX("Фото готовы — нажмите «Отправить с фото»"));
             return;
           }
-          showToast(TX("Этот способ не принимает файлы — отправлен только текст"));
+          showToast(TX("Фото не передаются этим способом — отправлен только текст"));
         }
       }else{
-        downloadBlob(file,file.name);
-        try{await navigator.clipboard?.writeText(text);}catch(_){}
-        reportPdfCache=null;closeReport();showToast(TX("PDF сохранён, текст отчёта скопирован"));return;
+        files.forEach(f=>downloadBlob(f,f.name));
+        await copied;
+        reportPhotoCache=null;closeReport();showToast(TX("Фото сохранены, текст отчёта скопирован"));return;
       }
     }
   }
@@ -3411,7 +3460,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
-${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: отчёт уходит одним PDF — тег, задание и миниатюры фото, нажатие на миниатюру открывает фото целиком), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: фото уходят вместе с текстом, на каждом снизу подпись «Фото 3 — тег», в тексте у тега — «фото 3»; под текстом значки фото по тегам, касание убирает фото из отчёта; текст отчёта также копируется в буфер), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -3547,7 +3596,7 @@ ${hLi(hS("eye"),"<b>Plain list</b> — full-screen list: all, done, pending, tas
 ${hLi(hT("Aa"),"<b>Font</b> — cycles through. Only fonts available on this phone are listed.")}
 ${hLi(hS("send"),"<b>Save / send</b> — text report to a messenger or a .json state file.")}
 ${hLi(hT("A±"),"<b>Text size</b> — smaller / larger.")}
-${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: the report goes as one PDF — tag, task and photo thumbnails, tap a thumbnail to open the full photo), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
+${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: photos go with the text, each captioned “Photo 3 — tag”, the tag line says “photo 3”; below the text — photo icons per tag, tap to leave a photo out; the report text is also copied to the clipboard), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
 ${hLi(hS("search"),"<b>Search</b> — by tag or unit number.")}
 ${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the browser allows it.")}
 </ul>
@@ -4016,6 +4065,12 @@ $("reportAllPages").onclick=()=>{
 document.querySelectorAll(".rpTile").forEach(t=>t.addEventListener("click",()=>{reportState.kind=t.dataset.reportKind;reportChanged();}));
 $("reportWithTasks").addEventListener("change",e=>{reportState.withTasks=e.target.checked;reportChanged();});
 $("reportWithPhotos").addEventListener("change",e=>{reportState.withPhotos=e.target.checked;reportChanged();});
+$("reportPhotos").addEventListener("click",e=>{
+  const b=e.target.closest(".rpPh");if(!b)return;
+  const id=b.dataset.photo;
+  if(reportPhotoOff.has(id))reportPhotoOff.delete(id);else reportPhotoOff.add(id);
+  regenerateReport();
+});
 $("reportPeople").addEventListener("click",e=>{
   if(e.target.closest("#reportAddPeople")){openReportPick();return;}
   const b=e.target.closest(".rpPerson");if(!b)return;
