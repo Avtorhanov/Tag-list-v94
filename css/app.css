@@ -2434,3 +2434,12 @@ body.camera-open{overflow:hidden}
 .ocrAdd svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
 .ocrGrid[hidden]{display:none!important}
 .importSrc{margin:3px 2px 0 31px;font-size:calc(11.5px * var(--fontScale));color:var(--muted)}
+
+/* v120: ручное выравнивание в окне обрезки. */
+.ocrLevelRow{display:grid;grid-template-columns:40px minmax(0,1fr) 54px 40px auto;gap:6px;align-items:center;margin-top:8px;flex:0 0 auto}
+.ocrLevelRow[hidden]{display:none!important}
+.lvlBtn,.lvlAuto{height:40px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--accent);font:700 20px/1 system-ui,sans-serif;padding:0;cursor:pointer}
+.lvlAuto{font-size:15px;padding:0 12px;color:#fff;background:var(--accent);border-color:var(--accent)}
+.lvlAuto:disabled{opacity:.55}
+.ocrLevelRow input[type=range]{width:100%;min-width:0;margin:0;accent-color:var(--accent);height:40px}
+.lvlVal{font:700 14px/1 system-ui,sans-serif;text-align:center;color:var(--text,inherit);font-variant-numeric:tabular-nums;white-space:nowrap}
