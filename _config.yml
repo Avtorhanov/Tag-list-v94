@@ -1,4 +1,3 @@
 # GitHub Pages: исходники Android-приложения на сайт не публикуются.
 exclude:
   - android
-  - github-workflow
