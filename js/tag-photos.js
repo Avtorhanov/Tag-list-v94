@@ -4,7 +4,9 @@
    В JSON-состояние уходят id; на другом телефоне без самих фото просмотр сообщит об этом.
    Окно просмотра: листание, удаление (второе касание подтверждает), закрытие.
    v113: увеличение — щипок двумя пальцами (1–4×), двойное касание (1× ↔ 2.5×), колесо мыши;
-   при увеличении фото тянется пальцем. Кнопки «←/→» и стрелки работают как прежде. */
+   при увеличении фото тянется пальцем. Кнопки «←/→» и стрелки работают как прежде.
+   v116: свайп влево/вправо — соседнее фото, свайп вниз — закрыть (когда фото не увеличено).
+   open({deleteLabel, keepBlob}) — для отчёта: «Убрать из отчёта», сам снимок не удаляется. */
 (function(){
   "use strict";
   const TX=(s,...a)=>typeof window.TX==="function"?window.TX(s,...a):String(s).replace(/\{(\d+)\}/g,(m,i)=>a[i]!==undefined?String(a[i]):m);
@@ -95,6 +97,8 @@
   const zm={s:1,tx:0,ty:0};          // масштаб и сдвиг относительно центра изображения (px экрана)
   const ptrs=new Map();              // активные касания
   let pinch=null,lastTap={t:0,x:0,y:0},moved=false,suppressUntil=0,downAt=0,tapConsumed=false;
+  let swipe=null;                    // {x0,y0,axis,dx,dy} — свайп по неувеличенному фото
+  const SWIPE_X=60,SWIPE_DOWN=100;
 
   function build(){
     viewer=document.createElement("div");
@@ -175,7 +179,9 @@
         return;
       }
     }
+    if(ptrs.size===1&&zm.s<=1.01)swipe={x0:e.clientX,y0:e.clientY,axis:null,dx:0,dy:0};
     if(ptrs.size===2){
+      if(swipe){swipe=null;resetSwipeLook(false);}
       const [a,b]=[...ptrs.values()];
       pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,mid:centreOffset((a.x+b.x)/2,(a.y+b.y)/2)};
     }
@@ -198,14 +204,44 @@
       e.preventDefault();
       return;
     }
+    if(ptrs.size===1&&swipe&&zm.s<=1.01){
+      swipe.dx=e.clientX-swipe.x0;swipe.dy=e.clientY-swipe.y0;
+      if(!swipe.axis&&Math.hypot(swipe.dx,swipe.dy)>10)swipe.axis=Math.abs(swipe.dx)>=Math.abs(swipe.dy)?"x":"y";
+      const img=imgEl();
+      if(swipe.axis==="x"){img.style.transform=`translateX(${swipe.dx}px)`;}
+      else if(swipe.axis==="y"){
+        const d=Math.max(0,swipe.dy),k=Math.min(1,d/400);
+        img.style.transform=`translateY(${d}px) scale(${1-k*0.25})`;
+        viewer.style.backgroundColor=`rgba(4,8,16,${(0.94*(1-k)).toFixed(3)})`;
+      }
+      if(swipe.axis){suppressUntil=Date.now()+350;e.preventDefault();}
+      return;
+    }
     if(ptrs.size===1&&zm.s>1.01){
       zm.tx+=dx;zm.ty+=dy;clampPan();paintZoom();
       suppressUntil=Date.now()+350;
       e.preventDefault();
     }
   }
+  function resetSwipeLook(animate){
+    const img=imgEl();
+    if(animate){img.classList.add("pvSnap");setTimeout(()=>img.classList.remove("pvSnap"),200);}
+    img.style.transform=zm.s>1.01?`translate(${zm.tx}px,${zm.ty}px) scale(${zm.s})`:"";
+    viewer.style.backgroundColor="";
+  }
+  function finishSwipe(){
+    const sw=swipe;swipe=null;
+    if(!sw||!sw.axis||!state)return;
+    suppressUntil=Date.now()+350;
+    const n=state.ids().length;
+    if(sw.axis==="x"&&sw.dx<=-SWIPE_X&&state.index<n-1){resetSwipeLook(false);show(state.index+1);return;}
+    if(sw.axis==="x"&&sw.dx>=SWIPE_X&&state.index>0){resetSwipeLook(false);show(state.index-1);return;}
+    if(sw.axis==="y"&&sw.dy>=SWIPE_DOWN){resetSwipeLook(false);close();return;}
+    resetSwipeLook(true);
+  }
   function onUp(e){
     ptrs.delete(e.pointerId);
+    if(ptrs.size===0&&swipe)finishSwipe();
     if(ptrs.size<2)pinch=null;
     if(moved||ptrs.size>0)suppressUntil=Date.now()+350;
     // Двойным касанием считается только короткое касание без движения: после щипка или
@@ -230,7 +266,7 @@
     viewer.querySelector('[data-pv="next"]').setAttribute("aria-label",TX("Следующее фото"));
     viewer.querySelector('[data-pv="close"]').textContent=TX("Закрыть");
   }
-  function resetDel(){const d=viewer.querySelector('[data-pv="del"]');d.textContent=TX("Удалить");d.classList.remove("armed");}
+  function resetDel(){const d=viewer.querySelector('[data-pv="del"]');d.textContent=state?.deleteLabel||TX("Удалить");d.classList.remove("armed");}
   async function show(i){
     const ids=state.ids();
     if(!ids.length){close();return;}
@@ -248,17 +284,20 @@
     else{img.removeAttribute("src");img.hidden=true;miss.hidden=false;miss.textContent=TX("Этого фото нет на устройстве (состояние перенесено с другого телефона)");}
   }
   async function askDelete(btn){
-    if(!btn.classList.contains("armed")){btn.classList.add("armed");btn.textContent=TX("Точно удалить?");return;}
     const id=state.ids()[state.index];
-    await state.onDelete(id);
-    await remove(id);
+    if(state.keepBlob){await state.onDelete(id);}   // убрать из отчёта: без подтверждения, снимок остаётся у тега
+    else{
+      if(!btn.classList.contains("armed")){btn.classList.add("armed");btn.textContent=TX("Точно удалить?");return;}
+      await state.onDelete(id);
+      await remove(id);
+    }
     if(!state.ids().length){close();return;}
     show(Math.min(state.index,state.ids().length-1));
   }
   function open(opts){
     if(!viewer)build();
     labels();
-    state={title:opts.title||"",ids:opts.ids,onDelete:opts.onDelete,index:0};
+    state={title:opts.title||"",ids:opts.ids,onDelete:opts.onDelete,index:0,deleteLabel:opts.deleteLabel||"",keepBlob:!!opts.keepBlob};
     viewer.hidden=false;document.body.classList.add("photo-viewing");
     show(opts.index||0);
     viewer.querySelector('[data-pv="close"]').focus({preventScroll:true});
@@ -268,10 +307,11 @@
     viewer.hidden=true;document.body.classList.remove("photo-viewing");
     if(currentUrl){URL.revokeObjectURL(currentUrl);currentUrl="";}
     imgEl().removeAttribute("src");
+    swipe=null;viewer.style.backgroundColor="";
     resetZoom();
     ptrs.clear();pinch=null;
     state=null;
   }
 
-  window.TagPhotos={MAX:MAX_PER_TAG,addFiles,get,remove,cleanup,open,close};
+  window.TagPhotos={MAX:MAX_PER_TAG,addFiles,get,remove,cleanup,open,close,isOpen:()=>!!(viewer&&!viewer.hidden)};
 })();

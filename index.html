@@ -362,18 +362,25 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-pressed="false" class="rpTile todo" data-report-kind="todo" type="button"><span class="rpNum">0</span><span class="rpCap">Невыполненные</span></button>
 <button aria-pressed="false" class="rpTile all" data-report-kind="all" type="button"><span class="rpNum">0</span><span class="rpCap">Всё</span></button>
 </div>
-<div class="rpSwitchRow"><label class="rpSwitch" for="reportWithTasks"><span class="rpSwitchText">+ задания</span><input id="reportWithTasks" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span></label><label class="rpSwitch" for="reportWithPhotos"><span class="rpSwitchText">+ фото</span><input id="reportWithPhotos" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span><span aria-live="polite" class="rpCount" id="reportPhotoNote"></span></label></div>
 <div class="rpGroup">
 <div class="rpLabel"><span>Исполнители</span></div>
 <div class="rpPeople" id="reportPeople"></div>
+<div class="rpTools"><button class="rpAdd" id="reportAddPeople" type="button">+ Из контактов</button><label class="rpSwitch" for="reportWithTasks"><span class="rpSwitchText">+ задания</span><input id="reportWithTasks" type="checkbox"/><span aria-hidden="true" class="rpTrack"></span></label></div>
 </div>
 <div class="rpEdit">
 <textarea aria-label="Текст отчёта. Двойное касание — правка" class="rpText" id="reportText" readonly="" spellcheck="false"></textarea>
 <div class="rpEditState" id="reportEditState"></div>
 </div>
-<div class="rpGroup rpPhotos" hidden="" id="reportPhotos"></div>
 </div>
-<div class="rpFoot"><button class="rpSend" id="reportSend" type="button">Отправить</button></div>
+<div class="rpFoot"><button class="rpSend" id="reportSend" type="button">Отправить</button><button aria-label="Фотоотчёт" class="rpPhotoBtn" hidden="" id="reportPhotoBtn" type="button"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><rect height="18" rx="2" width="15" x="4.5" y="3"></rect><circle cx="9.4" cy="8.8" r="1.7"></circle><path d="M4.9 17.4l4.4-4.4 3.3 3.2 2.1-2.1 4.6 4.6"></path></svg><span>Фото</span><b>0</b></button></div>
+<div class="rpPhSheet" hidden="" id="reportPhotoSheet">
+<div class="rpPhBackdrop" data-sheet-close=""></div>
+<div aria-labelledby="reportPhotoTitle" aria-modal="true" class="rpPhPanel" id="reportPhotoPanel" role="dialog">
+<div class="rpPhHead" id="reportPhotoHead"><span aria-hidden="true" class="rpPhGrip"></span><h3 id="reportPhotoTitle">Фотоотчёт</h3><button class="rpLink" hidden="" id="reportPhotoReset" type="button"></button><button aria-label="Закрыть" class="closex" id="reportPhotoClose" type="button">×</button></div>
+<div class="rpPhBody" id="reportPhotoList"></div>
+<div class="rpPhFoot"><button class="rpSend" id="reportPhotoSend" type="button">Отправить фото</button></div>
+</div>
+</div>
 </div>
 </div>
 <div class="overlay fmtOverlay" id="fmtOverlay">
