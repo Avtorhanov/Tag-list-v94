@@ -569,7 +569,7 @@ function buildRow(item){
 
 const TASK_ICON_EMPTY='<svg class="tiEmpty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3" width="12" height="17" rx="2"/><path d="M6.5 7.5h6M6.5 11h6M6.5 14.5h3"/><path d="M15.4 14l4.7-4.7 2 2-4.7 4.7-2.7.7z"/></svg>';
 const TASK_ICON_SET='<svg class="tiSet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><path d="M8 3.5V2.5h8v1"/><path d="M8 9h8M8 12.5h8"/><path d="M8.2 16.6l1.9 1.8 3.8-3.9"/></svg>';
-const PHOTO_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.2"/><circle cx="9" cy="10" r="1.7"/><path d="M4 17.5l5-5 4 4 2.2-2.2L20 19"/></svg>';
+const PHOTO_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="18" height="17" rx="2.4"/><circle cx="9" cy="9.5" r="1.8"/><path d="M4 17.5l4.9-4.9 3.8 3.7 2.3-2.3L20 18.5"/></svg>';
 const itemPhotos=item=>Array.isArray(item?.photos)?item.photos:[];
 
 function paintTaskToggle(toggle,item){
@@ -1411,7 +1411,7 @@ async function sharePageReport(pageId){
 }
 
 // ---------------------------------------------------------------- v102: окно «Отчёт»
-// Страницы (можно несколько) · Выполненные / Невыполненные / Всё · «С заданиями» ·
+// Страницы (можно несколько) · Выполненные / Невыполненные / Всё · «+ задания» · «+ фото» ·
 // исполнители · текст, который можно поправить перед отправкой.
 // Ручные правки не пропадают при смене выбора: отчёт собирается из строк с ключами
 // (тег, заголовок раздела, установка), правки хранятся как «изменено / удалено /
@@ -1433,6 +1433,7 @@ function loadReportState(){
     pages:reportStrings(st.pages),
     kind:["done","todo","all"].includes(st.kind)?st.kind:"done",
     withTasks:st.withTasks!==false,
+    withPhotos:st.withPhotos===true,
     people,
     on:reportStrings(st.on).filter(n=>people.includes(n))
   };
@@ -1451,7 +1452,7 @@ const reportHasOps=()=>Object.keys(reportOps.rep).length+Object.keys(reportOps.d
 function buildReportLines(){
   const chosen=reportChosenPages(),multi=chosen.length>1,L=[];
   if(!chosen.length)return L;
-  const push=(t,k,num=false)=>L.push({t,k,num});
+  const push=(t,k,num=false,item=null)=>L.push({t,k,num,item});
   if(!multi)push(pageTitleForReport(chosen[0]),"p:"+chosen[0].id);
   const who=reportState.people.filter(n=>reportState.on.includes(n));
   if(who.length)push(TX("Исполнители: {0}",who.join(", ")),"who");
@@ -1460,8 +1461,7 @@ function buildReportLines(){
     const done=items.filter(x=>x.done),todo=items.filter(x=>!x.done);
     if(L.length)push("","b:"+pid+":0");
     if(multi)push(pageTitleForReport(page),"p:"+pid);
-    const pct=items.length?Math.round(done.length/items.length*100):0;
-    push(TX("Выполнено {0} из {1} ({2} %)",done.length,items.length,pct),"stat:"+pid);
+    push(TX("Выполнено {0} из {1}",done.length,items.length),"stat:"+pid);
     const section=(head,list,kind)=>{
       push("","b:"+pid+":"+kind);
       push(`${head} (${list.length})`,"sec:"+pid+":"+kind);
@@ -1473,7 +1473,7 @@ function buildReportLines(){
         if(groups.size>1)push(`▸ ${unit}`,"u:"+pid+":"+kind+":"+unit);
         group.forEach(x=>{
           const tag=cleanReportField(x.tag)||TX("Без тега"),task=cleanReportField(x.task);
-          push(`${++n}. ${tag}${reportState.withTasks&&task?` — ${task}`:""}`,"t:"+pid+":"+x.id+":"+tag,true);
+          push(`${++n}. ${tag}${reportState.withTasks&&task?` — ${task}`:""}`,"t:"+pid+":"+x.id+":"+tag,true,x);
         });
       });
     };
@@ -1554,6 +1554,7 @@ function regenerateReport(){
   const text=applyReportOps(reportAutoLines),ta=$("reportText");
   if(ta.value!==text)ta.value=text;
   paintReportEditState();
+  paintReportPhotoNote();
 }
 function paintReportEditState(){
   const edited=reportHasOps(),ta=$("reportText");
@@ -1632,6 +1633,7 @@ function renderReport(){
   renderReportPages();
   renderReportTiles();
   $("reportWithTasks").checked=!!reportState.withTasks;
+  $("reportWithPhotos").checked=!!reportState.withPhotos;
   renderReportPeople();
   regenerateReport();
 }
@@ -1854,6 +1856,33 @@ window.__tagListContactPicked=name=>{
   else if($("reportOverlay")?.classList.contains("show"))renderReport();
 };
 
+// v113: фото тегов отчёта — только если включён тумблер «+ фото». Не больше REPORT_MAX_PHOTOS за раз:
+// мессенджеры и мост APK не принимают сотни мегабайт сразу.
+const REPORT_MAX_PHOTOS=20;
+// Фото строк, которые реально попадают в текст (строки, удалённые вручную, пропускаются).
+function reportPhotoIds(){
+  const ids=[];
+  reportAutoLines.forEach(l=>{
+    if(!l.item||reportOps.del[l.k])return;
+    itemPhotos(l.item).forEach(id=>ids.push(id));
+  });
+  return ids;
+}
+function paintReportPhotoNote(){
+  const note=$("reportPhotoNote");
+  if(!note)return;
+  const n=reportState?.withPhotos?reportPhotoIds().length:0;
+  note.textContent=!reportState?.withPhotos?"":n?(n>REPORT_MAX_PHOTOS?TX("{0} фото, отправятся первые {1}",n,REPORT_MAX_PHOTOS):TX("{0} фото",n)):TX("фото нет");
+}
+async function reportPhotoFiles(ids){
+  const files=[];
+  if(!window.TagPhotos||!ids.length)return files;
+  for(let i=0;i<ids.length;i++){
+    const blob=await window.TagPhotos.get(ids[i]);
+    if(blob)files.push(new File([blob],`tag-photo-${String(files.length+1).padStart(2,"0")}.jpg`,{type:"image/jpeg"}));
+  }
+  return files;
+}
 async function sendReport(){
   const ta=$("reportText");
   const text=ta.value.replace(/\s+$/,"");
@@ -1861,7 +1890,19 @@ async function sendReport(){
   const chosen=reportChosenPages();
   const title=chosen.length===1?pageTitleForReport(chosen[0]):TX("{0} — отчёт",cleanReportField(docTitle)||"Tag list");
   if(document.activeElement===ta)ta.blur();
+  const wantPhotos=!!reportState.withPhotos;
+  const files=wantPhotos?await reportPhotoFiles(reportPhotoIds().slice(0,REPORT_MAX_PHOTOS)):[];
   try{
+    if(files.length&&typeof navigator.share==="function"){
+      try{
+        await navigator.share({title,text,files});
+        closeReport();showToast(TX("Отчёт с фото передан: {0}",files.length));return;
+      }catch(err){
+        if(err?.name==="AbortError")return;
+        // Этот способ не принял файлы — отправим хотя бы текст ниже.
+      }
+    }
+    if(wantPhotos&&files.length)showToast(TX("Фото не передаются этим способом — отправлен только текст"));
     if(navigator.share){await navigator.share({title,text});closeReport();showToast(TX("Отчёт передан"));return;}
     if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);closeReport();showToast(TX("Текст отчёта скопирован"));return;}
     throw new Error("share-unavailable");
@@ -3292,7 +3333,7 @@ ${hLi(hS("eye"),"<b>Сухой список</b> — перечень на вес
 ${hLi(hT("Aa"),"<b>Шрифт</b> — по кругу. В списке только шрифты, которые есть на этом телефоне.")}
 ${hLi(hS("send"),"<b>Сохранить / отправить</b> — отчёт текстом в мессенджер или файл состояния .json.")}
 ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больше.")}
-${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без, исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
+${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), с фото тегов или без («+ фото»: в мессенджер уйдут миниатюры, по нажатию — полный размер), исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
 </ul>
@@ -3428,7 +3469,7 @@ ${hLi(hS("eye"),"<b>Plain list</b> — full-screen list: all, done, pending, tas
 ${hLi(hT("Aa"),"<b>Font</b> — cycles through. Only fonts available on this phone are listed.")}
 ${hLi(hS("send"),"<b>Save / send</b> — text report to a messenger or a .json state file.")}
 ${hLi(hT("A±"),"<b>Text size</b> — smaller / larger.")}
-${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks, crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
+${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), with tag photos or without (“+ photos”: thumbnails go to the messenger, tap for full size), crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
 ${hLi(hS("search"),"<b>Search</b> — by tag or unit number.")}
 ${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the browser allows it.")}
 </ul>
@@ -3896,6 +3937,7 @@ $("reportAllPages").onclick=()=>{
 };
 document.querySelectorAll(".rpTile").forEach(t=>t.addEventListener("click",()=>{reportState.kind=t.dataset.reportKind;reportChanged();}));
 $("reportWithTasks").addEventListener("change",e=>{reportState.withTasks=e.target.checked;reportChanged();});
+$("reportWithPhotos").addEventListener("change",e=>{reportState.withPhotos=e.target.checked;reportChanged();});
 $("reportPeople").addEventListener("click",e=>{
   if(e.target.closest("#reportAddPeople")){openReportPick();return;}
   const b=e.target.closest(".rpPerson");if(!b)return;
@@ -4847,6 +4889,13 @@ if(window.AndroidApp){
   const nativeShare=async(payload={})=>{
     const files=Array.isArray(payload.files)?payload.files:[];
     const title=String(payload.title||""),text=[payload.text,payload.url].filter(Boolean).join("\n");
+    // v113: несколько фото — одним «Поделиться» (мост shareFiles, JSON со списком файлов).
+    if(files.length>1&&typeof bridge.shareFiles==="function"){
+      const list=[];
+      for(const f of files)list.push({name:String(f.name||"file"),mime:String(f.type||"application/octet-stream"),data:await blobToBase64(f)});
+      if(!bridge.shareFiles(title,text,JSON.stringify(list)))throw new DOMException("share failed","AbortError");
+      return;
+    }
     if(files.length){
       const f=files[0];
       const b64=await blobToBase64(f);

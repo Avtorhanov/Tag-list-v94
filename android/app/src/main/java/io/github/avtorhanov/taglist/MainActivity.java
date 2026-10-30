@@ -38,6 +38,7 @@ import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
@@ -571,6 +572,44 @@ public class MainActivity extends Activity {
             try {
                 return shareBytes(name, mime, Base64.decode(base64 == null ? "" : base64, Base64.DEFAULT), title, text);
             } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
+
+        // v113: несколько фото отчёта одним «Поделиться». json — массив {name, mime, data (base64)}.
+        // Фото кладутся в cache/share и отдаются через ShareProvider, как и одиночный файл.
+        @JavascriptInterface
+        public boolean shareFiles(String title, String text, String json) {
+            try {
+                JSONArray list = new JSONArray(json == null ? "[]" : json);
+                File dir = new File(getCacheDir(), "share");
+                if (!dir.exists() && !dir.mkdirs()) return false;
+                ArrayList<Uri> uris = new ArrayList<>();
+                String mime = null;
+                for (int i = 0; i < list.length() && i < 30; i++) {
+                    JSONObject o = list.getJSONObject(i);
+                    String fileName = safeName(o.optString("name", "file"), "file");
+                    byte[] bytes = Base64.decode(o.optString("data", ""), Base64.DEFAULT);
+                    try (FileOutputStream out = new FileOutputStream(new File(dir, fileName))) {
+                        out.write(bytes);
+                    }
+                    uris.add(ShareProvider.uriFor(getPackageName() + ".share", "share", fileName));
+                    String m = o.optString("mime", "application/octet-stream");
+                    mime = (mime == null || mime.equals(m)) ? m : "*/*";
+                }
+                if (uris.isEmpty()) return false;
+                Intent send = new Intent(uris.size() > 1 ? Intent.ACTION_SEND_MULTIPLE : Intent.ACTION_SEND);
+                send.setType(mime == null ? "*/*" : mime);
+                if (uris.size() > 1) send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                else send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                ClipData clip = ClipData.newRawUri("photos", uris.get(0));
+                for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+                send.setClipData(clip);
+                if (title != null && !title.isEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, title);
+                if (text != null && !text.isEmpty()) send.putExtra(Intent.EXTRA_TEXT, text);
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                return startChooser(send, title);
+            } catch (org.json.JSONException | IOException | IllegalArgumentException e) {
                 return false;
             }
         }
