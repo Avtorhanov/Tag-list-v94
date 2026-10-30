@@ -42,16 +42,18 @@ function pass(api, psm, angle) {
   return out;
 }
 
-function recognize({ image, tagPass }) {
+// v119: block — выровненный участок (бирка): без поиска наклона, режим «один блок» (6) вместо автоматической
+// разметки страницы (3): на фото бирки разметка 3 принимает сцену за картинку и возвращает пустой текст.
+function recognize({ image, tagPass, block }) {
   T.FS.writeFile('/input', new Uint8Array(image));
   // Как на стенде: разрешение и пробелы задаются до поиска наклона — от них зависит разметка строк.
   for (const api of [apiText, apiTag]) {
     api.SetVariable('user_defined_dpi', '300');
     api.SetVariable('preserve_interword_spaces', '1');
   }
-  const angle = findAngle(apiText);
-  const main = pass(apiText, 3, angle);
-  const tags = tagPass ? pass(apiTag, 11, angle) : null;
+  const angle = block ? 0 : findAngle(apiText);
+  const main = pass(apiText, block ? 6 : 3, angle);
+  const tags = tagPass ? pass(apiTag, block ? 6 : 11, angle) : null;
   return { ...main, tags, angleDeg: angle * 180 / Math.PI };
 }
 

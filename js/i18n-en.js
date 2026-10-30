@@ -926,7 +926,7 @@ I.add({
 "Этого фото нет на устройстве (состояние перенесено с другого телефона)":"This photo is not on this device (the state was moved from another phone)",
 "Не больше {0} фото за раз":"No more than {0} photos at a time",
 "Не больше {0} фото за раз — добавлены первые {1}":"No more than {0} photos at a time — the first {1} were added",
-"Касание фото — обрезка, кружок — выбрать. Затем «Распознать».":"Tap a photo to crop it, tap the circle to select. Then “Recognize”.",
+"Касание фото — обрезка: выделите только строки текста, без QR-кода и рамки бирки. Кружок — выбрать. Затем «Распознать».":"Tap a photo to crop it: select only the lines of text, without the QR code and the plate frame. The circle selects. Then “Recognize”.",
 "ошибка":"error",
 "тегов: {0}":"tags: {0}",
 "читаю…":"reading…",
@@ -947,7 +947,9 @@ I.add({
 "Распознавание остановлено.":"Recognition stopped.",
 "Распознать · {0}":"Recognize · {0}",
 "Стоп":"Stop",
-"фото {0}":"photo {0}"
+"фото {0}":"photo {0}",
+"Выравниваю: угол {0}°…":"Leveling: angle {0}°…",
+"выровнено на {0}°":"leveled by {0}°"
 });
 
 I._init();
