@@ -949,7 +949,14 @@ I.add({
 "Стоп":"Stop",
 "фото {0}":"photo {0}",
 "Выравниваю: угол {0}°…":"Leveling: angle {0}°…",
-"выровнено на {0}°":"leveled by {0}°"
+"выровнено на {0}°":"leveled by {0}°",
+"Ползунок — выровнять строки по жёлтым линиям, ⟲ ⟳ — поворот на 90°, «Авто» — выровнять само.":"Slider — level the lines along the yellow guides, ⟲ ⟳ — turn by 90°, “Auto” — level automatically.",
+"Выровнено на {0}°. Если текст вверх ногами — поверните на 180°.":"Leveled by {0}°. If the text is upside down, turn it by 180°.",
+"Строки уже ровные":"The lines are already level",
+"Авто":"Auto",
+"Наклон":"Tilt",
+"Повернуть влево на 90°":"Turn left by 90°",
+"Повернуть вправо на 90°":"Turn right by 90°"
 });
 
 I._init();

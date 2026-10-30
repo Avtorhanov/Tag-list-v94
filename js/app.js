@@ -2814,7 +2814,7 @@ function loadLocalOcr(){
 
 function resetOcrPhoto(){
   setReviewing(false);
-  if(ocrPhoto?.item)try{ocrPhoto.source.close();}catch(_){}
+  if(ocrPhoto?.item)try{ocrPhoto.img&&ocrPhoto.img.close();}catch(_){}
   ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();lastOcrText="";
   ++ocrRunToken;clearOcrBatch();updateOcrPhotoUi();
 }
@@ -2825,7 +2825,7 @@ function updateOcrPhotoUi(){
   // v118: фото выбираются и обрезаются в сетке миниатюр; холст — только для обрезки одного фото.
   canvas.hidden=!has;$("ocrPickBtn").hidden=true;$("ocrCropBtn").hidden=true;
   const grid=$("ocrGrid");if(grid)grid.hidden=has;
-  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;
+  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;syncLevelUi();
   const sel=batchSelected().length,run=$("ocrRunBtn");
   run.disabled=has||!sel||ocrBatchRunning||ocrBatchLoading>0;
   run.textContent=sel>1?TX("Распознать · {0}",sel):TX("Распознать");
@@ -2833,7 +2833,7 @@ function updateOcrPhotoUi(){
   box.classList.toggle("cropping",ocrCropMode);
   box.classList.toggle("compact",!ocrCropMode&&!!$("importList").children.length);
   const hint=$("ocrCropHint");
-  if(ocrCropMode){hint.hidden=false;hint.textContent=TX("Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.");}
+  if(ocrCropMode){hint.hidden=false;hint.textContent=TX("Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.")+(ocrPhoto?.geo?" "+TX("Ползунок — выровнять строки по жёлтым линиям, ⟲ ⟳ — поворот на 90°, «Авто» — выровнять само."):"");}
   else hint.hidden=true;
 }
 function drawOcrPhoto(){
@@ -2841,9 +2841,15 @@ function drawOcrPhoto(){
   const src=ocrPhoto.source,c=$("ocrCanvas"),s=Math.min(1,1400/Math.max(src.width,src.height));
   const W=Math.round(src.width*s),H=Math.round(src.height*s);
   if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
-  const g=c.getContext("2d");g.drawImage(src,0,0,W,H);
-  const r=ocrCropMode?ocrCropEdit:ocrPhoto.crop;if(!r)return;
+  const g=c.getContext("2d");
+  if(ocrPhoto.geo)drawRotated(g,ocrPhoto.prev||ocrPhoto.img,ocrPhoto.geo,s,0,0,"#2a2f38");else g.drawImage(src,0,0,W,H);
   const k=c.width/Math.max(1,c.getBoundingClientRect().width||c.width);
+  // v120: при выравнивании — горизонтальные линии по всему фото, по ним удобно ставить строки текста.
+  if(ocrCropMode&&performance.now()<levelGuidesUntil){
+    g.save();g.strokeStyle="rgba(255,214,10,.75)";g.lineWidth=1.2*k;
+    const step=Math.max(18*k,H/14);for(let y=step/2;y<H;y+=step){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}g.restore();
+  }
+  const r=ocrCropMode?ocrCropEdit:ocrPhoto.crop;if(!r)return;
   const x=r.x*s,y=r.y*s,w=r.w*s,h=r.h*s;
   g.save();g.fillStyle=ocrCropMode?"rgba(10,14,22,.62)":"rgba(10,14,22,.5)";g.beginPath();g.rect(0,0,W,H);g.rect(x,y,w,h);g.fill("evenodd");
   if(!ocrCropMode){g.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#1d5fc4";g.lineWidth=Math.max(2,2*k);g.strokeRect(x,y,w,h);g.restore();return;}
@@ -2859,7 +2865,7 @@ function drawOcrPhoto(){
 }
 // Обрезка как в галерее телефона: рамка сразу по всему фото, углы и стороны тянутся,
 // рамка двигается пальцем, двумя пальцами раздвигается; каждое касание продолжает с текущей рамки.
-function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();requestAnimationFrame(drawOcrPhoto);}
+function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();syncLevelUi();requestAnimationFrame(drawOcrPhoto);}
 function applyOcrCrop(){
   if(!ocrCropMode)return;const src=ocrPhoto.source,r=ocrCropEdit;
   const full=r.x<=1&&r.y<=1&&r.w>=src.width-2&&r.h>=src.height-2;
@@ -2919,7 +2925,7 @@ function wireOcrCrop(){
     if(!ocrCropPtrs.has(e.pointerId))return;ocrCropPtrs.delete(e.pointerId);
     // После щипка оставшийся палец ничего не двигает, пока его не поднимут.
     if(ocrCropGesture&&ocrCropGesture.type==="pinch"&&ocrCropPtrs.size===1)ocrCropGesture=null;
-    if(!ocrCropPtrs.size)ocrCropGesture=null;
+    if(!ocrCropPtrs.size){if(ocrCropGesture)rememberLevelBase();ocrCropGesture=null;}
   };
   box.addEventListener("pointerup",end);box.addEventListener("pointercancel",end);
   window.addEventListener("resize",()=>{if(ocrCropMode)drawOcrPhoto();},{passive:true});
@@ -3015,25 +3021,106 @@ function renderOcrBatch(){
   if(cnt){cnt.hidden=!n;cnt.textContent=TX("Фото {0} из {1} · выбрано {2}",n,OCR_BATCH_MAX,sel);}
   updateOcrPhotoUi();
 }
+// v120: ручное выравнивание. Пространство «повёрнутого фото»: исходник повёрнут по часовой на rot°, холст расширен
+// (углы не обрезаются) и при необходимости уменьшен до ~12 Мп. Рамка обрезки хранится в этом пространстве;
+// при rot=0 оно совпадает с исходным фото (прежние рамки не меняются).
+const ROT_MAX_PIXELS=12e6;
+function rotGeo(W,H,rot){
+  const rad=rot*Math.PI/180,c=Math.abs(Math.cos(rad)),sn=Math.abs(Math.sin(rad));
+  const Wr=rot?W*c+H*sn:W,Hr=rot?W*sn+H*c:H,k=Math.min(1,Math.sqrt(ROT_MAX_PIXELS/(Wr*Hr)));
+  return {W,H,rot,rad,Wr,Hr,k,width:Math.max(1,Math.round(Wr*k)),height:Math.max(1,Math.round(Hr*k))};
+}
+function rotFwd(geo,x,y){const dx=x-geo.W/2,dy=y-geo.H/2,c=Math.cos(geo.rad),sn=Math.sin(geo.rad);return [(dx*c-dy*sn+geo.Wr/2)*geo.k,(dx*sn+dy*c+geo.Hr/2)*geo.k];}
+function rotInv(geo,X,Y){const rx=X/geo.k-geo.Wr/2,ry=Y/geo.k-geo.Hr/2,c=Math.cos(geo.rad),sn=Math.sin(geo.rad);return [rx*c+ry*sn+geo.W/2,-rx*sn+ry*c+geo.H/2];}
+// Рисует фото (img может быть уменьшенной копией) так, что точка (X,Y) повёрнутого пространства попадает в ((X-offX)*scale,(Y-offY)*scale).
+function drawRotated(g,img,geo,scale,offX,offY,bg){
+  if(bg){g.save();g.setTransform(1,0,0,1,0,0);g.fillStyle=bg;g.fillRect(0,0,g.canvas.width,g.canvas.height);g.restore();}
+  g.save();g.scale(geo.k*scale,geo.k*scale);g.translate(-offX/geo.k+geo.Wr/2,-offY/geo.k+geo.Hr/2);g.rotate(geo.rad);
+  g.imageSmoothingQuality="high";g.drawImage(img,-geo.W/2,-geo.H/2,geo.W,geo.H);g.restore();
+}
+// Участок повёрнутого фото в исходном разрешении — для распознавания.
+function rotatedCrop(img,geo,r){
+  const c=document.createElement("canvas");c.width=Math.max(1,Math.round(r.w/geo.k));c.height=Math.max(1,Math.round(r.h/geo.k));
+  drawRotated(c.getContext("2d"),img,geo,1/geo.k,r.x,r.y,"#808080");return c;
+}
+function rotatedThumb(img,geo,crop){
+  const r=crop||{x:0,y:0,w:geo.width,h:geo.height},side=Math.min(r.w,r.h);
+  const c=document.createElement("canvas");c.width=c.height=240;
+  drawRotated(c.getContext("2d"),img,geo,240/side,r.x+(r.w-side)/2,r.y+(r.h-side)/2,"#fff");
+  const url=c.toDataURL("image/jpeg",.8);c.width=c.height=0;return url;
+}
+const norm180=a=>{a=((a%360)+360)%360;return a>180?a-360:a;};
+// Поворот в окне обрезки. Рамка пересчитывается от «опорной» (последней выставленной пальцем), чтобы при движении
+// ползунка она не расползалась: углы опорной рамки → исходное фото → новый поворот → описанный прямоугольник.
+function setCropRot(rot,q){
+  const p=ocrPhoto;if(!p||!p.geo||!ocrCropMode)return;
+  // q — сколько четвертей поворота задано кнопками ⟲ ⟳; ползунок двигает остаток в пределах ±45°.
+  p.q=typeof q==="number"?q:Math.round(rot/90);
+  rot=Math.round(norm180(rot)*2)/2;
+  const base=p.levelBase,g0=rotGeo(p.geo.W,p.geo.H,base.rot),g1=rotGeo(p.geo.W,p.geo.H,rot);
+  let r;
+  if(!base.crop)r={x:0,y:0,w:g1.width,h:g1.height};
+  else{
+    const b=base.crop,pts=[[b.x,b.y],[b.x+b.w,b.y],[b.x,b.y+b.h],[b.x+b.w,b.y+b.h]].map(([X,Y])=>{const [x,y]=rotInv(g0,X,Y);return rotFwd(g1,x,y);});
+    const xs=pts.map(q=>q[0]),ys=pts.map(q=>q[1]);
+    const x0=clampN(Math.min(...xs),0,g1.width-12),y0=clampN(Math.min(...ys),0,g1.height-12);
+    r={x:x0,y:y0,w:clampN(Math.max(...xs),x0+12,g1.width)-x0,h:clampN(Math.max(...ys),y0+12,g1.height)-y0};
+  }
+  p.rot=rot;p.geo=g1;p.source=g1;ocrCropEdit=r;
+  syncLevelUi();drawOcrPhoto();
+}
+function cropRegionFull(r){return !r||(r.x<=1&&r.y<=1&&r.w>=ocrPhoto.source.width-2&&r.h>=ocrPhoto.source.height-2);}
+function rememberLevelBase(){const p=ocrPhoto;if(!p||!p.geo||!ocrCropEdit)return;p.levelBase={rot:p.rot,crop:cropRegionFull(ocrCropEdit)?null:{...ocrCropEdit}};}
+function syncLevelUi(){
+  const p=ocrPhoto,row=$("ocrLevelRow");if(!row)return;
+  row.hidden=!(p&&p.geo&&ocrCropMode);if(row.hidden)return;
+  if(typeof p.q!=="number")p.q=Math.round(p.rot/90);
+  const fine=norm180(p.rot-p.q*90);
+  $("ocrLevel").value=String(fine);
+  $("ocrLevelVal").textContent=(p.rot>0?"+":p.rot<0?"−":"")+String(Math.abs(p.rot)).replace(".",window.I18N?.dec||",")+"°";
+}
+let levelGuidesUntil=0;
+function showLevelGuides(){levelGuidesUntil=performance.now()+1500;setTimeout(()=>{if(ocrCropMode)drawOcrPhoto();},1550);}
+async function autoCropLevel(){
+  const p=ocrPhoto;if(!p||!p.geo||!ocrCropMode)return;
+  const btn=$("ocrLevelAuto");btn.disabled=true;
+  try{
+    await loadLocalOcr();
+    const r=ocrCropEdit||ocrFullRect(),s=Math.min(1,900/Math.max(r.w,r.h)),c=document.createElement("canvas");
+    c.width=Math.max(1,Math.round(r.w*s));c.height=Math.max(1,Math.round(r.h*s));
+    drawRotated(c.getContext("2d"),p.prev||p.img,p.geo,s,r.x,r.y,"#808080");
+    const phi=window.LocalOCR.estimateSkew(c,{x:0,y:0,w:c.width,h:c.height});c.width=c.height=0;
+    rememberLevelBase();setCropRot(p.rot+phi);showLevelGuides();
+    showToast(phi?TX("Выровнено на {0}°. Если текст вверх ногами — поверните на 180°.",(phi<0?"−":"+")+String(Math.abs(phi)).replace(".",window.I18N?.dec||",")):TX("Строки уже ровные"));
+  }catch(e){showToast(TX.msg(e.message||e));}
+  finally{btn.disabled=false;}
+}
 function batchItem(id){return ocrBatch.find(x=>String(x.id)===String(id));}
 async function openBatchCrop(it){
   if(ocrBatchRunning||ocrPhoto)return;
   try{
-    const bmp=await decodeImage(it.blob);
-    ocrPhoto={name:it.name,source:bmp,crop:it.crop?{...it.crop}:null,item:it};
-    renderOcrBatch();startOcrCrop();
+    const bmp=await decodeImage(it.blob),rot=it.rot||0,geo=rotGeo(bmp.width,bmp.height,rot);
+    // Уменьшенная копия — для быстрого перерисовывания при движении ползунка.
+    const ps=Math.min(1,1600/Math.max(bmp.width,bmp.height)),prev=document.createElement("canvas");
+    prev.width=Math.max(1,Math.round(bmp.width*ps));prev.height=Math.max(1,Math.round(bmp.height*ps));
+    prev.getContext("2d").drawImage(bmp,0,0,prev.width,prev.height);
+    ocrPhoto={name:it.name,source:geo,geo,img:bmp,prev,rot,crop:it.crop?{...it.crop}:null,item:it};
+    ocrPhoto.levelBase={rot,crop:it.crop?{...it.crop}:null};
+    renderOcrBatch();startOcrCrop();syncLevelUi();
   }catch(e){showToast(TX("Не удалось открыть фото: {0}",TX.msg(e.message||e)));}
 }
 // Обрезка закончена (Готово или Отмена) — назад к сетке.
 function finishBatchCrop(applied){
   const p=ocrPhoto;if(!p||!p.item)return;
   if(applied){
-    const before=JSON.stringify(p.item.crop||null);
-    p.item.crop=p.crop?{...p.crop}:null;p.item.thumb=batchThumb(p.source,p.item.crop);
-    if(before!==JSON.stringify(p.item.crop||null)){p.item.text=null;p.item.found=null;p.item.err="";}
+    const before=JSON.stringify([p.item.crop||null,p.item.rot||0]);
+    p.item.crop=p.crop?{...p.crop}:null;p.item.rot=p.rot||0;
+    p.item.thumb=p.geo?rotatedThumb(p.prev||p.img,p.geo,p.item.crop):batchThumb(p.img,p.item.crop);
+    if(before!==JSON.stringify([p.item.crop||null,p.item.rot||0])){p.item.text=null;p.item.found=null;p.item.err="";}
   }
-  try{p.source.close();}catch(_){}
-  ocrPhoto=null;renderOcrBatch();
+  try{p.img&&p.img.close();}catch(_){}
+  if(p.prev)p.prev.width=p.prev.height=0;
+  ocrPhoto=null;renderOcrBatch();syncLevelUi();
 }
 function startBatchCamera(){
   if(batchFree()<=0){showToast(TX("Не больше {0} фото за раз",OCR_BATCH_MAX));return;}
@@ -3068,34 +3155,38 @@ async function runBatchOcr(engine){
       const it=list[k],num=ocrBatch.indexOf(it)+1;
       it.busy=true;renderOcrBatch();
       status(TX("Фото {0} из {1} (№{2})…",k+1,list.length,num));
-      let bmp=null;
+      let bmp=null,rotCanvas=null;
       try{
         bmp=await decodeImage(it.blob);
-        const region=it.crop||{x:0,y:0,w:bmp.width,h:bmp.height};
+        // v120: фото повёрнуто вручную — читается повёрнутый участок, подбор угла идёт от выставленного (±2°, ±4°).
+        let src=bmp,region=it.crop||{x:0,y:0,w:bmp.width,h:bmp.height};const manual=!!it.rot;
+        if(manual){const geo=rotGeo(bmp.width,bmp.height,it.rot);rotCanvas=rotatedCrop(bmp,geo,it.crop||{x:0,y:0,w:geo.width,h:geo.height});src=rotCanvas;region={x:0,y:0,w:rotCanvas.width,h:rotCanvas.height};}
         if(engine==="local"){
           const slice=v=>{if(runToken===ocrRunToken)setProgress(2+96*(k+Math.max(0,Math.min(1,v)))/list.length);};
-          const res=await window.LocalOCR.recognize(bmp,region,{progress:v=>slice(v*.4)});
+          const res=await window.LocalOCR.recognize(src,region,{progress:v=>slice(v*.4)});
           it.text=res.text||"";
-          // v119: ничего не найдено (или найден только мусор с низкой уверенностью) — подбор угла: наклон, бирка вверх ногами, текст вертикально.
+          // v120: найдено не больше одного тега — похоже на бирку: подбор угла (наклон, вверх ногами, вертикально)
+          // с несколькими чтениями и голосованием. Его тег надёжнее одиночного чтения. Список из нескольких тегов
+          // (распечатка, экран) остаётся как прочитан — с заданиями и отметками.
           const first=window.LocalOCR.score(res);
-          if(runToken===ocrRunToken&&(!first.tags.length||(first.score<100&&res.conf<60))){
-            const lv=await window.LocalOCR.autoLevel(bmp,region,{
+          if(runToken===ocrRunToken&&first.tags.length<=1){
+            const lv=await window.LocalOCR.autoLevel(src,region,{
               stage:t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,TX.msg(t))),
-              progress:v=>slice(.4+.6*v),abort:()=>runToken!==ocrRunToken});
+              progress:v=>slice(.4+.6*v),abort:()=>runToken!==ocrRunToken,...(manual?{angle:0}:{})});
             // Берём только теги с номером установки (2104-PG-447B1): слова бирки («ИЗМЕРЕНИЯ 0…400 кПа») иначе попадают в список как «теги».
-            if(lv&&lv.strict.length&&(!first.tags.length||lv.score>first.score)){it.text=lv.strict.join("\n");it.level=Math.round(lv.angle);}
+            if(lv&&lv.strict.length){it.text=lv.strict.join("\n");it.level=Math.round(norm180((it.rot||0)+lv.angle));}
           }
         }else{
           const s=Math.min(1,3200/Math.max(region.w,region.h)),c=document.createElement("canvas");
           c.width=Math.max(1,Math.round(region.w*s));c.height=Math.max(1,Math.round(region.h*s));
-          c.getContext("2d").drawImage(bmp,region.x,region.y,region.w,region.h,0,0,c.width,c.height);
+          c.getContext("2d").drawImage(src,region.x,region.y,region.w,region.h,0,0,c.width,c.height);
           const blob=await new Promise(res=>c.toBlob(res,"image/jpeg",.92));c.width=c.height=0;
           const out=await ocrSpaceText(blob,t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,t)),runToken);
           it.text=out.text||"";
         }
-        it.found=batchTagsOf(it.text).length;if(it.level&&it.found)it.note=TX("выровнено на {0}°",it.level);
+        it.found=batchTagsOf(it.text).length;if(it.found&&(it.level||it.rot))it.note=TX("выровнено на {0}°",it.level||Math.round(it.rot));
       }catch(e){console.error(e);it.err=TX.msg(e.message||e);it.text="";}
-      finally{it.busy=false;try{bmp&&bmp.close();}catch(_){}}
+      finally{it.busy=false;try{bmp&&bmp.close();}catch(_){}if(rotCanvas)rotCanvas.width=rotCanvas.height=0;}
       if(runToken!==ocrRunToken)return;
       done++;setProgress(2+96*(k+1)/list.length);renderOcrBatch();
       await new Promise(r=>setTimeout(r,0)); // дать экрану обновиться между фото
@@ -3727,7 +3818,7 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото тегов не нашлось, приложение само пробует выровнять наклон и повернуть бирку (до ~30 с на фото): выделяйте только строки текста, без QR-кода и рамки. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото не больше одного тега (бирка), приложение само подбирает наклон и сторону (вверх ногами, вертикально), читает несколько раз и сверяет результат (до ~30 с на фото). Выделяйте только строки текста, без QR-кода и рамки. В окне обрезки можно выровнять и вручную: ползунок — наклон по жёлтым линиям, ⟲ ⟳ — поворот на 90°, «Авто» — выровнять само. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
 ${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS и свой образец. Выбор хранится на телефоне; подробности — в справке меню формата.")}
@@ -3863,7 +3954,7 @@ ${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
 <p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
   add:{title:"Adding — help",html:`
 <ul>
-${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If no tags are found in a photo, the app tries to level the tilt and turn the plate (up to ~30 s per photo): select only the lines of text, without the QR code and the frame. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
+${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If a photo has at most one tag (a plate), the app finds the tilt and the side itself (upside down, vertical), reads it several times and cross-checks the result (up to ~30 s per photo). Select only the lines of text, without the QR code and the frame. In the crop window you can also level it by hand: the slider sets the tilt along the yellow guides, ⟲ ⟳ turn by 90°, “Auto” levels it automatically. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
 ${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
 ${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
 ${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; KKS and an own sample are available. The choice is stored on the phone; details — in the format menu help.")}
@@ -4437,7 +4528,14 @@ $("ocrRunBtn").onclick=runSelectedOcr;
 $("ocrCropBtn").onclick=startOcrCrop;
 $("ocrCropDone").onclick=applyOcrCrop;
 $("ocrCropCancel").onclick=cancelOcrCrop;
-$("ocrCropReset").onclick=()=>{if(!ocrPhoto||!ocrCropMode)return;ocrCropEdit=ocrFullRect();drawOcrPhoto();};
+$("ocrCropReset").onclick=()=>{if(!ocrPhoto||!ocrCropMode)return;ocrCropEdit=ocrFullRect();rememberLevelBase();drawOcrPhoto();};
+// v120: ручное выравнивание в окне обрезки.
+$("ocrLevel").addEventListener("pointerdown",()=>rememberLevelBase());
+$("ocrLevel").addEventListener("input",e=>{const p=ocrPhoto;if(!p)return;const q=typeof p.q==="number"?p.q:Math.round(p.rot/90);levelGuidesUntil=performance.now()+1e9;setCropRot(q*90+Number(e.target.value),q);});
+$("ocrLevel").addEventListener("change",()=>showLevelGuides());
+$("ocrRotL").onclick=()=>{const p=ocrPhoto;if(!p)return;rememberLevelBase();const q=(typeof p.q==="number"?p.q:Math.round(p.rot/90))-1;setCropRot(p.rot-90,q);};
+$("ocrRotR").onclick=()=>{const p=ocrPhoto;if(!p)return;rememberLevelBase();const q=(typeof p.q==="number"?p.q:Math.round(p.rot/90))+1;setCropRot(p.rot+90,q);};
+$("ocrLevelAuto").onclick=autoCropLevel;
 wireOcrCrop();
 $("ocrOnlineToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
 

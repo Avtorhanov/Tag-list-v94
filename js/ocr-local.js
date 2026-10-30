@@ -48,12 +48,24 @@
   // Выровненный участок (бирка): крупный шрифт хуже читается, чем средний — около 1200 px по ширине.
   function chooseScaleBlock(w){return w<1000?Math.min(3.5,1200/w):(w>2000?2000/w:1);}
   // Серый + растяжение контраста: убирает цветной фон и тень, не теряя тонкие штрихи.
-  function prepare(source,sx,sy,sw,sh,scale){
+  function prepare(source,sx,sy,sw,sh,scale,flat){
     const w=Math.max(1,Math.round(sw*scale)),h=Math.max(1,Math.round(sh*scale));
     const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});
     g.imageSmoothingQuality='high';g.drawImage(source,sx,sy,sw,sh,0,0,w,h);
     const img=g.getImageData(0,0,w,h),d=img.data,n=w*h,gray=new Uint8ClampedArray(n),hist=new Uint32Array(256);
-    for(let i=0,j=0;j<n;i+=4,j++){const v=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000|0;gray[j]=v;hist[v]++;}
+    for(let i=0,j=0;j<n;i+=4,j++){const v=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000|0;gray[j]=v;}
+    // v120: бирка — блики и тень на металле: яркость делится на размытый фон (окно ~1/12 участка).
+    if(flat){
+      const I=new Float64Array((w+1)*(h+1));
+      for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=gray[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+row;}}
+      const r=Math.max(10,Math.round(Math.min(w,h)/12)),out=new Uint8ClampedArray(n);
+      for(let y=0;y<h;y++){const y0=Math.max(0,y-r),y1=Math.min(h,y+r+1);
+        for(let x=0;x<w;x++){const x0=Math.max(0,x-r),x1=Math.min(w,x+r+1);
+          const bg=(I[y1*(w+1)+x1]-I[y0*(w+1)+x1]-I[y1*(w+1)+x0]+I[y0*(w+1)+x0])/((x1-x0)*(y1-y0));
+          out[y*w+x]=Math.min(255,gray[y*w+x]*200/Math.max(8,bg));}}
+      gray.set(out);
+    }
+    for(let j=0;j<n;j++)hist[gray[j]]++;
     let lo=0,hi=255,acc=0;for(let v=0;v<256;v++){acc+=hist[v];if(acc>n*.01){lo=v;break;}}
     acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>n*.01){hi=v;break;}}
     const span=Math.max(1,hi-lo);
@@ -115,7 +127,7 @@
   }
 
   // source — ImageBitmap или canvas; region — {x,y,w,h} в пикселях source.
-  async function recognize(source,region,{stage,progress,block}={}){
+  async function recognize(source,region,{stage,progress,block,flat}={}){
     await ensure(stage);
     const scale=block?chooseScaleBlock(region.w):chooseScale(region.w),strips=planStrips(region.h,scale);
     const wordsA=[],wordsB=[];let conf=0,confW=0;const t0=performance.now();
@@ -123,7 +135,7 @@
       const st=strips[k];
       stage&&stage(strips.length>1?TX('Распознаю на телефоне: часть {0} из {1}…',k+1,strips.length):TX('Распознаю на телефоне…'));
       onProgress=v=>progress&&progress((k+v)/strips.length);
-      const canvas=prepare(source,region.x,region.y+st.y0,region.w,st.h,scale);
+      const canvas=prepare(source,region.x,region.y+st.y0,region.w,st.h,scale,!!flat);
       const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
       const buf=await blob.arrayBuffer();
       const r=await call('recognize',{image:buf,tagPass:true,block:!!block},[buf]);
@@ -159,32 +171,81 @@
     go.translate(o.width/2,o.height/2);go.rotate(rad);go.drawImage(c,-W/2,-H/2);
     c.width=c.height=0;return o;
   }
-  // Наклон строк по тёмным мелким пятнам (буквы, модули QR) внутри круга: поиск угла −40…+40°, на котором
-  // горизонтальная гистограмма пятен самая «рваная». Рамка бирки и фон в круг не попадают.
-  function estimateSkew(source,region){
-    const W=600,s=W/region.w,w=W,h=Math.max(1,Math.round(region.h*s));
-    const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});
-    g.drawImage(source,region.x,region.y,region.w,region.h,0,0,w,h);
-    const d=g.getImageData(0,0,w,h).data,gray=new Float32Array(w*h);
-    for(let i=0,j=0;j<w*h;i+=4,j++)gray[j]=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000;
+  // v120: направление строк по соседству букв (метод «докструм»). Участок → бинаризация по местному среднему
+  // (тёмный текст на светлом и, отдельно, светлый на тёмном) → связные пятна → оставляем похожие на буквы
+  // (размер, пропорции, заполненность) → для каждой буквы 3 ближайших соседа похожей высоты → углы пар.
+  // Буквы в строке стоят ближе, чем строки друг к другу, поэтому мода углов — направление строки в диапазоне
+  // −90…+90°; рамка бирки и крупные пятна в расчёт не попадают. Остаётся неоднозначность 0°/180° — её решает чтение.
+  function binarize(gray,w,h,dark){
     const I=new Float64Array((w+1)*(h+1));
     for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=gray[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+row;}}
-    const r=15,R=Math.min(w,h)/2,pts=[];
-    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-      if(Math.hypot(x-w/2,y-h/2)>=R)continue;
-      const x0=Math.max(0,x-r),x1=Math.min(w,x+r+1),y0=Math.max(0,y-r),y1=Math.min(h,y+r+1);
-      const mean=(I[y1*(w+1)+x1]-I[y0*(w+1)+x1]-I[y1*(w+1)+x0]+I[y0*(w+1)+x0])/((x1-x0)*(y1-y0));
-      if(gray[y*w+x]<mean*0.82&&mean>40)pts.push(x-w/2,y-h/2);
+    const r=Math.max(8,Math.round(Math.min(w,h)/40)),m=new Uint8Array(w*h);
+    for(let y=0;y<h;y++){const y0=Math.max(0,y-r),y1=Math.min(h,y+r+1);
+      for(let x=0;x<w;x++){const x0=Math.max(0,x-r),x1=Math.min(w,x+r+1);
+        const mean=(I[y1*(w+1)+x1]-I[y0*(w+1)+x1]-I[y1*(w+1)+x0]+I[y0*(w+1)+x0])/((x1-x0)*(y1-y0)),v=gray[y*w+x];
+        m[y*w+x]=dark?(v<mean*0.85&&mean-v>10?1:0):(v>mean*1.15&&v-mean>10?1:0);}}
+    return m;
+  }
+  function blobs(m,w,h){
+    const lab=new Int32Array(w*h),out=[],stack=[];let id=0;
+    for(let i=0;i<w*h;i++){
+      if(!m[i]||lab[i])continue;id++;lab[i]=id;stack.push(i);
+      let n=0,sx=0,sy=0,x0=w,x1=0,y0=h,y1=0;
+      while(stack.length){const j=stack.pop(),x=j%w,y=(j-x)/w;n++;sx+=x;sy+=y;
+        if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+        for(const k of [j-1,j+1,j-w,j+w]){if(k<0||k>=w*h)continue;if((k===j-1&&x===0)||(k===j+1&&x===w-1))continue;if(m[k]&&!lab[k]){lab[k]=id;stack.push(k);}}}
+      out.push({n,cx:sx/n,cy:sy/n,bw:x1-x0+1,bh:y1-y0+1});
     }
-    const n=pts.length/2;if(n<50)return 0;
-    const bins=Math.ceil(Math.hypot(w,h))+2,off=bins/2;let best=0,bs=-1;
-    for(let a=-40;a<=40;a++){
-      const rad=a*Math.PI/180,sn=Math.sin(rad),cs=Math.cos(rad),hist=new Float32Array(bins);
-      for(let k=0;k<n;k++)hist[(pts[2*k]*sn+pts[2*k+1]*cs+off)|0]++;
-      let sc=0;for(let k=0;k<bins;k++)sc+=hist[k]*hist[k];
-      if(sc>bs){bs=sc;best=a;}
+    return out;
+  }
+  function letterAngles(gray,w,h,dark){
+    const H=Math.min(w,h),all=blobs(binarize(gray,w,h,dark),w,h);
+    // Похожие на буквы: не точки и не рамка; размер берётся по большей стороне — у повёрнутой буквы рамка шире.
+    const L=all.filter(b=>{const s=Math.max(b.bw,b.bh),t=Math.min(b.bw,b.bh);return s>=6&&s<=H*0.25&&t>=2&&s/t<=6&&b.n/(b.bw*b.bh)>0.12&&b.n/(b.bw*b.bh)<0.95;});
+    if(L.length<8)return {n:L.length,hist:null,L};
+    const hist=new Float32Array(360); // шаг 0,5°, угол −90…+90
+    const put=(a,wt)=>{if(a<=-90)a+=180;if(a>90)a-=180;hist[Math.min(359,Math.max(0,Math.round((a+90)*2)))]+=wt;};
+    // Сетка для поиска соседей.
+    const cell=Math.max(8,Math.round(H/12)),gw=Math.ceil(w/cell),gh=Math.ceil(h/cell),grid=new Map();
+    L.forEach((b,i)=>{b.s=Math.max(b.bw,b.bh);const k=Math.floor(b.cx/cell)+Math.floor(b.cy/cell)*gw;(grid.get(k)||grid.set(k,[]).get(k)).push(i);});
+    for(const b of L){
+      const gx=Math.floor(b.cx/cell),gy=Math.floor(b.cy/cell),near=[];
+      for(let yy=gy-2;yy<=gy+2;yy++)for(let xx=gx-2;xx<=gx+2;xx++){if(xx<0||yy<0||xx>=gw||yy>=gh)continue;
+        for(const j of grid.get(xx+yy*gw)||[]){const o=L[j];if(o===b)continue;const r=o.s/b.s;if(r<0.6||r>1.67)continue;
+          const d=Math.hypot(o.cx-b.cx,o.cy-b.cy);if(d<=b.s*2.6)near.push([d,o]);}}
+      near.sort((p,q)=>p[0]-q[0]);
+      for(const [d,o] of near.slice(0,2))put(Math.atan2(o.cy-b.cy,o.cx-b.cx)*180/Math.PI,1/(1+d/b.s));
     }
-    return best;
+    return {n:L.length,hist,L};
+  }
+  function estimateSkew(source,region){
+    const S=800,s=Math.min(1,S/Math.max(region.w,region.h)),w=Math.max(1,Math.round(region.w*s)),h=Math.max(1,Math.round(region.h*s));
+    const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});
+    g.drawImage(source,region.x,region.y,region.w,region.h,0,0,w,h);
+    const d=g.getImageData(0,0,w,h).data,gray=new Float32Array(w*h);c.width=c.height=0;
+    for(let i=0,j=0;j<w*h;i+=4,j++)gray[j]=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000;
+    let best=null;
+    for(const dark of [true,false]){
+      const r=letterAngles(gray,w,h,dark);if(!r.hist)continue;
+      // Сглаживание по кругу (±2°), мода и уточнение по соседним бинам.
+      const sm=new Float32Array(360);
+      for(let k=0;k<360;k++){let v=0;for(let t=-4;t<=4;t++)v+=r.hist[(k+t+360)%360]*(1-Math.abs(t)/5);sm[k]=v;}
+      let k0=0;for(let k=1;k<360;k++)if(sm[k]>sm[k0])k0=k;
+      const total=sm.reduce((p,q)=>p+q,0),peak=sm[k0]/Math.max(1e-6,total);
+      if(!best||peak*Math.sqrt(r.n)>best.q)best={q:peak*Math.sqrt(r.n),angle:k0/2-90,n:r.n,L:r.L};
+    }
+    if(!best)return 0;
+    // Уточнение: центры букв ровной строки ложатся в узкие полосы. Ищем ±6° вокруг найденного направления и
+    // вокруг перпендикулярного: где полосы резче, там и строки (снимает путаницу «строка или столбец»).
+    const L=best.L,sizes=L.map(b=>b.s).sort((p,q)=>p-q),bin=Math.max(1.5,sizes[sizes.length>>1]*0.3);
+    const sharp=a=>{const rad=a*Math.PI/180,sn=Math.sin(rad),cs=Math.cos(rad),m=new Map();
+      for(const b of L){const k=Math.round((-b.cx*sn+b.cy*cs)/bin);m.set(k,(m.get(k)||0)+1);}
+      let q=0;for(const v of m.values())q+=v*v;return q/(L.length*L.length);};
+    let fine={q:-1,a:best.angle};
+    for(const base of [best.angle,best.angle+90])for(let t=-6;t<=6;t+=0.5){const a=base+t,q=sharp(a);if(q>fine.q)fine={q,a};}
+    let a=fine.a;if(a>90)a-=180;if(a<=-90)a+=180;
+    // Строка под углом a к горизонтали → поворот по часовой на −a выравнивает её.
+    return Math.round(-a*2)/2;
   }
   // Оценка чтения: теги с номером установки (2104-PG-447B1) весят больше, чем обрывки без неё.
   function scoreRead(res){
@@ -198,24 +259,70 @@
     finally{c.width=c.height=0;}
   }
   const norm180=a=>{a=((a%360)+360)%360;return a>180?a-360:a;};
-  // Подбор угла: оценка наклона φ, чтение при φ и φ±5°; если нет ни одного тега с установкой — тот же набор для
-  // φ+180° (бирка вверх ногами), затем φ±90° (текст вертикально). Останавливается на первом наборе с тегом.
-  async function autoLevel(source,region,{stage,progress,abort}={}){
-    await ensure(stage);
-    const phi=estimateSkew(source,region),t0=performance.now();
-    const groups=[phi,phi+180,phi+90,phi-90];let best=null,done=0;const total=groups.length*3;
-    for(const base of groups){
-      for(const d of [0,-5,5]){
-        if(abort&&abort())return best;
-        if(best&&performance.now()-t0>30000)return best; // не дольше ~30 с на фото
-        stage&&stage(TX('Выравниваю: угол {0}°…',Math.round(norm180(base+d))));
-        const r=await recognizeLeveled(source,region,norm180(base+d),{});
-        done++;progress&&progress(done/total);
-        if(!best||r.score>best.score)best=r;
-      }
-      if(best&&best.score>=100)break;
+  // v120: согласование тегов из нескольких чтений одного участка под соседними углами.
+  // Похожие теги (одна длина и до 3 отличий, либо до 2 правок) — один тег; каждый знак выбирается голосованием,
+  // вес чтения — его уверенность. Остаётся тег, найденный хотя бы в двух чтениях; если таких нет — самый уверенный одиночный.
+  function editDist(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i]);for(let j=1;j<=n;j++)d[0][j]=j;
+    for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n];}
+  function similar(a,b){if(a.length===b.length){let h=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i])h++;return h<=3;}return editDist(a,b)<=2;}
+  function consensus(reads){
+    const clusters=[];
+    reads.forEach((r,ri)=>{for(const t of new Set(r.strict)){
+      let c=clusters.find(c=>similar(c.items[0].t,t));if(!c){c={items:[]};clusters.push(c);}
+      c.items.push({t,w:Math.max(5,r.conf),ri});}});
+    const sup=c=>new Set(c.items.map(x=>x.ri)).size;
+    // Нужно подтверждение двумя чтениями; если подтверждённых нет — берётся самый уверенный одиночный тег.
+    let need=reads.length>=3?2:1;if(!clusters.some(c=>sup(c)>=need))need=1;
+    const pool=need===1&&reads.length>=3?clusters.sort((p,q)=>q.items.reduce((a,x)=>a+x.w,0)-p.items.reduce((a,x)=>a+x.w,0)).slice(0,1):clusters,out=[];
+    for(const c of pool){
+      const support=sup(c);if(support<need)continue;
+      // Длина — самая частая (по весу); знаки — голосованием среди тегов этой длины.
+      const lw=new Map();for(const x of c.items)lw.set(x.t.length,(lw.get(x.t.length)||0)+x.w);
+      const len=[...lw.entries()].sort((p,q)=>q[1]-p[1])[0][0],same=c.items.filter(x=>x.t.length===len);
+      let tag="";for(let i=0;i<len;i++){const v=new Map();for(const x of same)v.set(x.t[i],(v.get(x.t[i])||0)+x.w);tag+=[...v.entries()].sort((p,q)=>q[1]-p[1])[0][0];}
+      if(!/^\d{2,5}-[A-Z]{1,5}-\d{1,5}[A-Z0-9]{0,2}$/.test(tag))tag=same.sort((p,q)=>q.w-p.w)[0].t;
+      out.push({tag,support});
     }
-    return best;
+    return out.sort((p,q)=>q.support-p.support).map(x=>x.tag);
   }
-  window.LocalOCR={recognize,warmUp:()=>ensure(),levelCanvas,estimateSkew,recognizeLeveled,autoLevel,score:scoreRead};
+  // Подбор угла (v120):
+  //  1) наклон φ — по соседству букв (estimateSkew) или угол, выставленный вручную (opts.angle);
+  //  2) сторона: φ и φ+180° (вверх ногами) с шагом 2° (±4°), затем φ±90°; при ручном угле сторону задал человек —
+  //     только φ±4°; затем запасные чтения без выравнивания фона;
+  //  3) уточнение: до 4 чтений при соседних углах (±1…4°), теги согласуются голосованием.
+  // Не дольше ~30 с на фото; «Стоп» прерывает.
+  async function autoLevel(source,region,{stage,progress,abort,angle}={}){
+    await ensure(stage);
+    const manual=typeof angle==="number"&&isFinite(angle);
+    const phi=manual?angle:estimateSkew(source,region),t0=performance.now();
+    // Чтение бирки очень чувствительно к углу (на одной бирке 199° и 201° читаются, 200° — нет), а оценка наклона
+    // ошибается на 2–3°. Поэтому сторона ищется перебором с шагом 2° вокруг φ и φ+180°, затем φ±90°;
+    // после первого тега с установкой — ещё чтения при соседних углах и голосование.
+    const offs=[0,2,-2,4,-4];
+    const sides=manual?offs.map(d=>phi+d):offs.flatMap(d=>[phi+d,phi+180+d]).concat([phi+90,phi-90,phi+92,phi-88,phi+88,phi-92]);
+    // Без выравнивания фона — запасные чтения: на части бирок (мелкая гравировка) оно мешает.
+    const spare=manual?[[phi-1,false],[phi+1,false]]:[[phi-1,false],[phi+1,false],[phi+179,false],[phi+181,false]];
+    const total=sides.length+spare.length;let done=0,side=null,first=null;const tried=new Set();
+    const read=async(a,flat=true)=>{stage&&stage(TX('Выравниваю: угол {0}°…',Math.round(norm180(a))));tried.add(Math.round(norm180(a)*2)+(flat?'f':'p'));
+      const r=await recognizeLeveled(source,region,norm180(a),{flat});done++;progress&&progress(Math.min(.9,done/total));return {...r,flat};};
+    const late=()=>performance.now()-t0>30000;
+    for(const [a,flat] of sides.map(a=>[a,true]).concat(spare)){
+      if(abort&&abort())return first;
+      const r=await read(a,flat);
+      if(!first||r.score>first.score)first=r;
+      if(r.strict.length){side=r;break;}
+      if(late())break;
+    }
+    if(!side)return first&&{...first,strict:[],angle:norm180(first.angle)};
+    const reads=[side];let extra=0;
+    for(const d of [-1,1,-2,2,-3,3,-4,4]){
+      if(extra>=4||(abort&&abort())||late())break;
+      const a=side.angle+d;if(tried.has(Math.round(norm180(a)*2)+(side.flat?'f':'p')))continue;
+      reads.push(await read(a,side.flat));extra++;
+    }
+    progress&&progress(1);
+    const tags=consensus(reads),conf=reads.reduce((p,r)=>p+r.conf,0)/reads.length;
+    return {text:tags.join('\n'),tags,strict:tags,conf,score:tags.length*100+conf/20,angle:norm180(side.angle),reads:reads.length};
+  }
+  window.LocalOCR={recognize,warmUp:()=>ensure(),levelCanvas,estimateSkew,recognizeLeveled,autoLevel,consensus,score:scoreRead};
 })();
