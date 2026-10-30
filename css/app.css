@@ -2061,30 +2061,48 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .rpTrack{flex:0 0 auto;width:44px;height:26px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
 .rpTrack::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
 .rpSwitch input:checked+.rpTrack{background:var(--accent)}
-/* v114: два тумблера в одну строку, подпись вплотную к своему тумблеру; счётчик фото — в своей
-   ячейке фиксированной ширины, поэтому при включении ничего не сдвигается и высота строки та же. */
-.rpSwitchRow{display:flex;flex-wrap:wrap;column-gap:12px;row-gap:6px;align-items:center}
-/* Каждый тумблер — половина строки; не помещаются (узкий экран, крупный шрифт) — второй уходит на свою строку. */
-.rpSwitchRow .rpSwitch{flex:1 0 auto;min-width:calc(50% - 6px);justify-content:flex-start;gap:10px;padding:4px 0}
-.rpSwitchRow .rpSwitchText{flex:0 0 auto;white-space:nowrap;line-height:1.2}
-.rpCount{flex:0 0 auto;min-width:2.2em;box-sizing:border-box;padding:1px 6px;border:1px solid var(--line);border-radius:99px;text-align:center;font-size:calc(12px * var(--fontScale));font-weight:700;line-height:1.35;color:var(--muted);font-variant-numeric:tabular-nums;visibility:hidden}
-.rpCount.on{visibility:visible}
-/* v115: значки фото по тегам под текстом отчёта; касание убирает фото из отчёта или возвращает. */
-.rpPhotos[hidden]{display:none}
-/* v116: видна одна строка тега с фото; остальные — прокруткой внутри полосы. */
-.rpPhList{display:grid;gap:0;max-height:46px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scroll-snap-type:y mandatory}
-.rpPhRow{display:flex;align-items:center;gap:10px;min-width:0;min-height:46px;scroll-snap-align:start}
-.rpPhTag{flex:0 1 auto;min-width:0;font-weight:700;font-size:calc(14px * var(--fontScale));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rpPhIcons{display:flex;flex-wrap:nowrap;gap:8px;margin-left:auto;padding:6px 6px 0 0}
-.rpPh{position:relative;flex:none;width:34px;height:34px;display:grid;place-items:center;border:1px dashed var(--line);border-radius:9px;background:transparent;color:var(--muted);padding:0;cursor:pointer;opacity:.6}
-.rpPh svg{width:19px;height:19px}
-.rpPh.on{border:1px solid var(--accent);color:var(--accent);opacity:1}
-.rpPh b{position:absolute;right:-5px;top:-6px;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:99px;background:var(--accent);color:var(--on-accent,#fff);font-size:10px;line-height:16px;text-align:center}
-.rpPh:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.reportSheet.editing .rpPhotos{display:none}
+/* v117: над текстом отчёта — «+ Из контактов» слева, тумблер «+ задания» справа. */
+.rpTools{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.rpTools .rpSwitch{flex:none;justify-content:flex-start;gap:10px;padding:2px 0}
+.rpTools .rpSwitchText{white-space:nowrap;line-height:1.2}
+.rpTools .rpAdd{flex:none}
+/* Исполнители — одна лента, растёт вправо и прокручивается по горизонтали (как страницы). */
+.rpPeople[hidden]{display:none}
+/* v117: кнопка фотоотчёта рядом с «Отправить» и нижняя панель «Фотоотчёт». */
+.rpFoot{display:flex;gap:8px;align-items:stretch}
+.rpFoot .rpSend{flex:1 1 auto;min-width:0}
+.rpPhotoBtn{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:50px;padding:0 14px;border:1.5px solid var(--accent);border-radius:14px;background:transparent;color:var(--accent);font-size:15px;font-weight:800;cursor:pointer}
+.rpPhotoBtn[hidden]{display:none}
+.rpPhotoBtn svg{width:20px;height:20px}
+.rpPhotoBtn b{min-width:20px;padding:1px 6px;border-radius:99px;background:var(--accent);color:var(--on-accent,#fff);font-size:12px;line-height:18px;text-align:center}
+.rpPhSheet{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:flex-end}
+.rpPhSheet[hidden]{display:none}
+.rpPhBackdrop{position:absolute;inset:0;background:rgba(2,6,14,.5);opacity:0;transition:opacity var(--ui-motion,.16s) var(--ui-ease,ease)}
+.rpPhPanel{position:relative;max-height:78%;display:flex;flex-direction:column;background:var(--card);border-radius:18px 18px 0 0;border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(0,0,0,.28);transform:translateY(100%);transition:transform .2s var(--ui-ease,ease)}
+.rpPhSheet.show .rpPhBackdrop{opacity:1}
+.rpPhSheet.show .rpPhPanel{transform:translateY(0)}
+.rpPhHead{position:relative;display:flex;align-items:center;gap:10px;padding:18px 16px 8px;touch-action:none}
+.rpPhGrip{position:absolute;top:7px;left:50%;width:40px;height:4px;margin-left:-20px;border-radius:99px;background:var(--line)}
+.rpPhHead h3{flex:1;min-width:0;margin:0;font-size:17px;font-weight:800}
+.rpPhHead .closex{float:none;flex:none}
+.rpPhBody{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 16px 8px;display:grid;gap:10px}
+.rpPhRow{display:flex;align-items:center;gap:12px;min-width:0;padding:8px 0;border-bottom:1px solid var(--line)}
+.rpPhRow:last-child{border-bottom:0}
+.rpPhThumbs{display:flex;flex-wrap:wrap;gap:8px;flex:1 1 auto;min-width:0;padding-top:6px}
+.rpPhThumb{position:relative;flex:none;width:58px;height:58px;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--control,#eef2f7);cursor:pointer;overflow:visible}
+.rpPhThumb img{display:block;width:100%;height:100%;object-fit:cover;border-radius:9px}
+.rpPhThumb b{position:absolute;right:-6px;top:-7px;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:99px;background:var(--accent);color:var(--on-accent,#fff);font-size:11px;line-height:18px;text-align:center}
+.rpPhThumb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rpPhTag{flex:none;max-width:60%;font-weight:800;font-size:calc(14px * var(--fontScale));text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rpPhEmpty{color:var(--muted);text-align:center;padding:18px 0}
+.rpPhFoot{flex:none;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.rpPhFoot .rpSend:disabled{opacity:.5}
+.reportSheet.editing .rpTools,.reportSheet.editing .rpPhotoBtn{display:none}
 .rpSwitch input:checked+.rpTrack::after{transform:translateX(18px)}
 .rpSwitch input:focus-visible+.rpTrack{outline:2px solid var(--accent);outline-offset:2px}
-.rpPeople{display:flex;flex-wrap:wrap;gap:6px}
+.rpPeople{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:1px 16px;overscroll-behavior-x:contain;touch-action:pan-x}
+.rpPeople::-webkit-scrollbar{display:none}
+.rpPerson{flex:none}
 .rpPerson{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--control,#f7f9fc);color:var(--muted);border-radius:999px;padding:5px 10px 5px 5px;font-size:calc(13px * var(--fontScale));font-weight:600;cursor:pointer;max-width:100%}
 .rpPerson .rpAv{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--muted);display:grid;place-items:center;font-size:10.5px;font-weight:800}
 .rpPerson .rpName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -2135,7 +2153,7 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .reportOverlay.kb .rpFoot{padding-bottom:10px}
 .rpSend{display:block;width:100%;min-height:50px;border:0;border-radius:14px;background:var(--accent);color:var(--on-accent,#fff);font-size:16px;font-weight:800;cursor:pointer}
 /* Правка: настройки прячутся, поле текста — на всё окно. */
-.reportSheet.editing .rpGroup,.reportSheet.editing .rpTiles,.reportSheet.editing .rpSwitch,.reportSheet.editing .rpSwitchRow,.reportSheet.editing .closex{display:none}
+.reportSheet.editing .rpGroup,.reportSheet.editing .rpTiles,.reportSheet.editing .rpSwitch,.reportSheet.editing .closex{display:none}
 .reportSheet.editing .rpEdit{min-height:0}
 .reportSheet.editing .rpBody{padding-top:0}
 .reportSheet.editing .rpText,.reportSheet.editing .rpText.edited{border-color:var(--accent);background:var(--card)}
@@ -2347,6 +2365,8 @@ html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
 .pvStage{flex:1;min-height:0;display:grid;place-items:center;padding:12px;overflow:hidden;touch-action:none}
 .pvImg{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;transform-origin:50% 50%;will-change:transform;cursor:zoom-in;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
 .photoViewer.zoomed .pvImg{cursor:grab}
+.pvImg.pvSnap{transition:transform .18s ease-out}
+.photoViewer{transition:background-color .12s linear}
 .photoViewer.zoomed .pvImg:active{cursor:grabbing}
 .pvMissing{color:#c9d3e3;text-align:center;max-width:300px;font-size:14px;line-height:1.4}
 .pvBar{padding:10px 12px 14px;display:grid;gap:8px}
