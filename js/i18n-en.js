@@ -885,5 +885,23 @@ I.add({
 "Прибор добавлен как {0}":"Instrument added as {0}"
 });
 
+// ---------------------------------------------------------------- v112: фото к заданию тега
+I.add({
+"Фото {0} из {1}":"Photo {0} of {1}",
+"Открыть фото {0}":"Open photo {0}",
+"Добавить фото":"Add photo",
+"Не больше 5 фото на тег":"Up to 5 photos per tag",
+"Добавлено {0} из {1}: не больше 5 фото на тег":"Added {0} of {1}: up to 5 photos per tag",
+"Не удалось добавить фото":"Could not add the photo",
+"Хранилище фото недоступно":"Photo storage is unavailable",
+"Не удалось открыть фото":"Could not open the photo",
+"Не удалось сжать фото":"Could not compress the photo",
+"Предыдущее фото":"Previous photo",
+"Следующее фото":"Next photo",
+"Точно удалить?":"Delete for sure?",
+"{0} · фото {1} из {2}":"{0} · photo {1} of {2}",
+"Этого фото нет на устройстве (состояние перенесено с другого телефона)":"This photo is not on this device (the state was moved from another phone)"
+});
+
 I._init();
 })();
