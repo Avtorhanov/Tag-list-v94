@@ -2990,7 +2990,7 @@ function batchResetResults(){
   ocrCandidates=[];ocrCandidateMeta=new Map();lastOcrText="";setReviewing(false);
   $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
   $("ocrProgressWrap").style.display="none";setProgress(0);
-  $("ocrStatus").textContent=ocrBatch.length?TX("Касание фото — обрезка, кружок — выбрать. Затем «Распознать»."):"";
+  $("ocrStatus").textContent=ocrBatch.length?TX("Касание фото — обрезка: выделите только строки текста, без QR-кода и рамки бирки. Кружок — выбрать. Затем «Распознать»."):"";
 }
 function clearOcrBatch(){ocrBatch=[];ocrBatchLoading=0;ocrBatchRunning=false;renderOcrBatch();}
 function renderOcrBatch(){
@@ -2998,7 +2998,7 @@ function renderOcrBatch(){
   const n=ocrBatch.length,sel=batchSelected().length;
   grid.hidden=!(n||ocrBatchLoading)||!!ocrPhoto;
   const parts=ocrBatch.map((it,i)=>{
-    const st=it.err?`<span class="otStat bad">${TX("ошибка")}</span>`:it.found!=null?`<span class="otStat">${TX("тегов: {0}",it.found)}</span>`:it.busy?`<span class="otStat busy">${TX("читаю…")}</span>`:"";
+    const st=it.err?`<span class="otStat bad">${TX("ошибка")}</span>`:it.found!=null?`<span class="otStat" title="${escapeHtml(it.note||"")}">${TX("тегов: {0}",it.found)}${it.note?" ↻":""}</span>`:it.busy?`<span class="otStat busy">${TX("читаю…")}</span>`:"";
     return `<div class="ocrTile${it.on?"":" off"}${it.busy?" busy":""}" data-ot="${it.id}">
 <button class="otImg" type="button" data-ot-crop="${it.id}" aria-label="${escapeHtml(TX("Обрезать фото {0}",i+1))}"><img alt="" src="${it.thumb}"></button>
 <span class="otNo">${i+1}</span>${it.crop?`<span class="otCrop" title="${escapeHtml(TX("Выделен участок"))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 2.5v13a2 2 0 0 0 2 2h13"></path><path d="M2.5 6.5h13a2 2 0 0 1 2 2v13"></path></svg></span>`:""}
@@ -3058,7 +3058,7 @@ async function runBatchOcr(engine){
   $("ocrProgressWrap").style.display="block";setProgress(2);
   $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");setReviewing(false);
   const status=t=>{if(runToken===ocrRunToken)$("ocrStatus").textContent=TX.msg(t);};
-  for(const it of list){it.found=null;it.err="";it.text=null;}
+  for(const it of list){it.found=null;it.err="";it.text=null;it.level=0;it.note="";}
   renderOcrBatch();
   let done=0;
   try{
@@ -3073,8 +3073,18 @@ async function runBatchOcr(engine){
         bmp=await decodeImage(it.blob);
         const region=it.crop||{x:0,y:0,w:bmp.width,h:bmp.height};
         if(engine==="local"){
-          const res=await window.LocalOCR.recognize(bmp,region,{progress:v=>{if(runToken===ocrRunToken)setProgress(2+96*(k+Math.max(0,Math.min(1,v)))/list.length);}});
+          const slice=v=>{if(runToken===ocrRunToken)setProgress(2+96*(k+Math.max(0,Math.min(1,v)))/list.length);};
+          const res=await window.LocalOCR.recognize(bmp,region,{progress:v=>slice(v*.4)});
           it.text=res.text||"";
+          // v119: ничего не найдено (или найден только мусор с низкой уверенностью) — подбор угла: наклон, бирка вверх ногами, текст вертикально.
+          const first=window.LocalOCR.score(res);
+          if(runToken===ocrRunToken&&(!first.tags.length||(first.score<100&&res.conf<60))){
+            const lv=await window.LocalOCR.autoLevel(bmp,region,{
+              stage:t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,TX.msg(t))),
+              progress:v=>slice(.4+.6*v),abort:()=>runToken!==ocrRunToken});
+            // Берём только теги с номером установки (2104-PG-447B1): слова бирки («ИЗМЕРЕНИЯ 0…400 кПа») иначе попадают в список как «теги».
+            if(lv&&lv.strict.length&&(!first.tags.length||lv.score>first.score)){it.text=lv.strict.join("\n");it.level=Math.round(lv.angle);}
+          }
         }else{
           const s=Math.min(1,3200/Math.max(region.w,region.h)),c=document.createElement("canvas");
           c.width=Math.max(1,Math.round(region.w*s));c.height=Math.max(1,Math.round(region.h*s));
@@ -3083,7 +3093,7 @@ async function runBatchOcr(engine){
           const out=await ocrSpaceText(blob,t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,t)),runToken);
           it.text=out.text||"";
         }
-        it.found=batchTagsOf(it.text).length;
+        it.found=batchTagsOf(it.text).length;if(it.level&&it.found)it.note=TX("выровнено на {0}°",it.level);
       }catch(e){console.error(e);it.err=TX.msg(e.message||e);it.text="";}
       finally{it.busy=false;try{bmp&&bmp.close();}catch(_){}}
       if(runToken!==ocrRunToken)return;
@@ -3717,7 +3727,7 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото тегов не нашлось, приложение само пробует выровнять наклон и повернуть бирку (до ~30 с на фото): выделяйте только строки текста, без QR-кода и рамки. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
 ${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS и свой образец. Выбор хранится на телефоне; подробности — в справке меню формата.")}
@@ -3853,7 +3863,7 @@ ${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
 <p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
   add:{title:"Adding — help",html:`
 <ul>
-${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
+${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If no tags are found in a photo, the app tries to level the tilt and turn the plate (up to ~30 s per photo): select only the lines of text, without the QR code and the frame. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
 ${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
 ${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
 ${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; KKS and an own sample are available. The choice is stored on the phone; details — in the format menu help.")}
