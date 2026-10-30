@@ -2401,3 +2401,36 @@ body.camera-open{overflow:hidden}
 .camShutter:active span{transform:scale(.9)}
 .camShutter:disabled{opacity:.4}
 .camBtn:focus-visible,.camShutter:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}
+
+/* v118: пакет до 9 фото — сетка квадратных миниатюр перед распознаванием. */
+.ocrBatchCount{margin:0 2px 6px;font-weight:700}
+.ocrBatchCount[hidden]{display:none}
+.ocrGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%;align-self:start}
+.ocrPreview:has(.ocrGrid:not([hidden])){place-items:stretch;min-height:0;max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.ocrPreview.compact .ocrGrid{grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.ocrPreview.compact .ocrAdd{display:none}
+.ocrTile{position:relative;aspect-ratio:1/1;border-radius:9px;overflow:hidden;background:var(--card);border:2px solid var(--accent);box-sizing:border-box}
+.ocrTile.off{border-color:var(--line)}
+.ocrTile.off .otImg img{opacity:.38;filter:grayscale(1)}
+.ocrTile.loading{border:1px dashed var(--line);display:grid;place-items:center}
+.ocrTile.busy{box-shadow:0 0 0 3px rgba(23,105,224,.35)}
+.otImg{display:block;width:100%;height:100%;border:0;padding:0;margin:0;background:transparent;cursor:pointer}
+.otImg img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-select:none;user-select:none}
+.otNo{position:absolute;left:4px;top:4px;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:10px;background:rgba(12,16,22,.68);color:#fff;font:800 12px/20px system-ui,sans-serif;text-align:center;pointer-events:none}
+.otDel{position:absolute;right:2px;top:2px;width:30px;height:30px;border:0;border-radius:15px;background:rgba(12,16,22,.62);color:#fff;font:700 20px/30px system-ui,sans-serif;padding:0;cursor:pointer}
+.otPick{position:absolute;left:3px;bottom:3px;width:30px;height:30px;border:0;border-radius:15px;background:transparent;padding:0;cursor:pointer}
+.otPick::before{content:"";position:absolute;inset:4px;border-radius:50%;border:2px solid #fff;background:rgba(12,16,22,.35);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.otPick[aria-checked="true"]::before{background:var(--accent)}
+.otPick[aria-checked="true"]::after{content:"";position:absolute;left:11px;top:8px;width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
+.otCrop{position:absolute;right:5px;bottom:5px;width:22px;height:22px;border-radius:6px;background:rgba(12,16,22,.62);display:grid;place-items:center;pointer-events:none}
+.otCrop svg{width:15px;height:15px;fill:none;stroke:#fff;stroke-width:2}
+.otStat{position:absolute;left:36px;right:4px;bottom:6px;font:700 11px/1.2 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.otStat.bad{color:#ffb3ad}
+.ocrTile.loading .otStat{position:static;color:var(--muted);text-shadow:none}
+.ocrPreview.compact .otDel,.ocrPreview.compact .otStat,.ocrPreview.compact .otCrop{display:none}
+.ocrPreview.compact .otPick{left:0;bottom:0;transform:scale(.8);transform-origin:left bottom}
+.ocrPreview.compact .otNo{left:2px;top:2px;transform:scale(.85);transform-origin:left top}
+.ocrAdd{aspect-ratio:1/1;border:1.5px dashed var(--line);border-radius:9px;background:transparent;color:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:700 13px/1.2 inherit;cursor:pointer;padding:4px}
+.ocrAdd svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
+.ocrGrid[hidden]{display:none!important}
+.importSrc{margin:3px 2px 0 31px;font-size:calc(11.5px * var(--fontScale));color:var(--muted)}

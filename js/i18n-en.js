@@ -923,7 +923,31 @@ I.add({
 "Следующее фото":"Next photo",
 "Точно удалить?":"Delete for sure?",
 "{0} · фото {1} из {2}":"{0} · photo {1} of {2}",
-"Этого фото нет на устройстве (состояние перенесено с другого телефона)":"This photo is not on this device (the state was moved from another phone)"
+"Этого фото нет на устройстве (состояние перенесено с другого телефона)":"This photo is not on this device (the state was moved from another phone)",
+"Не больше {0} фото за раз":"No more than {0} photos at a time",
+"Не больше {0} фото за раз — добавлены первые {1}":"No more than {0} photos at a time — the first {1} were added",
+"Касание фото — обрезка, кружок — выбрать. Затем «Распознать».":"Tap a photo to crop it, tap the circle to select. Then “Recognize”.",
+"ошибка":"error",
+"тегов: {0}":"tags: {0}",
+"читаю…":"reading…",
+"открываю…":"opening…",
+"Обрезать фото {0}":"Crop photo {0}",
+"Выделен участок":"Area selected",
+"Распознавать фото {0}":"Recognize photo {0}",
+"Убрать фото {0}":"Remove photo {0}",
+"Снять":"Shoot",
+"Фото {0} из {1} · выбрано {2}":"Photos {0} of {1} · selected {2}",
+"Теги на фото":"Tags in photos",
+"Снято {0} — больше за раз нельзя":"{0} taken — that is the limit per batch",
+"Фото {0} из {1} (№{2})…":"Photo {0} of {1} (no. {2})…",
+"Фото {0} из {1}: {2}":"Photo {0} of {1}: {2}",
+"Фото: {0}, тегов найдено: {1} за {2} с. Проверь отметки и задания перед добавлением.":"Photos: {0}, tags found: {1} in {2} s. Check the marks and tasks before adding.",
+"Не прочитано фото: {0}.":"Photos not read: {0}.",
+"Остановлено. Прочитано фото: {0}, тегов: {1}.":"Stopped. Photos read: {0}, tags: {1}.",
+"Распознавание остановлено.":"Recognition stopped.",
+"Распознать · {0}":"Recognize · {0}",
+"Стоп":"Stop",
+"фото {0}":"photo {0}"
 });
 
 I._init();
