@@ -2075,7 +2075,8 @@ function updateOcrConfigStatus(){
   for(const id of ["ocrOnlineToggle","headOcrToggle"]){const t=$(id);if(t)t.checked=online;}
   document.querySelector(".ocrEngineRow")?.classList.toggle("online",online);
   $("headOcr")?.classList.toggle("on",online);
-  $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":TX("На телефоне, без интернета");
+  $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":"";
+  $("ocrEngineTitle").hidden=!online;   // v122: «На телефоне, без интернета» убрано
   $("ocrConfigStatus").textContent=online?TX("Нужны интернет и VPN, фото уходит на сервер"):TX("Фото не покидает устройство");
   updateNetStrip();
 }
@@ -2835,7 +2836,7 @@ function updateOcrPhotoUi(){
   box.classList.toggle("cropping",ocrCropMode);
   box.classList.toggle("compact",!ocrCropMode&&!!$("importList").children.length);
   const hint=$("ocrCropHint");
-  if(ocrCropMode){hint.hidden=false;hint.textContent=TX("Тяните углы и стороны, двигайте рамку, раздвигайте двумя пальцами.")+(ocrPhoto?.geo?" "+TX("Ползунок — выровнять строки по жёлтым линиям, ⟲ ⟳ — поворот на 90°, «Авто» — выровнять само."):"");}
+  if(ocrCropMode){hint.hidden=true;hint.textContent="";}  // v122: подсказка убрана
   else hint.hidden=true;
 }
 function drawOcrPhoto(){
@@ -2998,7 +2999,7 @@ function batchResetResults(){
   ocrCandidates=[];ocrCandidateMeta=new Map();lastOcrText="";setReviewing(false);
   $("importList").innerHTML="";$("importActions").style.display="none";$("photoImportLegend").classList.remove("ready");
   $("ocrProgressWrap").style.display="none";setProgress(0);
-  $("ocrStatus").textContent=ocrBatch.length?TX("Касание фото — обрезка: выделите только строки текста, без QR-кода и рамки бирки. Кружок — выбрать. Затем «Распознать»."):"";
+  $("ocrStatus").textContent="";
 }
 function clearOcrBatch(){ocrBatch=[];ocrBatchLoading=0;ocrPickPending=0;ocrBatchRunning=false;renderOcrBatch();}
 // v121: вызывается из Android (MainActivity.prepareImagesAsync), когда фото выбраны и готовятся.
@@ -4815,17 +4816,15 @@ function allTagNames(){
   return out;
 }
 // v106: переключатель разделов — одна кнопка текущего раздела («Т», «Газ», «4–20», молния).
-// Касание раскрывает выбор влево в той же строке; после выбора он сворачивается сам через
-// 3 с без касаний. Касание текущего раздела, касание мимо, Esc и «Назад» сворачивают сразу.
-const VIEW_SWITCH_DELAY_MS=3000;
-let viewSwitchOpen=false,viewSwitchTimer=0;
+// Касание раскрывает выбор влево в той же строке. v122: таймера нет — выбор остаётся раскрытым,
+// пока не коснутся текущего раздела или места мимо, не прокрутят экран, не нажмут Esc/«Назад».
+let viewSwitchOpen=false,viewSwitchOpenedAt=0;
 function setViewSwitchOpen(on){
   on=!!on;
-  clearTimeout(viewSwitchTimer);
   const nav=$("viewSwitch");
   if(!nav)return;
   if(on!==viewSwitchOpen){
-    viewSwitchOpen=on;
+    viewSwitchOpen=on;viewSwitchOpenedAt=Date.now();
     nav.classList.toggle("open",on);
     nav.closest(".titleRow")?.classList.toggle("swOpen",on);
     nav.querySelectorAll(".viewSwitchBtn").forEach(b=>{
@@ -4833,13 +4832,6 @@ function setViewSwitchOpen(on){
       b.tabIndex=on||b.dataset.view===currentView?0:-1;
     });
   }
-  if(on)armViewSwitch();
-}
-function armViewSwitch(){
-  clearTimeout(viewSwitchTimer);
-  const bar=$("viewSwitchTimer");
-  if(bar){bar.classList.remove("run");void bar.offsetWidth;bar.classList.add("run");}
-  viewSwitchTimer=setTimeout(()=>setViewSwitchOpen(false),VIEW_SWITCH_DELAY_MS);
 }
 // v100: въезд раздела — та же анимация (сдвиг 18 px + прозрачность, время и кривая из
 // --ui-motion / --ui-ease), но через Web Animations: без принудительного пересчёта
@@ -5247,12 +5239,16 @@ $("viewSwitch").addEventListener("click",e=>{
   if(!b)return;
   if(!viewSwitchOpen){setViewSwitchOpen(true);return;}                 // свёрнут — раскрыть
   if(b.dataset.view===currentView){setViewSwitchOpen(false);return;}    // тот же раздел — свернуть
-  armViewSwitch();setView(b.dataset.view);                              // другой — перейти, свернуть через 3 с
+  setView(b.dataset.view);                                              // другой — перейти, выбор остаётся раскрытым
 });
 // Касание мимо раскрытого выбора сворачивает его (само касание срабатывает как обычно).
 document.addEventListener("pointerdown",e=>{
   if(viewSwitchOpen&&!e.target.closest?.("#viewSwitch"))setViewSwitchOpen(false);
 },true);
+// v122: прокрутка экрана (смахнули список) — пользуются разделом, выбор сворачивается.
+document.addEventListener("scroll",e=>{
+  if(viewSwitchOpen&&Date.now()-viewSwitchOpenedAt>500&&!e.target.closest?.("#viewSwitch"))setViewSwitchOpen(false);
+},{capture:true,passive:true});
 // Стрелки влево/вправо на переключателе — как у обычных вкладок.
 $("viewSwitch").addEventListener("keydown",e=>{
   if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
