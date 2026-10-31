@@ -2444,8 +2444,13 @@ body.camera-open{overflow:hidden}
    фото ужимается под свободное место, окно можно прокрутить, а ряд кнопок закреплён внизу окна. */
 #overlay.import-mode:not(.reviewing) .sheet{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #overlay.import-mode:not(.reviewing) #photoForm,#overlay.import-mode:not(.reviewing) #fileForm{flex-shrink:0}
-.ocrPreview.cropping canvas{max-height:max(160px,min(62vh,calc(min(94dvh,820px) - 460px)))}
+.ocrPreview.cropping canvas{max-height:max(160px,min(62vh,calc(min(94dvh,820px) - 510px)))}
 .ocrDock{flex:0 0 auto;position:sticky;bottom:0;z-index:4;margin:0 -16px;padding:0 16px 8px;background:var(--card)}
 .ocrDock:has(#ocrRunRow[hidden]):has(#ocrLevelRow[hidden]):has(#ocrCropBar[hidden]){display:none}
 /* Запасной вариант для всех остальных окон: если содержимое выше экрана — окно прокручивается. */
 .overlay .exportSheet{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+
+/* v123: ряд увеличения в окне обрезки. */
+.lvlAuto[aria-pressed="false"]{background:var(--card);color:var(--accent)}
+.lvlBtn:disabled{opacity:.4}
+.ocrZoomRow .lvlBtn{font-size:22px}
