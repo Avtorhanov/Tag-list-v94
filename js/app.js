@@ -2802,6 +2802,13 @@ let ocrBatch=[],ocrBatchSeq=0,ocrBatchRunning=false,ocrBatchLoading=0;
 // v121: Android готовит выбранные фото в фоне (уменьшает до ~8 Мп) — пока идёт подготовка, видны плитки «открываю…».
 let ocrPickPending=0,ocrPickArmed=0;
 let ocrCropMode=false,ocrCropEdit=null,ocrCropGesture=null;const ocrCropPtrs=new Map();
+// v123: увеличение фото в окне обрезки. ocrView — окно просмотра в координатах фото (z — кратность, cx/cy — центр).
+// Автозум после каждой правки рамки подгоняет окно под выделенный кусок; вручную — кнопки ±, ползунок, щипок вне рамки,
+// колесо мыши, сдвиг пальцем вне рамки.
+const OCR_ZOOM_MAX=10;
+let ocrView={z:1,cx:0,cy:0},ocrViewAnim=0,ocrFrameTouched=false,ocrAutoZoom=true;
+try{ocrAutoZoom=localStorage.getItem("kip-crop-autozoom")!=="0";}catch(_){}
+const ocrCropClient=new Map();
 
 let localOcrPromise=null;
 function loadLocalOcr(){
@@ -2818,7 +2825,7 @@ function loadLocalOcr(){
 function resetOcrPhoto(){
   setReviewing(false);
   if(ocrPhoto?.item)try{ocrPhoto.img&&ocrPhoto.img.close();}catch(_){}
-  ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();lastOcrText="";
+  ocrPhoto=null;ocrCropMode=false;ocrCropEdit=null;ocrCropGesture=null;ocrCropPtrs.clear();ocrCropClient.clear();lastOcrText="";
   ++ocrRunToken;clearOcrBatch();updateOcrPhotoUi();
 }
 function ocrFullRect(){return{x:0,y:0,w:ocrPhoto.source.width,h:ocrPhoto.source.height};}
@@ -2828,7 +2835,7 @@ function updateOcrPhotoUi(){
   // v118: фото выбираются и обрезаются в сетке миниатюр; холст — только для обрезки одного фото.
   canvas.hidden=!has;$("ocrPickBtn").hidden=true;$("ocrCropBtn").hidden=true;
   const grid=$("ocrGrid");if(grid)grid.hidden=has;
-  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;syncLevelUi();
+  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;$("ocrZoomRow").hidden=!ocrCropMode;syncZoomUi();syncLevelUi();
   const sel=batchSelected().length,run=$("ocrRunBtn");
   run.disabled=has||!sel||ocrBatchRunning||ocrBatchLoading>0||ocrPickPending>0;
   run.textContent=sel>1?TX("Распознать · {0}",sel):TX("Распознать");
@@ -2844,18 +2851,21 @@ function drawOcrPhoto(){
   const src=ocrPhoto.source,c=$("ocrCanvas"),s=Math.min(1,1400/Math.max(src.width,src.height));
   const W=Math.round(src.width*s),H=Math.round(src.height*s);
   if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
-  const g=c.getContext("2d");
-  if(ocrPhoto.geo)drawRotated(g,ocrPhoto.prev||ocrPhoto.img,ocrPhoto.geo,s,0,0,"#2a2f38");else g.drawImage(src,0,0,W,H);
-  const k=c.width/Math.max(1,c.getBoundingClientRect().width||c.width);
+  const g=c.getContext("2d"),vr=curOcrView();
+  // v123: окно просмотра — масштаб и сдвиг холста; всё ниже рисуется в координатах фото × s.
+  if(ocrPhoto.geo){drawRotated(g,vr.z>1.5?ocrPhoto.img:(ocrPhoto.prev||ocrPhoto.img),ocrPhoto.geo,s,0,0,"#2a2f38",vr);}
+  else{g.save();g.scale(vr.z,vr.z);g.translate(-vr.x*s,-vr.y*s);g.drawImage(src,0,0,W,H);g.restore();}
+  g.save();g.scale(vr.z,vr.z);g.translate(-vr.x*s,-vr.y*s);
+  const k=c.width/Math.max(1,c.getBoundingClientRect().width||c.width)/vr.z;
   // v120: при выравнивании — горизонтальные линии по всему фото, по ним удобно ставить строки текста.
   if(ocrCropMode&&performance.now()<levelGuidesUntil){
     g.save();g.strokeStyle="rgba(255,214,10,.75)";g.lineWidth=1.2*k;
     const step=Math.max(18*k,H/14);for(let y=step/2;y<H;y+=step){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}g.restore();
   }
-  const r=ocrCropMode?ocrCropEdit:ocrPhoto.crop;if(!r)return;
+  const r=ocrCropMode?ocrCropEdit:ocrPhoto.crop;if(!r){g.restore();return;}
   const x=r.x*s,y=r.y*s,w=r.w*s,h=r.h*s;
-  g.save();g.fillStyle=ocrCropMode?"rgba(10,14,22,.62)":"rgba(10,14,22,.5)";g.beginPath();g.rect(0,0,W,H);g.rect(x,y,w,h);g.fill("evenodd");
-  if(!ocrCropMode){g.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#1d5fc4";g.lineWidth=Math.max(2,2*k);g.strokeRect(x,y,w,h);g.restore();return;}
+  g.save();g.fillStyle=ocrCropMode?"rgba(10,14,22,.62)":"rgba(10,14,22,.5)";g.beginPath();g.rect(-1e5,-1e5,2e5,2e5);g.rect(x,y,w,h);g.fill("evenodd");
+  if(!ocrCropMode){g.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#1d5fc4";g.lineWidth=Math.max(2,2*k);g.strokeRect(x,y,w,h);g.restore();g.restore();return;}
   g.shadowColor="rgba(0,0,0,.6)";g.shadowBlur=3*k;
   g.strokeStyle="rgba(255,255,255,.55)";g.lineWidth=1*k;g.setLineDash([5*k,4*k]);
   for(let i=1;i<3;i++){g.beginPath();g.moveTo(x+w*i/3,y);g.lineTo(x+w*i/3,y+h);g.moveTo(x,y+h*i/3);g.lineTo(x+w,y+h*i/3);g.stroke();}
@@ -2864,23 +2874,69 @@ function drawOcrPhoto(){
   for(const [cx,cy,sx,sy] of [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]){g.moveTo(cx+sx*L,cy+sy*T/2);g.lineTo(cx+sx*T/2,cy+sy*T/2);g.lineTo(cx+sx*T/2,cy+sy*L);}
   g.moveTo(x+w/2-M,y+T/2);g.lineTo(x+w/2+M,y+T/2);g.moveTo(x+w/2-M,y+h-T/2);g.lineTo(x+w/2+M,y+h-T/2);
   g.moveTo(x+T/2,y+h/2-M);g.lineTo(x+T/2,y+h/2+M);g.moveTo(x+w-T/2,y+h/2-M);g.lineTo(x+w-T/2,y+h/2+M);
-  g.stroke();g.restore();
+  g.stroke();g.restore();g.restore();
 }
 // Обрезка как в галерее телефона: рамка сразу по всему фото, углы и стороны тянутся,
 // рамка двигается пальцем, двумя пальцами раздвигается; каждое касание продолжает с текущей рамки.
-function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropGesture=null;updateOcrPhotoUi();syncLevelUi();requestAnimationFrame(drawOcrPhoto);}
+function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropClient.clear();ocrCropGesture=null;ocrFrameTouched=false;setOcrView(ocrAutoZoom&&ocrPhoto.crop?fitViewToFrame():fullView(),false);updateOcrPhotoUi();syncLevelUi();requestAnimationFrame(drawOcrPhoto);}
 function applyOcrCrop(){
   if(!ocrCropMode)return;const src=ocrPhoto.source,r=ocrCropEdit;
   const full=r.x<=1&&r.y<=1&&r.w>=src.width-2&&r.h>=src.height-2;
   ocrPhoto.crop=full?null:{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.w),h:Math.round(r.h)};
-  ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;
+  ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;cancelAnimationFrame(ocrViewAnim);
   if(ocrPhoto.item){finishBatchCrop(true);return;}
   updateOcrPhotoUi();drawOcrPhoto();
 }
-function cancelOcrCrop(){ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;if(ocrPhoto?.item){finishBatchCrop(false);return;}updateOcrPhotoUi();drawOcrPhoto();}
-function ocrCssPerSrc(){return Math.max(1e-6,$("ocrCanvas").getBoundingClientRect().width/ocrPhoto.source.width);}
-function ocrToSrc(e){const b=$("ocrCanvas").getBoundingClientRect(),src=ocrPhoto.source;return{x:(e.clientX-b.left)/b.width*src.width,y:(e.clientY-b.top)/b.height*src.height};}
+function cancelOcrCrop(){cancelAnimationFrame(ocrViewAnim);ocrCropMode=false;ocrCropEdit=null;ocrCropPtrs.clear();ocrCropGesture=null;if(ocrPhoto?.item){finishBatchCrop(false);return;}updateOcrPhotoUi();drawOcrPhoto();}
 const clampN=(v,a,b)=>Math.max(a,Math.min(b,v));
+// v123: окно просмотра. В режиме обрезки учитывает увеличение, иначе — всё фото.
+function fullView(){const src=ocrPhoto.source;return{z:1,cx:src.width/2,cy:src.height/2};}
+function normView(v){const src=ocrPhoto.source,z=clampN(v.z,1,OCR_ZOOM_MAX),w=src.width/z,h=src.height/z;
+  return{z,cx:clampN(v.cx,w/2,src.width-w/2),cy:clampN(v.cy,h/2,src.height-h/2)};}
+function curOcrView(){
+  const src=ocrPhoto.source,v=ocrCropMode?normView(ocrView):fullView(),w=src.width/v.z,h=src.height/v.z;
+  return{x:v.cx-w/2,y:v.cy-h/2,w,h,z:v.z};
+}
+function ocrCssPerSrc(){return Math.max(1e-6,$("ocrCanvas").getBoundingClientRect().width/curOcrView().w);}
+function ocrToSrc(e){const b=$("ocrCanvas").getBoundingClientRect(),vr=curOcrView();return{x:vr.x+(e.clientX-b.left)/b.width*vr.w,y:vr.y+(e.clientY-b.top)/b.height*vr.h};}
+function syncZoomUi(){
+  const row=$("ocrZoomRow");if(!row||row.hidden)return;
+  const z=ocrPhoto&&ocrCropMode?normView(ocrView).z:1;
+  $("ocrZoom").value=String(z);$("ocrZoomVal").textContent=(Math.round(z*10)/10).toString().replace(".",window.I18N?.dec||",")+"×";
+  $("ocrZoomOut").disabled=z<=1.001;$("ocrZoomIn").disabled=z>=OCR_ZOOM_MAX-.001;
+  const a=$("ocrZoomAuto");a.setAttribute("aria-pressed",String(ocrAutoZoom));
+}
+// Окно просмотра по рамке: рамка + 12 % запаса; полная рамка — всё фото.
+function fitViewToFrame(){
+  const src=ocrPhoto.source,r=ocrCropEdit||ocrPhoto.crop;
+  if(!r||cropRegionFull(r))return fullView();
+  const z=clampN(Math.min(src.width/(r.w*1.12),src.height/(r.h*1.12)),1,OCR_ZOOM_MAX);
+  return normView({z,cx:r.x+r.w/2,cy:r.y+r.h/2});
+}
+function setOcrView(v,animate){
+  cancelAnimationFrame(ocrViewAnim);
+  const to=normView(v),reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion:reduce)").matches;
+  if(!animate||reduce||!ocrCropMode){ocrView=to;drawOcrPhoto();syncZoomUi();return;}
+  const from=normView(ocrView),t0=performance.now(),D=220;
+  const step=now=>{
+    if(!ocrCropMode||!ocrPhoto)return;
+    const u=Math.min(1,(now-t0)/D),e=1-Math.pow(1-u,3);
+    ocrView={z:from.z*Math.pow(to.z/from.z,e),cx:from.cx+(to.cx-from.cx)*e,cy:from.cy+(to.cy-from.cy)*e};
+    drawOcrPhoto();syncZoomUi();
+    if(u<1)ocrViewAnim=requestAnimationFrame(step);
+  };
+  ocrViewAnim=requestAnimationFrame(step);
+}
+// Увеличить/уменьшить, удерживая на месте точку (clientX/clientY; по умолчанию — центр окна).
+function zoomOcrBy(factor,clientPt,animate){
+  if(!ocrPhoto||!ocrCropMode)return;
+  const b=$("ocrCanvas").getBoundingClientRect(),cur=normView(ocrView),src=ocrPhoto.source;
+  const fx=clientPt?(clientPt.x-b.left)/b.width:.5,fy=clientPt?(clientPt.y-b.top)/b.height:.5;
+  const z=clampN(cur.z*factor,1,OCR_ZOOM_MAX),w0=src.width/cur.z,h0=src.height/cur.z,w=src.width/z,h=src.height/z;
+  const px=cur.cx-w0/2+fx*w0,py=cur.cy-h0/2+fy*h0;
+  setOcrView({z,cx:px-fx*w+w/2,cy:py-fy*h+h/2},!!animate);
+}
+function ocrAutoFit(){if(ocrAutoZoom&&ocrCropMode&&ocrPhoto)setOcrView(fitViewToFrame(),true);}
 function ocrCropHit(p){
   // Снаружи рамки зона захвата 26 px, внутри — не больше четверти стороны: в узкой рамке середина остаётся для сдвига.
   const k=ocrCssPerSrc(),r=ocrCropEdit,out=26/k,inX=Math.min(26,r.w*k/4)/k,inY=Math.min(26,r.h*k/4)/k;
@@ -2913,24 +2969,50 @@ function wireOcrCrop(){
   box.addEventListener("pointerdown",e=>{
     if(!ocrCropMode||!ocrPhoto)return;e.preventDefault();
     try{box.setPointerCapture(e.pointerId);}catch(_){}
-    ocrCropPtrs.set(e.pointerId,ocrToSrc(e));
-    if(ocrCropPtrs.size===2){const [a0,b0]=[...ocrCropPtrs.values()];ocrCropGesture={type:"pinch",r0:{...ocrCropEdit},a0,b0};}
-    else if(ocrCropPtrs.size===1){const p=ocrToSrc(e),t=ocrCropHit(p);ocrCropGesture=t?{type:t,start:p,r0:{...ocrCropEdit}}:null;}
+    cancelAnimationFrame(ocrViewAnim);
+    ocrCropPtrs.set(e.pointerId,ocrToSrc(e));ocrCropClient.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(ocrCropPtrs.size===2){
+      const [a0,b0]=[...ocrCropPtrs.values()],[ca,cb]=[...ocrCropClient.values()],r=ocrCropEdit;
+      const mid={x:(a0.x+b0.x)/2,y:(a0.y+b0.y)/2};
+      // Щипок внутри рамки меняет рамку, вне рамки — увеличивает фото.
+      if(mid.x>=r.x&&mid.x<=r.x+r.w&&mid.y>=r.y&&mid.y<=r.y+r.h)ocrCropGesture={type:"pinch",r0:{...r},a0,b0};
+      else ocrCropGesture={type:"zoom",d0:Math.max(30,Math.hypot(ca.x-cb.x,ca.y-cb.y)),v0:normView(ocrView),m0:{x:(ca.x+cb.x)/2,y:(ca.y+cb.y)/2},p0:mid};
+    }
+    else if(ocrCropPtrs.size===1){
+      const p=ocrToSrc(e),t=ocrCropHit(p);
+      ocrCropGesture=t?{type:t,start:p,r0:{...ocrCropEdit}}:(normView(ocrView).z>1.001?{type:"pan",c0:{x:e.clientX,y:e.clientY},v0:normView(ocrView),k0:ocrCssPerSrc()}:null);
+    }
   });
   box.addEventListener("pointermove",e=>{
     if(!ocrCropMode||!ocrCropPtrs.has(e.pointerId))return;e.preventDefault();
+    ocrCropClient.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    const gt=ocrCropGesture&&ocrCropGesture.type;
+    if(gt==="pan"){const g=ocrCropGesture;ocrView={z:g.v0.z,cx:g.v0.cx-(e.clientX-g.c0.x)/g.k0,cy:g.v0.cy-(e.clientY-g.c0.y)/g.k0};drawOcrPhoto();return;}
+    if(gt==="zoom"){
+      if(ocrCropClient.size<2)return;
+      const g=ocrCropGesture,[ca,cb]=[...ocrCropClient.values()],d=Math.hypot(ca.x-cb.x,ca.y-cb.y);
+      const b=$("ocrCanvas").getBoundingClientRect(),src=ocrPhoto.source,z=clampN(g.v0.z*d/g.d0,1,OCR_ZOOM_MAX),w=src.width/z,h=src.height/z;
+      const mx=(ca.x+cb.x)/2,my=(ca.y+cb.y)/2;
+      ocrView={z,cx:g.p0.x-(mx-b.left)/b.width*w+w/2,cy:g.p0.y-(my-b.top)/b.height*h+h/2};
+      drawOcrPhoto();syncZoomUi();return;
+    }
     ocrCropPtrs.set(e.pointerId,ocrToSrc(e));
     if(!ocrCropGesture)return;
+    ocrFrameTouched=true;
     if(ocrCropGesture.type==="pinch"){if(ocrCropPtrs.size>=2)ocrCropPinch();}else ocrCropSingle(ocrCropPtrs.get(e.pointerId));
     drawOcrPhoto();
   });
   const end=e=>{
-    if(!ocrCropPtrs.has(e.pointerId))return;ocrCropPtrs.delete(e.pointerId);
+    if(!ocrCropPtrs.has(e.pointerId))return;ocrCropPtrs.delete(e.pointerId);ocrCropClient.delete(e.pointerId);
     // После щипка оставшийся палец ничего не двигает, пока его не поднимут.
-    if(ocrCropGesture&&ocrCropGesture.type==="pinch"&&ocrCropPtrs.size===1)ocrCropGesture=null;
-    if(!ocrCropPtrs.size){if(ocrCropGesture)rememberLevelBase();ocrCropGesture=null;}
+    if(ocrCropGesture&&(ocrCropGesture.type==="pinch"||ocrCropGesture.type==="zoom")&&ocrCropPtrs.size===1)ocrCropGesture=null;
+    if(!ocrCropPtrs.size){
+      if(ocrCropGesture)rememberLevelBase();ocrCropGesture=null;
+      if(ocrFrameTouched){ocrFrameTouched=false;ocrAutoFit();}   // v123: автоувеличение выделенного куска
+    }
   };
   box.addEventListener("pointerup",end);box.addEventListener("pointercancel",end);
+  box.addEventListener("wheel",e=>{if(!ocrCropMode||!ocrPhoto)return;e.preventDefault();zoomOcrBy(e.deltaY<0?1.25:.8,{x:e.clientX,y:e.clientY},false);},{passive:false});
   window.addEventListener("resize",()=>{if(ocrCropMode)drawOcrPhoto();},{passive:true});
 }
 
@@ -3046,9 +3128,11 @@ function rotGeo(W,H,rot){
 function rotFwd(geo,x,y){const dx=x-geo.W/2,dy=y-geo.H/2,c=Math.cos(geo.rad),sn=Math.sin(geo.rad);return [(dx*c-dy*sn+geo.Wr/2)*geo.k,(dx*sn+dy*c+geo.Hr/2)*geo.k];}
 function rotInv(geo,X,Y){const rx=X/geo.k-geo.Wr/2,ry=Y/geo.k-geo.Hr/2,c=Math.cos(geo.rad),sn=Math.sin(geo.rad);return [rx*c+ry*sn+geo.W/2,-rx*sn+ry*c+geo.H/2];}
 // Рисует фото (img может быть уменьшенной копией) так, что точка (X,Y) повёрнутого пространства попадает в ((X-offX)*scale,(Y-offY)*scale).
-function drawRotated(g,img,geo,scale,offX,offY,bg){
+function drawRotated(g,img,geo,scale,offX,offY,bg,vr){
   if(bg){g.save();g.setTransform(1,0,0,1,0,0);g.fillStyle=bg;g.fillRect(0,0,g.canvas.width,g.canvas.height);g.restore();}
-  g.save();g.scale(geo.k*scale,geo.k*scale);g.translate(-offX/geo.k+geo.Wr/2,-offY/geo.k+geo.Hr/2);g.rotate(geo.rad);
+  g.save();
+  if(vr&&vr.z!==1||vr&&(vr.x||vr.y)){g.scale(vr.z,vr.z);g.translate(-vr.x*scale,-vr.y*scale);}   // v123: окно просмотра
+  g.scale(geo.k*scale,geo.k*scale);g.translate(-offX/geo.k+geo.Wr/2,-offY/geo.k+geo.Hr/2);g.rotate(geo.rad);
   g.imageSmoothingQuality="high";g.drawImage(img,-geo.W/2,-geo.H/2,geo.W,geo.H);g.restore();
 }
 // Участок повёрнутого фото в исходном разрешении — для распознавания.
@@ -3068,6 +3152,7 @@ const norm180=a=>{a=((a%360)+360)%360;return a>180?a-360:a;};
 function setCropRot(rot,q){
   const p=ocrPhoto;if(!p||!p.geo||!ocrCropMode)return;
   // q — сколько четвертей поворота задано кнопками ⟲ ⟳; ползунок двигает остаток в пределах ±45°.
+  const q0=p.q;
   p.q=typeof q==="number"?q:Math.round(rot/90);
   rot=Math.round(norm180(rot)*2)/2;
   const base=p.levelBase,g0=rotGeo(p.geo.W,p.geo.H,base.rot),g1=rotGeo(p.geo.W,p.geo.H,rot);
@@ -3080,6 +3165,7 @@ function setCropRot(rot,q){
     r={x:x0,y:y0,w:clampN(Math.max(...xs),x0+12,g1.width)-x0,h:clampN(Math.max(...ys),y0+12,g1.height)-y0};
   }
   p.rot=rot;p.geo=g1;p.source=g1;ocrCropEdit=r;
+  if(q0!==p.q)ocrView=fullView();   // v123: четверть оборота меняет размеры фото
   syncLevelUi();drawOcrPhoto();
 }
 function cropRegionFull(r){return !r||(r.x<=1&&r.y<=1&&r.w>=ocrPhoto.source.width-2&&r.h>=ocrPhoto.source.height-2);}
@@ -4541,7 +4627,12 @@ $("ocrRunBtn").onclick=runSelectedOcr;
 $("ocrCropBtn").onclick=startOcrCrop;
 $("ocrCropDone").onclick=applyOcrCrop;
 $("ocrCropCancel").onclick=cancelOcrCrop;
-$("ocrCropReset").onclick=()=>{if(!ocrPhoto||!ocrCropMode)return;ocrCropEdit=ocrFullRect();rememberLevelBase();drawOcrPhoto();};
+$("ocrCropReset").onclick=()=>{if(!ocrPhoto||!ocrCropMode)return;ocrCropEdit=ocrFullRect();rememberLevelBase();setOcrView(fullView(),true);};
+// v123: ручное увеличение.
+$("ocrZoomIn").onclick=()=>zoomOcrBy(1.5,null,true);
+$("ocrZoomOut").onclick=()=>zoomOcrBy(1/1.5,null,true);
+$("ocrZoom").addEventListener("input",e=>{const cur=normView(ocrView);zoomOcrBy(Number(e.target.value)/cur.z,null,false);});
+$("ocrZoomAuto").onclick=()=>{ocrAutoZoom=!ocrAutoZoom;try{localStorage.setItem("kip-crop-autozoom",ocrAutoZoom?"1":"0");}catch(_){}syncZoomUi();if(ocrAutoZoom)ocrAutoFit();};
 // v120: ручное выравнивание в окне обрезки.
 $("ocrLevel").addEventListener("pointerdown",()=>rememberLevelBase());
 $("ocrLevel").addEventListener("input",e=>{const p=ocrPhoto;if(!p)return;const q=typeof p.q==="number"?p.q:Math.round(p.rot/90);levelGuidesUntil=performance.now()+1e9;setCropRot(q*90+Number(e.target.value),q);});
