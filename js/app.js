@@ -2798,6 +2798,8 @@ let ocrPhoto=null; // {name, source: ImageBitmap, crop: {x,y,w,h}|null, item?: �
 const OCR_BATCH_MAX=9;
 const OCR_STORE_PIXELS=8e6; // хранится не больше ~8 Мп на фото: мелкий текст бирки читается, память iPhone не кончается
 let ocrBatch=[],ocrBatchSeq=0,ocrBatchRunning=false,ocrBatchLoading=0;
+// v121: Android готовит выбранные фото в фоне (уменьшает до ~8 Мп) — пока идёт подготовка, видны плитки «открываю…».
+let ocrPickPending=0,ocrPickArmed=0;
 let ocrCropMode=false,ocrCropEdit=null,ocrCropGesture=null;const ocrCropPtrs=new Map();
 
 let localOcrPromise=null;
@@ -2827,7 +2829,7 @@ function updateOcrPhotoUi(){
   const grid=$("ocrGrid");if(grid)grid.hidden=has;
   $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;syncLevelUi();
   const sel=batchSelected().length,run=$("ocrRunBtn");
-  run.disabled=has||!sel||ocrBatchRunning||ocrBatchLoading>0;
+  run.disabled=has||!sel||ocrBatchRunning||ocrBatchLoading>0||ocrPickPending>0;
   run.textContent=sel>1?TX("Распознать · {0}",sel):TX("Распознать");
   $("ocrBackBtn").textContent=ocrBatchRunning?TX("Стоп"):TX("← Назад");
   box.classList.toggle("cropping",ocrCropMode);
@@ -2998,11 +3000,20 @@ function batchResetResults(){
   $("ocrProgressWrap").style.display="none";setProgress(0);
   $("ocrStatus").textContent=ocrBatch.length?TX("Касание фото — обрезка: выделите только строки текста, без QR-кода и рамки бирки. Кружок — выбрать. Затем «Распознать»."):"";
 }
-function clearOcrBatch(){ocrBatch=[];ocrBatchLoading=0;ocrBatchRunning=false;renderOcrBatch();}
+function clearOcrBatch(){ocrBatch=[];ocrBatchLoading=0;ocrPickPending=0;ocrBatchRunning=false;renderOcrBatch();}
+// v121: вызывается из Android (MainActivity.prepareImagesAsync), когда фото выбраны и готовятся.
+// Срабатывает только для выбора фото к распознаванию (#photoInput), не для фото к тегу.
+window.__tagListPhotosPreparing=n=>{
+  if(!ocrPickArmed||Date.now()-ocrPickArmed>30*60*1000)return;
+  if(addMode!=="camera"&&addMode!=="photo"){clearOcrBatch();setAddMode("photo");}
+  ocrPickPending=Math.max(0,n|0);
+  if(ocrPickPending)$("ocrStatus").textContent=TX("Готовлю фото: {0}…",ocrPickPending);
+  renderOcrBatch();
+};
 function renderOcrBatch(){
   const grid=$("ocrGrid");if(!grid)return;
   const n=ocrBatch.length,sel=batchSelected().length;
-  grid.hidden=!(n||ocrBatchLoading)||!!ocrPhoto;
+  grid.hidden=!(n||ocrBatchLoading||ocrPickPending)||!!ocrPhoto;
   const parts=ocrBatch.map((it,i)=>{
     const st=it.err?`<span class="otStat bad">${TX("ошибка")}</span>`:it.found!=null?`<span class="otStat" title="${escapeHtml(it.note||"")}">${TX("тегов: {0}",it.found)}${it.note?" ↻":""}</span>`:it.busy?`<span class="otStat busy">${TX("читаю…")}</span>`:"";
     return `<div class="ocrTile${it.on?"":" off"}${it.busy?" busy":""}" data-ot="${it.id}">
@@ -3011,8 +3022,9 @@ function renderOcrBatch(){
 <button class="otPick" type="button" role="checkbox" aria-checked="${it.on}" data-ot-pick="${it.id}" aria-label="${escapeHtml(TX("Распознавать фото {0}",i+1))}"></button>
 <button class="otDel" type="button" data-ot-del="${it.id}" aria-label="${escapeHtml(TX("Убрать фото {0}",i+1))}">×</button>${st}</div>`;
   });
-  for(let i=0;i<ocrBatchLoading;i++)parts.push(`<div class="ocrTile loading"><span class="otStat busy">${TX("открываю…")}</span></div>`);
-  if(n+ocrBatchLoading<OCR_BATCH_MAX&&!ocrBatchRunning){
+  const waiting=Math.min(ocrBatchLoading+ocrPickPending,Math.max(0,OCR_BATCH_MAX-n));
+  for(let i=0;i<waiting;i++)parts.push(`<div class="ocrTile loading"><span class="otStat busy">${TX("открываю…")}</span></div>`);
+  if(n+waiting<OCR_BATCH_MAX&&!ocrBatchRunning){
     parts.push(`<button class="ocrAdd" type="button" data-ot-add="camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg><span>${TX("Снять")}</span></button>`);
     parts.push(`<button class="ocrAdd" type="button" data-ot-add="photo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect><circle cx="9" cy="10" r="1.8"></circle><path d="M20 16l-5-5-8 8"></path></svg><span>${TX("Фото")}</span></button>`);
   }
@@ -4558,8 +4570,12 @@ $("cameraInput").addEventListener("change",async e=>{
   if(addMode!=="camera"&&addMode!=="photo"){clearOcrBatch();setAddMode("camera");}
   addBatchFiles(files);
 });
+$("photoInput").addEventListener("click",()=>{ocrPickArmed=Date.now();});
+$("photoInput").addEventListener("cancel",()=>{ocrPickArmed=0;if(ocrPickPending){ocrPickPending=0;renderOcrBatch();}});
 $("photoInput").addEventListener("change",async e=>{
   const files=[...(e.target.files||[])]; e.target.value="";
+  ocrPickArmed=0;
+  if(ocrPickPending){ocrPickPending=0;$("ocrStatus").textContent="";renderOcrBatch();}
   if(!files.length)return;
   if(addMode!=="camera"&&addMode!=="photo"){clearOcrBatch();setAddMode("photo");}
   addBatchFiles(files);

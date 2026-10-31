@@ -15,12 +15,13 @@ import java.io.IOException;
 
 /**
  * Минимальный провайдер файлов (замена androidx FileProvider без сторонних библиотек).
- * Отдаёт файлы из cache/share (для «Поделиться») и cache/camera (снимок для OCR).
+ * Отдаёт файлы из cache/share (для «Поделиться»), cache/camera (снимок для OCR)
+ * и cache/pick (v121: выбранные фото, уменьшенные до ~8 Мп).
  * content://<applicationId>.share/<папка>/<имя файла>
  */
 public class ShareProvider extends ContentProvider {
 
-    static final String[] ALLOWED_DIRS = {"share", "camera"};
+    static final String[] ALLOWED_DIRS = {"share", "camera", "pick"};
 
     @Override
     public boolean onCreate() {
