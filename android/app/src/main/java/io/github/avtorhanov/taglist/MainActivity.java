@@ -12,11 +12,16 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
+import android.os.ext.SdkExtensions;
 import android.provider.ContactsContract;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -87,6 +92,11 @@ public class MainActivity extends Activity {
     // v107: язык системных окон и уведомлений — как у интерфейса (кнопка RU/EN, AndroidApp.setLanguage).
     volatile boolean langEn;
     ValueCallback<Uri[]> fileCallback;
+    // v121: выбор только картинок — результат готовится в фоне (уменьшение до ~8 Мп, поворот по EXIF).
+    boolean fileImagesOnly;
+    static final int PICK_IMAGES_MAX = 9;           // как OCR_BATCH_MAX в js/app.js
+    static final long PICK_STORE_PIXELS = 8_000_000L; // как OCR_STORE_PIXELS в js/app.js
+    static final String PICK_DIR = "pick";
     Uri cameraUri;
     File cameraFile;
     // Содержимое файла, ожидающее выбора места сохранения. Дублируется во временный
@@ -105,6 +115,7 @@ public class MainActivity extends Activity {
         cleanupCache("share", 24L * 3600 * 1000);
         cleanupCache("camera", 24L * 3600 * 1000);
         cleanupCache("save", 24L * 3600 * 1000);
+        cleanupCache(PICK_DIR, 24L * 3600 * 1000);
         if (savedInstanceState != null) {
             String path = savedInstanceState.getString(STATE_PENDING_SAVE);
             if (path != null) {
@@ -333,10 +344,30 @@ public class MainActivity extends Activity {
                 if (launchCamera()) return true;
             }
 
+            fileImagesOnly = imagesOnly;
+            boolean multiple = params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
+            // v121: несколько фото — системный выбор фото Android (Android 13+, а на 11–12 — через
+            // обновление Google Play). Он всегда возвращает все отмеченные фото с правом на чтение.
+            // Раньше выбор шёл через «Выбрать с помощью…» (ACTION_GET_CONTENT), и часть галерей
+            // отдавала доступ только к первому фото — из 9 выбранных добавлялось одно.
+            if (imagesOnly && hasSystemPhotoPicker()) {
+                Intent pick = new Intent(MediaStore.ACTION_PICK_IMAGES);
+                if (multiple) {
+                    int max = PICK_IMAGES_MAX;
+                    try { max = Math.min(max, MediaStore.getPickImagesMaxLimit()); } catch (Throwable ignored) { }
+                    if (max > 1) pick.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, max);
+                }
+                try {
+                    startActivityForResult(pick, RC_FILE);
+                    return true;
+                } catch (ActivityNotFoundException | SecurityException ignored) {
+                    // нет системного выбора фото — обычный выбор ниже
+                }
+            }
             Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
             pick.addCategory(Intent.CATEGORY_OPENABLE);
             pick.setType(imagesOnly ? "image/*" : "*/*");
-            if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+            if (multiple) {
                 pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             }
             try {
@@ -458,6 +489,116 @@ public class MainActivity extends Activity {
         }
     }
 
+    static boolean hasSystemPhotoPicker() {
+        if (Build.VERSION.SDK_INT >= 33) return true;
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                return SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) >= 2;
+            } catch (Throwable ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * v121: выбранные фото готовятся в фоне, по одному: уменьшение до ~8 Мп, поворот по EXIF, JPEG
+     * в cache/pick. Страница получает уже лёгкие файлы — 9 снимков по 50 Мп больше не читаются и не
+     * раскодируются целиком внутри WebView (долгая загрузка, нехватка памяти). Если фото не удалось
+     * раскодировать (редкий формат), странице уходит исходный адрес — как раньше.
+     */
+    void prepareImagesAsync(final Uri[] picked) {
+        final int n = picked.length;
+        if (web != null) web.evaluateJavascript("window.__tagListPhotosPreparing&&window.__tagListPhotosPreparing(" + n + ")", null);
+        new Thread(() -> {
+            Uri[] out = new Uri[n];
+            File dir = new File(getCacheDir(), PICK_DIR);
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            long stamp = System.currentTimeMillis();
+            for (int i = 0; i < n; i++) {
+                Uri prepared = null;
+                try {
+                    prepared = prepareImage(picked[i], dir, "photo-" + stamp + "-" + (i + 1) + ".jpg");
+                } catch (Throwable e) { // OutOfMemoryError тоже: тогда фото уходит как есть
+                    prepared = null;
+                }
+                out[i] = prepared != null ? prepared : picked[i];
+            }
+            runOnUiThread(() -> finishFileChooser(out));
+        }, "pick-images").start();
+    }
+
+    Uri prepareImage(Uri src, File dir, String name) throws IOException {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream in = getContentResolver().openInputStream(src)) {
+            if (in == null) return null;
+            BitmapFactory.decodeStream(in, null, bounds);
+        }
+        int w = bounds.outWidth, h = bounds.outHeight;
+        if (w <= 0 || h <= 0) return null;
+
+        int orientation = ExifInterface.ORIENTATION_NORMAL;
+        try (InputStream in = getContentResolver().openInputStream(src)) {
+            if (in != null) orientation = new ExifInterface(in).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+        } catch (Exception ignored) { }
+
+        // Раскодировать с прореживанием (степень двойки) не меньше нужного, затем уменьшить точно.
+        int sample = 1;
+        while ((long) (w / (sample * 2)) * (h / (sample * 2)) >= PICK_STORE_PIXELS) sample *= 2;
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inSampleSize = sample;
+        opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap bmp;
+        try (InputStream in = getContentResolver().openInputStream(src)) {
+            if (in == null) return null;
+            bmp = BitmapFactory.decodeStream(in, null, opts);
+        }
+        if (bmp == null) return null;
+
+        Matrix m = new Matrix();
+        double k = Math.min(1.0, Math.sqrt((double) PICK_STORE_PIXELS / ((double) bmp.getWidth() * bmp.getHeight())));
+        if (k < 1.0) m.postScale((float) k, (float) k);
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_ROTATE_90: m.postRotate(90); break;
+            case ExifInterface.ORIENTATION_ROTATE_180: m.postRotate(180); break;
+            case ExifInterface.ORIENTATION_ROTATE_270: m.postRotate(270); break;
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL: m.postScale(-1, 1); break;
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL: m.postScale(1, -1); break;
+            case ExifInterface.ORIENTATION_TRANSPOSE: m.postRotate(90); m.postScale(-1, 1); break;
+            case ExifInterface.ORIENTATION_TRANSVERSE: m.postRotate(270); m.postScale(-1, 1); break;
+            default: break;
+        }
+        if (!m.isIdentity()) {
+            Bitmap t = Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
+            if (t != bmp) bmp.recycle();
+            bmp = t;
+        }
+        // Прозрачный PNG (скриншот) — на белом фоне, иначе в JPEG прозрачное станет чёрным.
+        if (bmp.hasAlpha()) {
+            Bitmap white = Bitmap.createBitmap(bmp.getWidth(), bmp.getHeight(), Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas c = new android.graphics.Canvas(white);
+            c.drawColor(Color.WHITE);
+            c.drawBitmap(bmp, 0, 0, null);
+            bmp.recycle();
+            bmp = white;
+        }
+        File f = new File(dir, name);
+        boolean ok;
+        try (OutputStream os = new FileOutputStream(f)) {
+            ok = bmp.compress(Bitmap.CompressFormat.JPEG, 92, os);
+        } finally {
+            bmp.recycle();
+        }
+        if (!ok || f.length() == 0) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+            return null;
+        }
+        return ShareProvider.uriFor(getPackageName() + ".share", PICK_DIR, name);
+    }
+
     void finishFileChooser(Uri[] result) {
         if (fileCallback != null) {
             fileCallback.onReceiveValue(result);
@@ -484,6 +625,10 @@ public class MainActivity extends Activity {
                 } else if (data.getData() != null) {
                     result = new Uri[]{data.getData()};
                 }
+            }
+            if (result != null && result.length > 0 && fileImagesOnly) {
+                prepareImagesAsync(result);
+                return;
             }
             finishFileChooser(result);
         } else if (requestCode == RC_CONTACT) {

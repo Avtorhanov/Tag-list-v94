@@ -134,6 +134,7 @@ I.add({
 "Убрать фото {0} из отчёта":"Leave photo {0} out of the report",
 "Вернуть фото в отчёт":"Put the photo back into the report",
 "Готовлю фото…":"Preparing photos…",
+"Готовлю фото: {0}…":"Preparing photos: {0}…",
 "Фото сохранены, текст отчёта скопирован":"Photos saved, report text copied",
 "Снять фото камерой":"Take photos with the camera",
 "Сделать снимок":"Take a photo",

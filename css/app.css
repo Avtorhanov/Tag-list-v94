@@ -2443,3 +2443,14 @@ body.camera-open{overflow:hidden}
 .lvlAuto:disabled{opacity:.55}
 .ocrLevelRow input[type=range]{width:100%;min-width:0;margin:0;accent-color:var(--accent);height:40px}
 .lvlVal{font:700 14px/1 system-ui,sans-serif;text-align:center;color:var(--text,inherit);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* v121: длинные окна прокручиваются целиком, нижние кнопки всегда под рукой.
+   Высокое фото в окне обрезки больше не выталкивает «Отмена / Всё фото / Готово» за край экрана:
+   фото ужимается под свободное место, окно можно прокрутить, а ряд кнопок закреплён внизу окна. */
+#overlay.import-mode:not(.reviewing) .sheet{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#overlay.import-mode:not(.reviewing) #photoForm,#overlay.import-mode:not(.reviewing) #fileForm{flex-shrink:0}
+.ocrPreview.cropping canvas{max-height:max(160px,min(62vh,calc(min(94dvh,820px) - 460px)))}
+.ocrDock{flex:0 0 auto;position:sticky;bottom:0;z-index:4;margin:0 -16px;padding:0 16px 8px;background:var(--card)}
+.ocrDock:has(#ocrRunRow[hidden]):has(#ocrLevelRow[hidden]):has(#ocrCropBar[hidden]){display:none}
+/* Запасной вариант для всех остальных окон: если содержимое выше экрана — окно прокручивается. */
+.overlay .exportSheet{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
