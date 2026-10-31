@@ -1641,11 +1641,11 @@ body.elec-mode .elecSub{display:block}
 /* v106: переключатель — одна кнопка текущего раздела; касание раскрывает выбор влево
    в той же строке, через 3 с без касаний он сворачивается. Название при этом гаснет
    и обрезается с затуханием края — строка не переносится. */
-.viewSwitch{position:relative;flex:0 0 auto;display:flex;align-items:center;gap:0;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 1px 3px rgba(30,41,59,.04);transition:gap var(--ui-motion) var(--ui-ease),border-color var(--ui-motion) var(--ui-ease)}
+.viewSwitch{position:relative;flex:0 0 auto;display:flex;align-items:center;gap:0;padding:2px;border:1px solid var(--line);border-radius:11px;background:var(--card);box-shadow:0 1px 3px rgba(30,41,59,.04);transition:gap var(--ui-motion) var(--ui-ease),border-color var(--ui-motion) var(--ui-ease)}
 .viewSwitch.open{gap:2px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
-.viewSwitchBtn{position:relative;display:grid;place-items:center;min-width:34px;max-width:84px;min-height:32px;padding:0 9px;border-radius:9px;background:transparent;color:var(--muted);font-size:13px;font-weight:800;letter-spacing:.01em;white-space:nowrap;overflow:hidden;cursor:pointer;
+.viewSwitchBtn{position:relative;display:grid;place-items:center;min-width:30px;max-width:76px;min-height:28px;padding:0 7px;border-radius:8px;background:transparent;color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.01em;white-space:nowrap;overflow:hidden;cursor:pointer;
   transition:max-width var(--ui-motion) var(--ui-ease),min-width var(--ui-motion) var(--ui-ease),padding var(--ui-motion) var(--ui-ease),opacity var(--ui-motion) var(--ui-ease),color var(--ui-motion) var(--ui-ease),background-color var(--ui-motion) var(--ui-ease)}
-.viewBolt{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.viewBolt{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .viewSwitchBtn.active{color:var(--accent-strong);background:var(--soft);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 65%,transparent),0 0 12px color-mix(in srgb,var(--accent) 30%,transparent)}
 .viewSwitch:not(.open) .viewSwitchBtn:not(.active){max-width:0;min-width:0;padding:0;opacity:0;pointer-events:none}
 .viewSwitch:not(.open) .viewSwitchBtn.active{background:transparent;box-shadow:none}
@@ -1655,16 +1655,11 @@ body.elec-mode .elecSub{display:block}
 :root[data-theme="dark"] .viewSwitch:not(.open) .viewSwitchBtn.active{color:var(--text)}
 :root[data-theme="navy"] .viewSwitch,:root[data-theme="green"] .viewSwitch{background:var(--card)}
 @media (hover:hover){.viewSwitch.open .viewSwitchBtn:not(.active):hover{color:var(--text)}}
-/* Полоска под раскрытым выбором — сколько осталось до сворачивания. */
-.viewSwitchTimer{position:absolute;left:10px;right:10px;bottom:-1px;height:2px;border-radius:2px;background:var(--accent);opacity:0;transform-origin:left;transform:scaleX(0);pointer-events:none}
-.viewSwitch.open .viewSwitchTimer{opacity:.55}
-.viewSwitch.open .viewSwitchTimer.run{animation:viewSwitchTimer 3s linear forwards}
-@keyframes viewSwitchTimer{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 .titleRow .appTitle,.titleRow .titleActions{transition:opacity var(--ui-motion) var(--ui-ease)}
 .titleRow.swOpen .appTitle{opacity:.55;-webkit-mask-image:linear-gradient(90deg,#000 70%,transparent);mask-image:linear-gradient(90deg,#000 70%,transparent)}
 .titleRow.swOpen .titleActions{opacity:.55}
-@media (max-width:370px){.viewSwitchBtn{padding:0 8px;font-size:12.5px;min-width:32px}}
-@media (prefers-reduced-motion:reduce){.viewSwitch,.viewSwitchBtn,.titleRow .appTitle,.titleRow .titleActions{transition:none}.viewSwitch.open .viewSwitchTimer.run{animation:none}}
+@media (max-width:370px){.viewSwitchBtn{padding:0 6px;font-size:11.5px;min-width:28px}}
+@media (prefers-reduced-motion:reduce){.viewSwitch,.viewSwitchBtn,.titleRow .appTitle,.titleRow .titleActions{transition:none}}
 
 /* Смена раздела: короткий сдвиг с прозрачностью по направлению переключения. */
 .viewIn{animation:viewIn var(--ui-motion) var(--ui-ease) both}

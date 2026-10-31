@@ -155,7 +155,6 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-expanded="false" aria-label="Газоанализ" class="viewSwitchBtn" data-view="gas" tabindex="-1" title="Газоанализ: ppm, мг/м³, % НКПР" type="button">Газ</button>
 <button aria-expanded="false" aria-label="Токовая петля 4–20 мА" class="viewSwitchBtn" data-view="loop" tabindex="-1" title="Токовая петля 4–20 мА: TT, PT, FT, LT" type="button">4–20</button>
 <button aria-expanded="false" aria-label="Электроэнергетика" class="viewSwitchBtn" data-view="elec" tabindex="-1" title="Электроэнергетика: мощность, двигатель, кабель, учёт" type="button"><svg aria-hidden="true" class="viewBolt" viewBox="0 0 24 24"><path d="M13.2 2.5 5.5 13.4h5.6l-1.3 8.1 7.7-10.9h-5.6Z"></path></svg></button>
-<span aria-hidden="true" class="viewSwitchTimer" id="viewSwitchTimer"></span>
 </nav>
 <button aria-label="Язык интерфейса: русский. Switch to English" aria-pressed="false" class="langBtn" data-lang="ru" id="langBtn" title="Русский → English" type="button"><span aria-hidden="true" class="langCur">RU</span></button>
 <div aria-label="Настройки вида документа" class="titleActions">
@@ -263,7 +262,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 <div id="photoForm" style="display:none">
 <label class="ocrEngineRow" for="ocrOnlineToggle">
-<span class="ocrEngineText"><strong id="ocrEngineTitle">На телефоне, без интернета</strong><span class="mini" id="ocrConfigStatus">Фото не покидает устройство</span></span>
+<span class="ocrEngineText"><strong hidden id="ocrEngineTitle"></strong><span class="mini" id="ocrConfigStatus">Фото не покидает устройство</span></span>
 <span class="ocrEngineSwitch"><span class="ocrEngineName">OCR.space</span><input id="ocrOnlineToggle" role="switch" type="checkbox"/><span aria-hidden="true" class="switchTrack"></span></span>
 </label>
 <input accept="image/*" capture="environment" id="cameraInput" style="display:none" type="file"/>
