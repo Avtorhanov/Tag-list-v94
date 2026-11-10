@@ -2454,3 +2454,14 @@ body.camera-open{overflow:hidden}
 .lvlAuto[aria-pressed="false"]{background:var(--card);color:var(--accent)}
 .lvlBtn:disabled{opacity:.4}
 .ocrZoomRow .lvlBtn{font-size:22px}
+
+/* v124: окно обрезки на весь экран. Раньше фото получало ~280 px по высоте (миниатюра) — теперь окно
+   раскрывается до верха экрана, заголовок и всё, что не относится к обрезке, скрыто, фото занимает
+   всё место над рядами «масштаб / наклон / Отмена · Всё фото · Готово». */
+#overlay.import-mode.cropMode .sheet{max-height:none;height:calc(100dvh - env(safe-area-inset-top,0px) - 8px);padding-top:10px;overflow:hidden}
+#overlay.cropMode #modalTitle,#overlay.cropMode #headTools,#overlay.cropMode #netStrip,#overlay.cropMode #closeBtn,#overlay.cropMode .sheetHelp,#overlay.cropMode .sheetGrip,
+#overlay.cropMode #photoForm .ocrEngineRow,#overlay.cropMode #ocrBatchCount,#overlay.cropMode #ocrStatus,#overlay.cropMode #ocrProgressWrap,
+#overlay.cropMode #photoImportLegend,#overlay.cropMode #importList,#overlay.cropMode #importActions{display:none!important}
+#overlay.cropMode #photoForm{display:flex!important;flex-direction:column;flex:1 1 auto;min-height:0}
+#overlay.cropMode .ocrPreview.cropping{flex:1 1 auto;min-height:0;padding:12px;grid-template-rows:minmax(0,1fr);grid-template-columns:minmax(0,1fr)}
+#overlay.cropMode .ocrPreview.cropping canvas{max-height:100%;max-width:100%;min-height:0}

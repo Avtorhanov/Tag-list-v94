@@ -2841,6 +2841,7 @@ function updateOcrPhotoUi(){
   run.textContent=sel>1?TX("Распознать · {0}",sel):TX("Распознать");
   $("ocrBackBtn").textContent=ocrBatchRunning?TX("Стоп"):TX("← Назад");
   box.classList.toggle("cropping",ocrCropMode);
+  overlay.classList.toggle("cropMode",ocrCropMode);   // v124: в режиме обрезки окно на весь экран, фото занимает всё свободное место
   box.classList.toggle("compact",!ocrCropMode&&!!$("importList").children.length);
   const hint=$("ocrCropHint");
   if(ocrCropMode){hint.hidden=true;hint.textContent="";}  // v122: подсказка убрана
