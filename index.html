@@ -161,7 +161,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-label="Сменить тему" class="iconBtn" id="themeBtn" title="Сменить тему"><span aria-hidden="true" id="themeIcon">☼</span></button>
 </div>
 </div>
-<div class="sub" id="lastSaved"><span id="lastSavedText">Сохранено на устройстве: —</span><button aria-label="Справка: раздел «Тэги»" class="helpBtn subHelp" data-help="list" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
+<div class="sub" id="lastSaved"><span id="lastSavedText">Сохранено на устройстве: —</span><button aria-expanded="true" aria-label="Свернуть панель" class="navFold" id="navFold" title="Свернуть панель" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6.5 14.5 5.5-5.5 5.5 5.5"></path></svg></button><button aria-label="Справка: раздел «Тэги»" class="helpBtn subHelp" data-help="list" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="sub viewSub gasSub" id="gasSub"><span>ppm · мг/м³ · % об. · % НКПР · 4–20 мА</span><button aria-label="Справка: раздел «Газоанализ»" class="helpBtn subHelp" data-help="gas" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="sub viewSub loopSub" id="loopSub"><span>TT · PT · FT · LT → 4–20 мА · NAMUR NE 43</span><button aria-label="Справка: раздел «4–20 мА»" class="helpBtn subHelp" data-help="loop" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
 <div class="sub viewSub elecSub" id="elecSub"><span>P·I · двигатель · ΔU кабеля · учёт ТТ/ТН</span><button aria-label="Справка: раздел «Электроэнергетика»" class="helpBtn subHelp" data-help="elec" title="Справка" type="button"><svg aria-hidden="true" class="helpIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.3v6.2"></path><circle class="helpDot" cx="12" cy="16.9" r="1.15"></circle></svg></button></div>
@@ -240,7 +240,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 <div id="manualForm">
 <div class="field">
-<label for="tagInput">Тег</label>
+<label for="tagInput" id="tagInputLabel">Тег</label>
 <input autocapitalize="characters" autocomplete="off" id="tagInput" placeholder="Например, 21-PT-1001 или PT-101" spellcheck="false"/>
 <div aria-live="polite" class="tagCheck" id="tagCheck"></div>
 </div>
@@ -280,24 +280,25 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button class="action" id="ocrBackBtn" type="button">← Назад</button>
 <button class="action primary" disabled="" id="ocrRunBtn" type="button">Распознать</button>
 </div>
-<div class="ocrLevelRow ocrZoomRow" hidden="" id="ocrZoomRow">
+<!-- v125: окно обрезки. Один ряд: отмена, повороты на 90°, наклон и масштаб (значение — кнопка: касание выдвигает ползунок), всё фото, «Готово». -->
+<div class="cropTool" hidden="" id="ocrZoomRow">
 <button aria-label="Уменьшить" class="lvlBtn" id="ocrZoomOut" title="Уменьшить" type="button">−</button>
 <input aria-label="Масштаб" id="ocrZoom" max="10" min="1" step="0.1" type="range" value="1"/>
-<output class="lvlVal" for="ocrZoom" id="ocrZoomVal">1×</output>
 <button aria-label="Увеличить" class="lvlBtn" id="ocrZoomIn" title="Увеличить" type="button">+</button>
-<button aria-pressed="true" class="lvlAuto" id="ocrZoomAuto" title="Автоувеличение выделенного участка" type="button">Автозум</button>
+<button aria-label="Автоувеличение выделенного участка" aria-pressed="true" class="lvlAuto" id="ocrZoomAuto" title="Автоувеличение выделенного участка" type="button">Авто</button>
 </div>
-<div class="ocrLevelRow" hidden="" id="ocrLevelRow">
-<button aria-label="Повернуть влево на 90°" class="lvlBtn" id="ocrRotL" title="Повернуть влево на 90°" type="button">⟲</button>
+<div class="cropTool" hidden="" id="ocrLevelRow">
 <input aria-label="Наклон" id="ocrLevel" max="45" min="-45" step="0.5" type="range" value="0"/>
-<output class="lvlVal" for="ocrLevel" id="ocrLevelVal">0°</output>
-<button aria-label="Повернуть вправо на 90°" class="lvlBtn" id="ocrRotR" title="Повернуть вправо на 90°" type="button">⟳</button>
-<button class="lvlAuto" id="ocrLevelAuto" type="button">Авто</button>
+<button aria-label="Выровнять строки автоматически" class="lvlAuto" id="ocrLevelAuto" title="Выровнять строки автоматически" type="button">Авто</button>
 </div>
-<div class="ocrRunRow three" hidden="" id="ocrCropBar">
-<button class="action" id="ocrCropCancel" type="button">Отмена</button>
-<button class="action" id="ocrCropReset" type="button">Всё фото</button>
-<button class="action primary" id="ocrCropDone" type="button">Готово</button>
+<div class="cropBar" hidden="" id="ocrCropBar">
+<button aria-label="Отмена" class="cbBtn" id="ocrCropCancel" title="Отмена" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"></path></svg></button>
+<button aria-label="Повернуть влево на 90°" class="cbBtn" id="ocrRotL" title="Повернуть влево на 90°" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4.5 5v5h5"></path><path d="M5.2 10a7.5 7.5 0 1 1-.6 5.5"></path></svg></button>
+<button aria-label="Повернуть вправо на 90°" class="cbBtn" id="ocrRotR" title="Повернуть вправо на 90°" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19.5 5v5h-5"></path><path d="M18.8 10a7.5 7.5 0 1 0 .6 5.5"></path></svg></button>
+<button aria-controls="ocrLevelRow" aria-label="Наклон" aria-pressed="false" class="cbChip" id="ocrToolLevel" title="Наклон" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19.5h16"></path><path d="M4 19.5 17.5 6"></path><path d="M11 19.5a7 7 0 0 0-2.1-5"></path></svg><span class="cbVal" id="ocrLevelVal">0°</span></button>
+<button aria-controls="ocrZoomRow" aria-label="Масштаб" aria-pressed="false" class="cbChip" id="ocrToolZoom" title="Масштаб" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.2"></circle><path d="m15.6 15.6 4.9 4.9"></path></svg><span class="cbVal" id="ocrZoomVal">1×</span></button>
+<button aria-label="Всё фото" class="cbBtn" id="ocrCropReset" title="Всё фото" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4.5 9.5v-5h5M19.5 9.5v-5h-5M4.5 14.5v5h5M19.5 14.5v5h-5"></path></svg></button>
+<button class="cbDone" id="ocrCropDone" type="button">Готово</button>
 </div>
 </div>
 <div class="mini" id="ocrStatus" style="margin-top:10px"></div>
@@ -409,8 +410,13 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <label class="fmtItem"><span class="fmtMain"><input id="fmtIsa" name="tagFormat" type="radio" value="isa"/><span class="nm">ISA-5.1</span><span class="ex" id="fmtIsaEx">21-PT-1001 · PT-101</span></span>
 <span class="fmtMore"><span class="unitSeg"><span>Установка</span><span aria-label="Номер установки в теге" class="seg3" id="unitSeg" role="group"><button aria-pressed="false" data-u="auto" type="button">Любая</button><button aria-pressed="false" data-u="unit" type="button">Есть</button><button aria-pressed="false" data-u="bare" type="button">Нет</button></span></span></span></label>
 <label class="fmtItem"><span class="fmtMain"><input id="fmtKks" name="tagFormat" type="radio" value="kks"/><span class="nm">KKS</span><span class="ex">10LBA10CP001</span></span></label>
-<label class="fmtItem"><span class="fmtMain"><input id="fmtCustom" name="tagFormat" type="radio" value="custom"/><span class="nm">Свой образец</span><span class="ex" id="fmtCustomEx"></span></span>
-<span class="fmtMore"><input aria-label="Образец тега" autocapitalize="characters" autocomplete="off" id="fmtExample" placeholder="Тег из вашего списка" spellcheck="false" type="text"/><span aria-live="polite" class="ruleLine" id="ruleLine"></span></span></label>
+<!-- v125: списки не из КИП — готовые наборы (склад, офис, транспорт, сеть), любой текст и «свой вариант» с любым образцом. -->
+<label class="fmtItem"><span class="fmtMain"><input id="fmtPreset" name="tagFormat" type="radio" value="preset"/><span class="nm">Готовые наборы</span><span class="ex" id="fmtPresetEx"></span></span>
+<span class="fmtMore"><span aria-label="Готовый набор" class="fmtChips presetChips" id="fmtPresets" role="group"></span><span aria-live="polite" class="ruleLine" id="presetLine"></span></span></label>
+<label class="fmtItem"><span class="fmtMain"><input id="fmtFree" name="tagFormat" type="radio" value="free"/><span class="nm">Любой текст</span><span class="ex plain">каждая строка — пункт</span></span>
+<span class="fmtMore"><span class="ruleLine">Дела, покупки, фамилии, адреса — что угодно. Каждая строка вставленного текста, файла или фото становится пунктом списка.</span></span></label>
+<label class="fmtItem"><span class="fmtMain"><input id="fmtCustom" name="tagFormat" type="radio" value="custom"/><span class="nm">Свой вариант</span><span class="ex" id="fmtCustomEx"></span></span>
+<span class="fmtMore"><input aria-label="Образец строки" autocapitalize="off" autocomplete="off" id="fmtExample" placeholder="Пример строки из вашего списка" spellcheck="false" type="text"/><span aria-live="polite" class="ruleLine" id="ruleLine"></span></span></label>
 </div>
 <details class="fmtCheck" id="fmtCheck">
 <summary>Проверить на тексте<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg></summary>
