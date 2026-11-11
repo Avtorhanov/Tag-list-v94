@@ -137,6 +137,17 @@
     return rows.map(r=>r.text).join('\n');
   }
 
+  // v125: правки текста с фото перед поиском тегов (только для тегов КИП, не для «любого текста» и наборов).
+  //  • дефис перед номером движок на гравировке читает как «:», «,», «.», «x»: «2614-TE:618A» → «2614-TE-618A»;
+  //  • кабельная бирка «откуда / куда» с переносом после установки: «… / 2613-» + «DJB-213» → «2613-DJB-213».
+  function tidy(text){
+    const TF=window.TagFormat;
+    if(TF&&(TF.generic||TF.mode==='kks'))return text;
+    return String(text||'')
+      .replace(/(\d{2,5}[-–—][A-ZА-Я]{2,6})\s?(?:[:.,;×*~=_'’‘]|x(?=\d))\s?(\d{2,5}[A-Z]?\d?)(?![A-Za-z0-9])/g,'$1-$2')
+      .replace(/(\/\s*\d{2,5})[-–—]?[ \t]*\n[ \t]*([A-Z]{2,6}[-–—]\d{2,5})/g,'$1-$2')
+      .replace(/(\d{2,5})[-–—][ \t]*\n[ \t]*([A-Z]{2,6}[-–—]\d{2,5})/g,'$1-$2');
+  }
   // source — ImageBitmap или canvas; region — {x,y,w,h} в пикселях source.
   // v125: scale — готовый масштаб (участок уже приведён к нужному размеру букв); line — одна строка; invert, pad, flatR — см. prepare.
   async function recognize(source,region,{stage,progress,block,flat,scale:fixedScale,line,invert,pad,flatR}={}){
@@ -158,7 +169,7 @@
       conf+=r.conf*st.h;confW+=st.h;
     }
     onProgress=null;
-    const text=mergeByRows(rowsFromWords(wordsA),rowsFromWords(wordsB));
+    const text=tidy(mergeByRows(rowsFromWords(wordsA),rowsFromWords(wordsB)));
     return {text,ms:performance.now()-t0,conf:Math.round(conf/Math.max(1,confW)),parts:strips.length};
   }
 
@@ -200,6 +211,8 @@
         m[y*w+x]=dark?(v<mean*0.85&&mean-v>10?1:0):(v>mean*1.15&&v-mean>10?1:0);}}
     return m;
   }
+  // Пятна, похожие на буквы: не точки и не рамка; размер — по большей стороне (у повёрнутой буквы рамка шире).
+  const letterLike=(all,H)=>all.filter(b=>{const s=Math.max(b.bw,b.bh),t=Math.min(b.bw,b.bh);return s>=6&&s<=H*0.25&&t>=2&&s/t<=6&&b.n/(b.bw*b.bh)>0.12&&b.n/(b.bw*b.bh)<0.95;});
   function blobs(m,w,h){
     const lab=new Int32Array(w*h),out=[],stack=[];let id=0;
     for(let i=0;i<w*h;i++){
@@ -309,15 +322,20 @@
   // Раньше при подборе угла движок читал весь участок целиком: на снимке в цеху это трубы, стена, рамка бирки —
   // текст бирки занимает малую часть кадра, буквы оказываются то слишком крупными, то слишком мелкими.
   // Теперь сначала находятся группы букв: пятна, похожие на буквы (как в estimateSkew), связываются с соседями
-  // близкого размера — получаются «надписи». Для каждой считается наклон строки и рамка вдоль строки. Лучшие
-  // (больше букв, крупнее, ровнее строка) вырезаются выровненными, с запасом по краям, в масштабе «буква ≈ 36 px» —
-  // и читаются отдельно. Светлый текст на тёмном (гравировка на чёрном, синем, красном пластике) переворачивается.
-  // Нашёлся тег — ещё два чтения (угол ±1,5°, буквы чуть мельче и чуть крупнее) и голосование по знакам.
-  // Не нашёлся — прежний подбор угла по всему участку.
-  const FOCUS_LETTER=36,FOCUS_SIDE=1100;
+  // близкого размера — получаются «надписи». Для каждой считается наклон строки и рамка вдоль строки.
+  // Группы, которые не текст, отсеиваются: на реальных снимках их большинство (решётка настила, фактура металла,
+  // ткань перчатки, гофра) — у текста толщина букв близка, у фактуры «буквы» разные и занимают полкадра.
+  // Лучшие надписи вырезаются выровненными, без рамки бирки и фона, в масштабе «буква ≈ 36 px» и читаются
+  // отдельно. Светлый текст на тёмном (гравировка на чёрном, синем, красном пластике) переворачивается.
+  // Нашёлся тег — ещё до пяти чтений (другой размер букв, угол, без выравнивания фона) и голосование по знакам
+  // вместе с первым чтением всего кадра. Когда сторона бирки известна, дочитываются мелкие надписи под тем же
+  // углом (ячейки таблицы на шильдике). Не нашёлся — прежний подбор угла по всему участку.
+  // Настроено на 10 реальных фото бирок с объекта (сжатых мессенджером до 1280 px) и на синтетике.
+  const FOCUS_LETTER=36,FOCUS_SIDE=1600,FOCUS_SIDE_LOW=1000;
   // Запас рамки вокруг найденных букв (в высотах буквы) — без рамки бирки и фона: с ними движок читает хуже.
   // link — на каком расстоянии (в размерах буквы) соседние буквы считаются одной надписью.
-  const cfg={letter:FOCUS_LETTER,padU:0.8,padV:0.45,link:2.2,hires:true,maxL:1400};
+  // maxArea, maxCv, minQ — отсев групп, которые не текст (подобрано на реальных фото бирок на объекте).
+  const cfg={letter:FOCUS_LETTER,padU:0.8,padV:0.45,link:2.2,maxL:4000,maxArea:0.35,maxCv:0.5,minQ:0.07,blocks:5,more:14};
   function groupAngle(G,med){
     const hist=new Float32Array(360),step=Math.max(1,Math.ceil(G.length/160));
     for(let i=0;i<G.length;i+=step){
@@ -341,15 +359,34 @@
   }
   // Группы букв участка: [{dark,a,q,n,med,cx,cy,w,h,score}] — центр, размеры (вдоль и поперёк строки) и высота буквы
   // в пикселях участка; a — угол строки к горизонтали. Лучшие — первыми.
-  function textBlocks(source,region,side){
-    const s=Math.min(1,(side||FOCUS_SIDE)/Math.max(region.w,region.h)),w=Math.max(1,Math.round(region.w*s)),h=Math.max(1,Math.round(region.h*s));
+  function textBlocks(source,region){
+    // Два масштаба кадра: 1600 px — мелкий текст (буквы от ~7 px), 1000 px — крупные буквы, у которых в большом
+    // масштабе штрихи распадаются на части. Одна и та же надпись из двух масштабов ниже сводится в одну.
+    const big=Math.max(region.w,region.h),out=[];
+    for(const side of (big>FOCUS_SIDE_LOW*1.3?[FOCUS_SIDE,FOCUS_SIDE_LOW]:[FOCUS_SIDE]))groupsAt(source,region,side,out);
+    out.sort((p,q)=>q.score-p.score);
+    // Одна и та же надпись в двух видах (тёмные буквы и светлые просветы внутри букв, два масштаба) — остаётся лучшая,
+    // но мелкая надпись внутри крупной чужой группы (ячейка таблицы рядом с логотипом, текст на фоне деталей)
+    // — не повтор: повтором считается только группа близкого размера букв и под тем же углом.
+    const keep=[];
+    for(const B of out){
+      const inside=keep.some(K=>{const rad=K.a*Math.PI/180,dx=B.cx-K.cx,dy=B.cy-K.cy,u=dx*Math.cos(rad)+dy*Math.sin(rad),v=-dx*Math.sin(rad)+dy*Math.cos(rad);
+        const da=Math.abs(norm180(B.a-K.a)),r=B.med/K.med;
+        return Math.abs(u)<K.w/2&&Math.abs(v)<K.h/2&&r>0.4&&r<2.5&&(da<15||da>165);});
+      if(!inside)keep.push(B);
+      if(keep.length>=cfg.blocks+cfg.more)break;
+    }
+    return keep;
+  }
+  function groupsAt(source,region,side,out){
+    const s=Math.min(1,side/Math.max(region.w,region.h)),w=Math.max(1,Math.round(region.w*s)),h=Math.max(1,Math.round(region.h*s));
     const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});
     g.imageSmoothingQuality='high';g.drawImage(source,region.x,region.y,region.w,region.h,0,0,w,h);
     const d=g.getImageData(0,0,w,h).data,gray=new Float32Array(w*h);c.width=c.height=0;
     for(let i=0,j=0;j<w*h;i+=4,j++)gray[j]=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000;
-    const out=[];
-    for(const dark of [true,false]){
-      const L=letterAngles(gray,w,h,dark).L;if(L.length<4||L.length>cfg.maxL)continue;   // тысячи «букв» — это шум или фактура, а не надпись
+    for(const dark of [true,false]){                       // тёмный текст на светлом и светлый на тёмном
+      const L=letterLike(blobs(binarize(gray,w,h,dark),w,h),Math.min(w,h));
+      if(L.length<4||L.length>cfg.maxL)continue;   // многие тысячи «букв» — это шум или фактура, а не надпись
       for(const b of L)b.s=Math.max(b.bw,b.bh);
       const cell=Math.max(8,Math.round(Math.min(w,h)/14)),gw=Math.ceil(w/cell),gh=Math.ceil(h/cell),grid=new Map();
       L.forEach((b,i)=>{const k=Math.floor(b.cx/cell)+Math.floor(b.cy/cell)*gw;(grid.get(k)||grid.set(k,[]).get(k)).push(i);});
@@ -374,18 +411,14 @@
         if(u1-u0<med*3)continue;                               // короче трёх букв — не надпись
         u0-=med*cfg.padU;u1+=med*cfg.padU;v0-=med*cfg.padV;v1+=med*cfg.padV;
         const uc=(u0+u1)/2,vc=(v0+v1)/2;
-        out.push({dark,a,q,n:G.length,med:med/s,cx:(uc*cs-vc*sn)/s,cy:(uc*sn+vc*cs)/s,w:(u1-u0)/s,h:(v1-v0)/s,score:G.length*med*Math.sqrt(q)});
+        const bws=G.map(b=>Math.min(b.bw,b.bh)),mw=bws.reduce((p,v)=>p+v,0)/bws.length,cv=Math.sqrt(bws.reduce((p,v)=>p+(v-mw)*(v-mw),0)/bws.length)/Math.max(1,mw);
+        // Не надпись: «буквы» слишком разные по толщине (фактура металла, ткань перчатки, решётка, детали
+        // оборудования), группа на треть кадра и больше, или строк не видно. У текста толщина букв близка.
+        const area=(u1-u0)*(v1-v0)/(w*h);
+        if(area>cfg.maxArea||cv>0.75||(cv>cfg.maxCv&&(area>0.25||q<0.2))||(q<cfg.minQ&&G.length>30))continue;
+        out.push({cv,area,dark,a,q,n:G.length,med:med/s,cx:(uc*cs-vc*sn)/s,cy:(uc*sn+vc*cs)/s,w:(u1-u0)/s,h:(v1-v0)/s,score:G.length*q*Math.sqrt(med)*(1-cv)});   // больше букв, ровнее строки, одинаковее буквы
       }
     }
-    out.sort((p,q)=>q.score-p.score);
-    // Одна и та же надпись в двух видах (тёмные буквы и светлые просветы внутри букв) — остаётся лучшая.
-    const keep=[];
-    for(const B of out){
-      const inside=keep.some(K=>{const rad=K.a*Math.PI/180,dx=B.cx-K.cx,dy=B.cy-K.cy,u=dx*Math.cos(rad)+dy*Math.sin(rad),v=-dx*Math.sin(rad)+dy*Math.cos(rad);return Math.abs(u)<K.w/2&&Math.abs(v)<K.h/2;});
-      if(!inside)keep.push(B);
-      if(keep.length>=4)break;
-    }
-    return keep;
   }
   // Надпись — выровненная, в масштабе «буква ≈ 36 px»; flip — вверх ногами, dA — поправка угла для повторных чтений.
   function blockCanvas(source,region,B,flip,dA,k){
@@ -398,45 +431,83 @@
     g.imageSmoothingQuality='high';g.drawImage(source,region.x,region.y,region.w,region.h,0,0,region.w,region.h);
     return c;
   }
-  async function readBlock(source,region,B,flip,dA,k){
+  // raw — без выравнивания фона: часть надписей читается лучше так, часть — с выравниванием; голосуют оба вида.
+  async function readBlock(source,region,B,flip,dA,k,raw){
     const c=blockCanvas(source,region,B,flip,dA,k);
     try{
-      const res=await recognize(c,{x:0,y:0,w:c.width,h:c.height},{block:true,flat:true,flatR:Math.round(cfg.letter*(k||1)*1.5),invert:!B.dark,pad:16,scale:1,line:B.h<B.med*2.9});
+      const res=await recognize(c,{x:0,y:0,w:c.width,h:c.height},{block:true,flat:!raw,flatR:Math.round(cfg.letter*(k||1)*1.5),invert:!B.dark,pad:16,scale:1,line:B.h<B.med*2.9});
       return {...res,...scoreRead(res)};
     }finally{c.width=c.height=0;}
   }
-  async function focusRead(source,region,{stage,progress,abort,manual}={}){
-    const t0=performance.now(),found=[],confs=[];let best=null,angle=0;
+  // Обрезок тега («13-PIT-449» при найденном «2613-PIT-449») — не отдельный тег.
+  const partOf=(t,list)=>list.some(u=>u!==t&&u.length>t.length&&u.includes(t));
+  // prior — первое чтение всего кадра (app.js): его теги участвуют в голосовании как ещё одно чтение.
+  async function focusRead(source,region,{stage,progress,abort,manual,prior}={}){
+    const t0=performance.now(),confs=[];let found=[],best=null,angle=0,reads=0,side=null;
     const stop=ms=>(abort&&abort())||performance.now()-t0>ms;
-    // Заход 1 — кадр, уменьшенный до 1100 px (быстро; крупные и средние надписи). Заход 2 — до 2000 px: мелкая
-    // надпись, у которой в уменьшенном кадре буквы слились. Второй заход идёт, только если первый тега не дал.
-    const big=Math.max(region.w,region.h),passes=[FOCUS_SIDE];
-    if(cfg.hires&&big>FOCUS_SIDE*1.3)passes.push(Math.min(big,2000));
-    for(let pi=0;pi<passes.length;pi++){
-      if(found.length||stop(8000))break;
-      let blocks=textBlocks(source,region,passes[pi]);
-      // Угол выставлен вручную — берутся только надписи вдоль выставленных строк.
-      if(manual)blocks=blocks.filter(B=>Math.abs(B.a)<=12);
-      blocks=blocks.slice(0,3);
-      let reads=0;const total=blocks.length*2+2;
-      for(let i=0;i<blocks.length;i++){
-        const B=blocks[i];let hit=null;
-        for(const flip of (manual?[false]:[false,true])){       // как есть и вверх ногами
-          if(stop(9000))break;
-          stage&&stage(TX('Ищу бирку: надпись {0} из {1}…',i+1,blocks.length));
-          const r=await readBlock(source,region,B,flip,0,1);reads++;progress&&progress(Math.min(.95,(pi+Math.min(1,reads/total))/passes.length));
-          if(!best||r.score>best.score)best=r;
-          if(r.strict.length){hit={flip,r};break;}
+    let all=textBlocks(source,region);
+    // Угол выставлен вручную — берутся только надписи вдоль выставленных строк.
+    if(manual)all=all.filter(B=>Math.abs(B.a)<=12);
+    if(!all.length)return null;
+    // Сначала — лучшие надписи. Остальные (мелкие ячейки таблицы на шильдике) читаются, только когда сторона
+    // бирки уже известна, и только под тем же углом — это та же бирка.
+    const main=all.slice(0,cfg.blocks),rest=all.slice(cfg.blocks),total=main.length*2+8;
+    const read=async(B,flip,dA,k,raw)=>{const r=await readBlock(source,region,B,flip,dA,k,raw);reads++;progress&&progress(Math.min(.95,reads/total));if(!best||r.score>best.score)best=r;return r;};
+    const key=r=>r.strict.slice().sort().join('|');
+    const words=r=>(r.text.match(/[A-Za-zА-Яа-яЁё0-9]{3,}/g)||[]).length;
+    const aligned=B=>side&&Math.abs(norm180(B.a-side.a))<10;
+    const tryBlock=async(B,i,n,extra)=>{
+      const rs=[];let flip=null;
+      stage&&stage(TX('Ищу бирку: надпись {0} из {1}…',i+1,n));
+      if(extra){flip=side.flip;rs.push(await read(B,flip,0,1.28));}
+      else{
+        // Как есть и вверх ногами; известная сторона — первой (и единственной для надписи под тем же углом).
+        const flips=manual?[false]:aligned(B)?[side.flip]:side?[side.flip,!side.flip]:[false,true],seen=[];
+        // Сначала с выравниванием фона; если ни одна сторона не прочиталась — без него: на светлом тексте по
+        // тёмному шумному фону выравнивание усиливает шум, и движок не видит строк.
+        for(const raw of [false,true]){
+          if(flip!==null||(raw&&seen.some(x=>x[1].conf>=45)))break;
+          for(const f of flips){
+            if(stop(9000))break;
+            const r=await read(B,f,0,1,raw);seen.push([f,r]);
+            if(r.strict.length){flip=f;rs.push(r);break;}
+          }
         }
-        if(!hit)continue;
-        // Тег найден — ещё два чтения (чуть другой угол и размер букв) и голосование по знакам.
-        const rs=[hit.r];
-        for(const [dA,k] of [[1.5,0.82],[-1.5,1.28]]){if(stop(12000))break;rs.push(await readBlock(source,region,B,hit.flip,dA,k));}
-        for(const t of consensus(rs))if(!found.includes(t))found.push(t);
-        for(const r of rs)confs.push(r.conf);
-        if(found.length&&!angle)angle=norm180(-B.a+(hit.flip?180:0));
+        // Тега нет, но одна сторона читается явно увереннее другой — это текст; мелкие буквы (фото, сжатое
+        // мессенджером) могут прочитаться в другом размере.
+        if(flip===null&&seen.length){
+          seen.sort((p,q)=>q[1].conf-p[1].conf);
+          if(seen[0][1].conf>=45&&(seen.length<2||seen[0][1].conf-seen[1][1].conf>=12)){flip=seen[0][0];rs.push(seen[0][1]);}
+        }
+        if(flip===null)return;
+        // Уверенно прочитанные слова задают сторону бирки для остальных надписей.
+        if(!side&&rs[0].conf>=75&&words(rs[0])>=2)side={a:B.a,flip};
       }
+      // Ещё чтения — другой размер букв, угол, без выравнивания фона — и голосование по знакам. Одно чтение мелкой
+      // надписи часто ошибается в одном знаке (G↔C, пропавшая «1» в конце), но ошибки разных чтений не совпадают.
+      // Три одинаковых чтения подряд — достаточно. Пока тега нет ни в одном чтении — не больше трёх попыток.
+      for(const [dA,k,raw] of (extra?[[0,1],[-1.5,1.5],[0,1.28,true],[1.5,0.82]]:[[-1.5,1.28],[1.5,0.82],[0,1.28,true],[0,1.5],[0,1,true]])){
+        if(stop(13000))break;
+        const any=rs.some(r=>r.strict.length);
+        if(!any&&rs.length>=(extra?2:3))break;
+        if(rs.length>=3&&rs[0].strict.length&&rs.every(r=>key(r)===key(rs[0])))break;
+        rs.push(await read(B,flip,dA,k,raw));
+      }
+      if(!rs.some(r=>r.strict.length))return;
+      if(!side)side={a:B.a,flip};
+      const mine=[...new Set(rs.flatMap(r=>r.strict))];
+      // Первое чтение кадра — ещё один голос, но только за теги этой надписи.
+      const pr=prior&&prior.strict?{...prior,strict:prior.strict.filter(t=>mine.some(u=>similar(u,t)))}:null;
+      for(const t of consensus(pr&&pr.strict.length?rs.concat([pr]):rs))if(!found.includes(t))found.push(t);
+      for(const r of rs)confs.push(r.conf);
+      if(found.length&&!angle)angle=norm180(-B.a+(flip?180:0));
+    };
+    for(let i=0;i<main.length&&!stop(9000);i++)await tryBlock(main[i],i,main.length,false);
+    if(side&&!found.length){
+      const more=rest.filter(aligned);
+      for(let i=0;i<more.length&&!stop(9000)&&!found.length;i++)await tryBlock(more[i],i,more.length,true);
     }
+    found=found.filter(t=>!partOf(t,found));
     if(!found.length)return best?{...best,strict:[],angle:0}:null;
     const conf=confs.reduce((p,v)=>p+v,0)/Math.max(1,confs.length);
     return {text:found.join('\n'),tags:found,strict:found,conf,score:found.length*100+conf/20,angle,focus:true};
@@ -448,13 +519,13 @@
   //     только φ±4°; затем запасные чтения без выравнивания фона;
   //  3) уточнение: до 4 чтений при соседних углах (±1…4°), теги согласуются голосованием.
   // Не дольше ~30 с на фото; «Стоп» прерывает.
-  async function autoLevel(source,region,{stage,progress,abort,angle}={}){
+  async function autoLevel(source,region,{stage,progress,abort,angle,prior}={}){
     await ensure(stage);
     const manual=typeof angle==="number"&&isFinite(angle);
     const t0=performance.now();
     // v125: сначала — поиск бирки (быстро: читаются только надписи, а не вся сцена). Тег найден — готово.
     let focus=null;const whole=progress;
-    try{focus=await focusRead(source,region,{stage,progress:v=>whole&&whole(v*.3),abort,manual});}
+    try{focus=await focusRead(source,region,{stage,progress:v=>whole&&whole(v*.3),abort,manual,prior});}
     catch(e){console.warn('Tag list: focusRead',e);}
     if(focus&&focus.strict.length){whole&&whole(1);return focus;}
     if(abort&&abort())return focus;
@@ -489,5 +560,5 @@
     const tags=consensus(reads),conf=reads.reduce((p,r)=>p+r.conf,0)/reads.length;
     return {text:tags.join('\n'),tags,strict:tags,conf,score:tags.length*100+conf/20,angle:norm180(side.angle),reads:reads.length};
   }
-  window.LocalOCR={recognize,warmUp:()=>ensure(),levelCanvas,estimateSkew,recognizeLeveled,autoLevel,consensus,score:scoreRead,textBlocks,focusRead};
+  window.LocalOCR={recognize,warmUp:()=>ensure(),levelCanvas,estimateSkew,recognizeLeveled,autoLevel,consensus,score:scoreRead,textBlocks,focusRead,similar,cfg};
 })();
