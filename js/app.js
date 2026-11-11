@@ -189,7 +189,37 @@ function formatSaved(value){
 
 function renderLastSaved(){
   const el=$("lastSavedText")||$("lastSaved"),page=getActivePage();
-  if(el&&page)el.textContent=formatSaved(page.updatedAt);
+  if(!el||!page)return;
+  // v125: шапка свёрнута — страниц не видно, поэтому в строке название страницы и короткое время сохранения.
+  if(navFolded){
+    const d=new Date(page.updatedAt||0),name=String(page.name||"").trim();
+    const when=Number.isNaN(d.getTime())||!page.updatedAt?"—":d.toLocaleString(LOC(),{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    el.textContent=TX("{0} · сохранено {1}",name,when);
+  }else el.textContent=formatSaved(page.updatedAt);
+}
+// v125: верхняя панель (кнопки, страницы, фильтры) сворачивается маленькой стрелкой в строке «Сохранено…»,
+// рядом со справкой: списку достаётся больше места. Заголовок, разделы, язык и тема остаются на месте,
+// размеры остальных кнопок не меняются. Выбор хранится на устройстве. Открытый поиск остаётся виден.
+const NAV_FOLD_KEY="kip-nav-folded-v1";
+let navFolded=false;
+function applyNavFold(on,persist){
+  navFolded=!!on;
+  document.querySelector(".top")?.classList.toggle("navFolded",navFolded);
+  document.body.classList.toggle("nav-folded",navFolded);
+  const btn=$("navFold");
+  if(btn){
+    const t=navFolded?TX("Развернуть панель"):TX("Свернуть панель");
+    btn.setAttribute("aria-expanded",String(!navFolded));btn.setAttribute("aria-label",t);btn.title=t;
+  }
+  if(navFolded&&pageManageMode)exitPageManage();
+  if(navFolded)closePageContextMenu();
+  if(persist){
+    safeSetStorage(NAV_FOLD_KEY,navFolded?"1":"0");
+    const top=document.querySelector(".top");
+    if(top&&!navFolded){top.classList.add("navUnfold");setTimeout(()=>top.classList.remove("navUnfold"),260);}
+  }
+  renderLastSaved();
+  if(!navFolded)requestAnimationFrame(updateTabsFade);
 }
 
 function renderPages(){
@@ -2118,8 +2148,10 @@ function levenshtein(a,b){
 function fuzzyKnownTag(tag){
   const all=knownTags(); if(!all.length)return tag;
   const exact=all.find(k=>tagKey(k)===tagKey(tag)); if(exact)return exact;
+  if(TagFormat.generic)return tag;   // v125: «похожий тег» ищется только среди тегов КИП
   const compact=x=>x.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const a=compact(tag); let best=null,bestD=99;
+  if(a.length<4)return tag;
   for(const k of all){const b=compact(k);if(Math.abs(a.length-b.length)>1)continue;const d=levenshtein(a,b); if(d<bestD){bestD=d;best=k}}
   // Для фото разрешаем только небольшую OCR-ошибку. Большая дистанция создаёт ложное
   // сопоставление с ближайшим существующим тегом.
@@ -2215,6 +2247,8 @@ function normalizeDoneMark(value){
 
 function stripTagFromContext(text){
   let t=String(text||'');
+  // v125: «любая строка» — остаток строки (соседние ячейки таблицы) целиком идёт в задание.
+  if(TagFormat.mode==="free"||(TagFormat.mode==="custom"&&TagFormat.custom.ok&&TagFormat.custom.lines))return cleanImportedTask(t);
   const spans=TagFormat.find(t);
   for(let i=spans.length-1;i>=0;i--)t=t.slice(0,spans[i].start)+' '+t.slice(spans[i].end);
   return cleanImportedTask(t);
@@ -2282,7 +2316,7 @@ function extractTagRecordsFromText(text){
         const before=/^[\s\d.)№#|]*$/.test(beforeRaw)?'':beforeRaw;
         const context=stripTagFromContext(`${before} ${after}`);
         const markContext=`${before} ${after}`;
-        const done=/(^|[\s|;,:\t])(✓|✔|☑|☒|✕|✖|×|\+|v|да|yes|true|done|выполнено|готово)(?=[\s|;,:\t]|$)/i.test(markContext)
+        const done=!!m.done||/(^|[\s|;,:\t])(✓|✔|☑|☒|✕|✖|×|\+|v|да|yes|true|done|выполнено|готово)(?=[\s|;,:\t]|$)/i.test(markContext)
           ||/[✓✔☑☒✕✖×]/.test(markContext)
           || /(^|\s)[+v]\s*$/i.test(markContext.trim());
         current={unit:m.unit||"",tag,done,task:taskLikeText(context)};
@@ -2375,7 +2409,8 @@ function loadSheetJs(){
 // Флажок «Добавить» строки-дубликата выключен, пока тег совпадает; после правки он включается сам.
 // Свободная буква: 2131-PT-414 → 414A; если 414A занят — 414B; для 414A → 414B.
 function dupSuffixSuggest(tag,taken){
-  const t=String(tag||"").trim().toUpperCase();if(!t)return "";
+  const t=window.TagFormat?TagFormat.show(String(tag||"").trim()):String(tag||"").trim().toUpperCase();if(!t)return "";
+  if(!/\d[A-Z]?$/.test(t))return "";   // v125: букву дописывают к номеру; у строки текста номера нет
   const m=t.match(/^(.*\d)([A-Z])$/);
   const base=m?m[1]:t;const from=m?m[2].charCodeAt(0)-64:0;
   const tries=[];
@@ -2432,6 +2467,12 @@ function refreshImportRows(box){
     if(!note)box.prepend(n);
   }else note?.remove();
 }
+// v125: поле задания в списке найденного при касании становится выше (CSS :focus) и растёт вместе с текстом
+// до 200 px; после ввода возвращается к размеру текста (не выше прежних 104 px).
+const IMPORT_TASK_CAP=104,IMPORT_TASK_CAP_FOCUS=200;
+document.addEventListener("focusin",e=>{const t=e.target;if(t?.classList?.contains("importTask"))requestAnimationFrame(()=>autosizeTaskTextarea(t,IMPORT_TASK_CAP_FOCUS));});
+document.addEventListener("input",e=>{const t=e.target;if(t?.classList?.contains("importTask"))autosizeTaskTextarea(t,document.activeElement===t?IMPORT_TASK_CAP_FOCUS:IMPORT_TASK_CAP);});
+document.addEventListener("focusout",e=>{const t=e.target;if(t?.classList?.contains("importTask")){t.scrollTop=0;autosizeTaskTextarea(t,IMPORT_TASK_CAP);}});
 function wireImportRow(box,row){
   const inp=row.querySelector(".importTag");
   inp?.addEventListener("input",()=>refreshImportRows(box));
@@ -2457,7 +2498,7 @@ function renderFileCandidates(){
   const existing=new Set(data.map(item=>tagKey(item.tag)));
   $("fileImportLegend").classList.add("ready");
   fileCandidates.forEach(candidate=>{
-    const tag=String(candidate.tag||"").toUpperCase(),already=existing.has(tagKey(tag));
+    const tag=TagFormat.show(candidate.tag),already=existing.has(tagKey(tag));
     const row=document.createElement("div");row.className="importItem";row.dataset.candidateTag=tag;
     const line=document.createElement("div");line.className="importRow";
     const pick=document.createElement("input");pick.type="checkbox";pick.className="importPick";pick.checked=!already;pick.disabled=already;pick.title=TX("Добавить");pick.setAttribute("aria-label",TX("Добавить {0}",tag));
@@ -2835,7 +2876,7 @@ function updateOcrPhotoUi(){
   // v118: фото выбираются и обрезаются в сетке миниатюр; холст — только для обрезки одного фото.
   canvas.hidden=!has;$("ocrPickBtn").hidden=true;$("ocrCropBtn").hidden=true;
   const grid=$("ocrGrid");if(grid)grid.hidden=has;
-  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;$("ocrZoomRow").hidden=!ocrCropMode;syncZoomUi();syncLevelUi();
+  $("ocrRunRow").hidden=ocrCropMode;$("ocrCropBar").hidden=!ocrCropMode;syncCropTools();
   const sel=batchSelected().length,run=$("ocrRunBtn");
   run.disabled=has||!sel||ocrBatchRunning||ocrBatchLoading>0||ocrPickPending>0;
   run.textContent=sel>1?TX("Распознать · {0}",sel):TX("Распознать");
@@ -2879,7 +2920,7 @@ function drawOcrPhoto(){
 }
 // Обрезка как в галерее телефона: рамка сразу по всему фото, углы и стороны тянутся,
 // рамка двигается пальцем, двумя пальцами раздвигается; каждое касание продолжает с текущей рамки.
-function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropPtrs.clear();ocrCropClient.clear();ocrCropGesture=null;ocrFrameTouched=false;setOcrView(ocrAutoZoom&&ocrPhoto.crop?fitViewToFrame():fullView(),false);updateOcrPhotoUi();syncLevelUi();requestAnimationFrame(drawOcrPhoto);}
+function startOcrCrop(){if(!ocrPhoto)return;if(reviewSnap==="half"&&overlay.classList.contains("reviewing")){reviewSnap="full";applyReviewSnap();}ocrCropEdit=ocrPhoto.crop?{...ocrPhoto.crop}:ocrFullRect();ocrCropMode=true;ocrCropTool="";ocrCropPtrs.clear();ocrCropClient.clear();ocrCropGesture=null;ocrFrameTouched=false;setOcrView(ocrAutoZoom&&ocrPhoto.crop?fitViewToFrame():fullView(),false);updateOcrPhotoUi();syncLevelUi();requestAnimationFrame(drawOcrPhoto);}
 function applyOcrCrop(){
   if(!ocrCropMode)return;const src=ocrPhoto.source,r=ocrCropEdit;
   const full=r.x<=1&&r.y<=1&&r.w>=src.width-2&&r.h>=src.height-2;
@@ -2901,11 +2942,29 @@ function curOcrView(){
 function ocrCssPerSrc(){return Math.max(1e-6,$("ocrCanvas").getBoundingClientRect().width/curOcrView().w);}
 function ocrToSrc(e){const b=$("ocrCanvas").getBoundingClientRect(),vr=curOcrView();return{x:vr.x+(e.clientX-b.left)/b.width*vr.w,y:vr.y+(e.clientY-b.top)/b.height*vr.h};}
 function syncZoomUi(){
-  const row=$("ocrZoomRow");if(!row||row.hidden)return;
-  const z=ocrPhoto&&ocrCropMode?normView(ocrView).z:1;
+  const row=$("ocrZoomRow");if(!row||!ocrCropMode)return;
+  const z=ocrPhoto?normView(ocrView).z:1;
+  // v125: значение масштаба — на кнопке в ряду; ползунок и ± — в выдвижном ряду.
   $("ocrZoom").value=String(z);$("ocrZoomVal").textContent=(Math.round(z*10)/10).toString().replace(".",window.I18N?.dec||",")+"×";
   $("ocrZoomOut").disabled=z<=1.001;$("ocrZoomIn").disabled=z>=OCR_ZOOM_MAX-.001;
   const a=$("ocrZoomAuto");a.setAttribute("aria-pressed",String(ocrAutoZoom));
+}
+// v125: в окне обрезки ползунки наклона и масштаба не занимают место постоянно. В ряду кнопок — значения
+// («0°», «1×»); касание значения выдвигает его ползунок над рядом, повторное — убирает. Фото получает всю высоту.
+let ocrCropTool="";
+function syncCropTools(){
+  const on=ocrCropMode&&!!ocrPhoto;
+  if(!on)ocrCropTool="";
+  $("ocrZoomRow").hidden=!(on&&ocrCropTool==="zoom");
+  for(const [id,t] of [["ocrToolLevel","level"],["ocrToolZoom","zoom"]]){const b=$(id);if(b)b.setAttribute("aria-pressed",String(on&&ocrCropTool===t));}
+  syncZoomUi();syncLevelUi();
+}
+function setCropTool(t){
+  if(!ocrCropMode||!ocrPhoto)return;
+  ocrCropTool=ocrCropTool===t?"":t;
+  syncCropTools();
+  if(ocrCropTool==="level")showLevelGuides();else levelGuidesUntil=0;
+  requestAnimationFrame(drawOcrPhoto);   // высота фото изменилась — толщина линий рамки считается заново
 }
 // Окно просмотра по рамке: рамка + 12 % запаса; полная рамка — всё фото.
 function fitViewToFrame(){
@@ -3173,7 +3232,8 @@ function cropRegionFull(r){return !r||(r.x<=1&&r.y<=1&&r.w>=ocrPhoto.source.widt
 function rememberLevelBase(){const p=ocrPhoto;if(!p||!p.geo||!ocrCropEdit)return;p.levelBase={rot:p.rot,crop:cropRegionFull(ocrCropEdit)?null:{...ocrCropEdit}};}
 function syncLevelUi(){
   const p=ocrPhoto,row=$("ocrLevelRow");if(!row)return;
-  row.hidden=!(p&&p.geo&&ocrCropMode);if(row.hidden)return;
+  const on=!!(p&&p.geo&&ocrCropMode);
+  row.hidden=!(on&&ocrCropTool==="level");if(!on)return;
   if(typeof p.q!=="number")p.q=Math.round(p.rot/90);
   const fine=norm180(p.rot-p.q*90);
   $("ocrLevel").value=String(fine);
@@ -3339,14 +3399,15 @@ function buildBatchCandidates(){
     texts.push(it.text);
     for(const r of batchTagsOf(it.text)){
       const key=tagKey(r.tag);let m=merged.get(key);
-      if(!m){m={tag:String(r.tag).toUpperCase(),completed:false,task:"",src:[]};merged.set(key,m);}
+      if(!m){m={tag:TagFormat.show(r.tag),completed:false,task:"",src:[]};merged.set(key,m);}
       m.completed=m.completed||r.done;
       if(r.task&&r.task.length>m.task.length)m.task=r.task;
       if(!m.src.includes(i+1))m.src.push(i+1);
     }
   });
   lastOcrText=texts.join("\n");
-  const all=[...merged.values()].sort((a,b)=>compareBatchTags(a.tag,b.tag));
+  // v125: теги КИП — по установке, типу и номеру; пункты обычного списка — в порядке фото и строк.
+  const all=TagFormat.generic?[...merged.values()]:[...merged.values()].sort((a,b)=>compareBatchTags(a.tag,b.tag));
   ocrCandidates=all.map(x=>x.tag);
   ocrCandidateMeta=new Map(all.map(x=>[tagKey(x.tag),{completed:x.completed,task:x.task,score:0.65,src:x.src}]));
 }
@@ -3443,7 +3504,7 @@ function renderImportCandidates(){
   const existing=new Set(data.map(x=>tagKey(x.tag)));
   $("photoImportLegend").classList.add("ready");
   ocrCandidates.forEach(candidate=>{
-    const tag=String(candidate||'').toUpperCase(),already=existing.has(tagKey(tag));
+    const tag=TagFormat.show(candidate),already=existing.has(tagKey(tag));
     const meta=ocrCandidateMeta.get(tagKey(tag))||{completed:false,task:''};
     const row=document.createElement('div'); row.className='importItem'; row.dataset.candidateTag=tag;
     const line=document.createElement('div'); line.className='importRow';
@@ -3513,7 +3574,8 @@ function importCandidates(){
   if(duplicates.length){
     const unique=[...new Set(duplicates)];
     showToast(TX("Дубликаты не добавлены: {0}. Измени тег или сними отметку.",unique.join(", ")));
-    rows.forEach(row=>{const inp=row.querySelector('.importTag');if(inp&&unique.includes(inp.value.trim().toUpperCase()))inp.style.borderColor="#d9534f";});
+    const uniqueKeys=new Set(unique.map(tagKey));
+    rows.forEach(row=>{const inp=row.querySelector('.importTag');if(inp&&uniqueKeys.has(tagKey(inp.value)))inp.style.borderColor="#d9534f";});
     return;
   }
   const max=data.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);
@@ -3827,6 +3889,7 @@ ${hLi(hT("A±"),"<b>Размер текста</b> — меньше / больш�
 ${hLi(hS("report"),"<b>Отчёт</b> — в рабочую группу: одна или несколько страниц, выполненные, невыполненные или всё, с заданиями или без («+ задания»), фотоотчёт — кнопка «Фото · N» рядом с «Отправить» (если у тегов есть фото): снизу выдвигается список — фото слева, тег справа; касание фото — просмотр, «Убрать из отчёта»; «Отправить фото» — снимки с подписью «Фото 3 — тег» по порядку отчёта, исполнители (на iPhone — подсказки имён из контактов или Contact Picker API в настройках Safari). Окно на весь экран, «Отправить» всегда внизу. Двойное касание по тексту — правка на весь экран, курсор там, где коснулись; «Готово» возвращает к настройкам. Правки сохраняются при смене выбора.")}
 ${hLi(hS("search"),"<b>Поиск</b> — по тегу или номеру установки.")}
 ${hLi(hS("install"),"<b>Установить</b> — на главный экран. Кнопка видна, когда браузер это разрешает.")}
+${hLi(hT("⌃"),"<b>Свернуть панель</b> — маленькая стрелка слева от этой справки: кнопки, страницы и фильтры прячутся, списку достаётся больше места; в строке остаётся название страницы. Ещё касание — панель возвращается. Выбор запоминается.")}
 </ul>
 <h3>Страницы</h3>
 <p>Отдельные списки — например, по установкам или сменам. Нажми — открыть, <b>+</b> — новая. Удержи страницу — «Изменить» (название), «Выбрать» (все) и «Удалить».</p>
@@ -3918,10 +3981,10 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото не больше одного тега (бирка), приложение само подбирает наклон и сторону (вверх ногами, вертикально), читает несколько раз и сверяет результат (до ~30 с на фото). Выделяйте только строки текста, без QR-кода и рамки. В окне обрезки можно выровнять и вручную: ползунок — наклон по жёлтым линиям, ⟲ ⟳ — поворот на 90°, «Авто» — выровнять само. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото не больше одного тега (бирка), приложение само находит надпись на снимке, выравнивает и увеличивает её (светлая гравировка на тёмном пластике тоже читается), читает несколько раз и сверяет результат; если надпись не нашлась — подбирает наклон и сторону по всему снимку (до ~30 с на фото). Выделяйте только строки текста, без QR-кода и рамки. Окно обрезки открывается на весь экран; внизу один ряд кнопок: ✕ — отмена, ⟲ ⟳ — поворот на 90°, наклон («0°») и масштаб («1×») — касание значения выдвигает ползунок («Авто» у наклона выравнивает строки само, у масштаба — подгоняет фото под рамку), рамка из уголков — всё фото, «Готово». Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
-${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS и свой образец. Выбор хранится на телефоне; подробности — в справке меню формата.")}
+${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS, готовые наборы для других списков (номера, документы, телефоны, госномера…), «любой текст» и свой вариант. Выбор хранится на телефоне; подробности — в справке меню формата.")}
 </ul>
 <h3>Вручную</h3>
 <p>Тег, задание и статус. Под полем сразу видно, подходит ли тег под формат и в какую вкладку он попадёт: вкладки строятся по номеру установки — <span class="nw">21-PT-1001</span> → «21».</p>
@@ -3938,8 +4001,12 @@ ${hLi(hT("далее"),"<b>Функция:</b> T датчик, I показан�
 <p><b>Установка</b> — цифры перед буквами, любой длины: <code>2131-PT-102</code>, <code>21-PT-1001</code>, <code>100-FT-0012</code>. По ней строятся вкладки. Переключатель <b>Установка</b>: «Любая» — берутся теги с установкой и без; «Есть» — только с установкой; «Нет» — только <code>PT-101</code>.</p>
 <h3>KKS</h3>
 <p>Электростанции: <code>10LBA10CP001</code> — блок 10, система LBA, датчик CP001. Вкладка — блок и система: «10LBA».</p>
-<h3>Свой образец</h3>
-<p>Впишите тег из своего списка — правило построится само: первая группа цифр становится установкой, буквы — типом прибора. Можно 2–3 образца через запятую.</p>
+<h3>Готовые наборы</h3>
+<p>Списки не из КИП — склад, офис, транспорт, сеть: <b>Номера</b> (только цифры), <b>Код-номер</b> (<code>INV-0042</code>), <b>Артикул · серийный №</b>, <b>Документ №</b> (<code>№ 123/45-А</code>), <b>Телефон</b>, <b>E-mail</b>, <b>Госномер</b>, <b>IP-адрес</b>. Под набором написано, что именно он берёт из текста. Вкладок по установкам у таких списков нет.</p>
+<h3>Любой текст</h3>
+<p>Каждая строка — пункт списка: дела, покупки, фамилии, адреса. Номер строки и маркер («1.», «—», «•») отбрасываются, «✓» и <code>[x]</code> в начале строки — отметка «выполнено». В таблице пункт — первая ячейка, остальные идут в задание.</p>
+<h3>Свой вариант</h3>
+<p>Впишите пример строки из своего списка — правило построится само: цифры → столько же цифр, буквы → буквы, знаки — как в образце. Подходит любой вид: <code>21-PT-1001</code> (первая группа цифр — установка), одни цифры <code>4512</code>, <code>INV-2024/015</code>, «Кабинет 305». Образец без цифр («Молоко») означает «любая строка». Можно до 5 образцов через запятую.</p>
 <h3>Что не считается тегом</h3>
 <ul>
 ${hLi(hT("1 буква"),"Оборудование и крепёж: <code>P-101</code> насос, <code>V-201</code> ёмкость, <code>M-20</code> болт.")}
@@ -3962,6 +4029,7 @@ ${hLi(hS("send"),"<b>Save / send</b> — text report to a messenger or a .json s
 ${hLi(hT("A±"),"<b>Text size</b> — smaller / larger.")}
 ${hLi(hS("report"),"<b>Report</b> — for the work group: one or several pages, done, pending or all, with or without tasks (“+ tasks”), photo report — the “Photos · N” button next to “Send” (when tags have photos): a list slides up — photos on the left, tag on the right; tap a photo to view it, “Remove from report”; “Send photos” — photos captioned “Photo 3 — tag” in report order, crew (on iPhone — name suggestions from contacts, or Contact Picker API in Safari settings). Full-screen window, “Send” is always at the bottom. Double-tap the text to edit full screen, the cursor goes where you tapped; “Done” returns to the settings. Edits are kept when you change the selection.")}
 ${hLi(hS("search"),"<b>Search</b> — by tag or unit number.")}
+${hLi(hT("⌃"),"<b>Collapse the panel</b> — the small arrow to the left of this help button: buttons, pages and filters are hidden and the list gets more room; the page name stays in the line. Tap again to bring the panel back. The choice is remembered.")}
 ${hLi(hS("install"),"<b>Install</b> — to the home screen. Visible when the browser allows it.")}
 </ul>
 <h3>Pages</h3>
@@ -4054,10 +4122,10 @@ ${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
 <p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
   add:{title:"Adding — help",html:`
 <ul>
-${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If a photo has at most one tag (a plate), the app finds the tilt and the side itself (upside down, vertical), reads it several times and cross-checks the result (up to ~30 s per photo). Select only the lines of text, without the QR code and the frame. In the crop window you can also level it by hand: the slider sets the tilt along the yellow guides, ⟲ ⟳ turn by 90°, “Auto” levels it automatically. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
+${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If a photo has at most one tag (a plate), the app finds the text in the shot itself, levels and enlarges it (light engraving on dark plastic is read too), reads it several times and cross-checks the result; if no text is found it searches for the tilt and the side over the whole shot (up to ~30 s per photo). Select only the lines of text, without the QR code and the frame. The crop window opens full screen with one row of buttons at the bottom: ✕ — cancel, ⟲ ⟳ — turn by 90°, tilt (“0°”) and zoom (“1×”) — tap the value to slide out its slider (“Auto” levels the lines for tilt and fits the photo to the frame for zoom), the corner-frame button — whole photo, “Done”. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
 ${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
 ${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
-${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; KKS and an own sample are available. The choice is stored on the phone; details — in the format menu help.")}
+${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; there are also KKS, ready-made sets for other lists (numbers, documents, phones, car plates…), “any text” and an own pattern. The choice is stored on the phone; details — in the format menu help.")}
 </ul>
 <h3>Manually</h3>
 <p>Tag, task and status. Under the field you see at once whether the tag matches the format and which tab it goes to: tabs are built from the unit number — <span class="nw">21-PT-1001</span> → “21”.</p>
@@ -4074,8 +4142,12 @@ ${hLi(hT("next"),"<b>Function:</b> T transmitter, I indicator, C controller, V v
 <p><b>Unit</b> — digits before the letters, any length: <code>2131-PT-102</code>, <code>21-PT-1001</code>, <code>100-FT-0012</code>. Tabs are built from it. The <b>Unit</b> switch: “Any” — tags with and without a unit; “With” — only with a unit; “Without” — only <code>PT-101</code>.</p>
 <h3>KKS</h3>
 <p>Power plants: <code>10LBA10CP001</code> — unit 10, system LBA, sensor CP001. Tab — unit and system: “10LBA”.</p>
-<h3>Own sample</h3>
-<p>Enter a tag from your list — the rule is built automatically: the first digit group becomes the unit, the letters the instrument type. 2–3 samples separated by commas are fine.</p>
+<h3>Ready-made sets</h3>
+<p>Lists outside instrumentation — warehouse, office, transport, network: <b>Numbers</b> (digits only), <b>Code-number</b> (<code>INV-0042</code>), <b>Part · serial no.</b>, <b>Document no.</b> (<code>№ 123/45-A</code>), <b>Phone</b>, <b>E-mail</b>, <b>Car plate</b>, <b>IP address</b>. The line under a set says what exactly it takes from the text. Such lists have no unit tabs.</p>
+<h3>Any text</h3>
+<p>Each line is a list item: to-dos, shopping, names, addresses. The line number and the bullet (“1.”, “—”, “•”) are dropped; “✓” and <code>[x]</code> at the start of a line mean “done”. In a table the item is the first cell, the rest goes to the task.</p>
+<h3>Own pattern</h3>
+<p>Enter a sample line from your list — the rule is built automatically: digits → the same number of digits, letters → letters, signs stay as in the sample. Any shape works: <code>21-PT-1001</code> (the first digit group is the unit), digits only <code>4512</code>, <code>INV-2024/015</code>, “Room 305”. A sample without digits (“Milk”) means “any line”. Up to 5 samples separated by commas.</p>
 <h3>What is not a tag</h3>
 <ul>
 ${hLi(hT("1 letter"),"Equipment and fasteners: <code>P-101</code> pump, <code>V-201</code> vessel, <code>M-20</code> bolt.")}
@@ -4151,6 +4223,10 @@ function updateFmtButton(){
   btn.setAttribute("aria-label",TX("Формат тегов: {0}",fmtModeName()));btn.title=TX("Формат тегов: {0}",fmtModeName());
   btn.classList.toggle("isNew",!safeGetStorage(FMT_SEEN_KEY,""));
   tagInput.placeholder=TagFormat.placeholder();
+  // v125: список не из КИП — поле называется «Пункт», буквы не делаются заглавными, клавиатура — по виду строки.
+  const io=TagFormat.input();
+  tagInput.setAttribute("autocapitalize",io.caps);tagInput.setAttribute("inputmode",io.kbd);
+  const lab=$("tagInputLabel");if(lab)lab.textContent=TagFormat.generic?TX("Пункт списка"):TX("Тег");
   layoutAddHead();
 }
 // Шапка «Добавить»: заголовок, кнопка формата и OCR — в одну строку. Не помещается — короткие подписи,
@@ -4188,7 +4264,7 @@ function checkTagLine(){
       return;
     }
     el.className="tagCheck ok";
-    el.innerHTML=`✓ <code>${escapeHtml(r.tag)}</code> → ${r.unit?TX("вкладка «{0}»",escapeHtml(r.unit)):TX("без установки")}${r.fixes&&r.fixes.length?TX(" · исправлено: {0}",escapeHtml(r.fixes.join(", "))):""}`;
+    el.innerHTML=`✓ <code>${escapeHtml(r.tag)}</code>${TagFormat.generic&&!r.unit?"":" → "+(r.unit?TX("вкладка «{0}»",escapeHtml(r.unit)):TX("без установки"))}${r.fixes&&r.fixes.length?TX(" · исправлено: {0}",escapeHtml(r.fixes.join(", "))):""}`;
   }else{el.className="tagCheck no";el.textContent=TX("Не подходит под формат «{0}»: {1}",fmtModeName(),TX(r?r.reason:"не похоже на тег"));}
 }
 tagInput.addEventListener("input",checkTagLine);
@@ -4233,10 +4309,16 @@ function openFmtMenu(){
   renderFmtMenu(true);$("fmtOverlay").classList.add("show");$("fmtSheet").scrollTop=0;
 }
 function closeFmtMenu(){$("fmtOverlay").classList.remove("show");}
-const fmtFamily=()=>TagFormat.mode==="kks"?"kks":TagFormat.mode==="custom"?"custom":"isa";
+const fmtFamily=()=>["kks","custom","preset","free"].includes(TagFormat.mode)?TagFormat.mode:"isa";
 function renderFmtMenu(full){
   const st=TagFormat.state,fam=fmtFamily(),isaMode=fam==="isa"?TagFormat.mode:st.isaLast;
   $("fmtIsa").checked=fam==="isa";$("fmtKks").checked=fam==="kks";$("fmtCustom").checked=fam==="custom";
+  // v125: готовые наборы и «любой текст».
+  $("fmtPreset").checked=fam==="preset";$("fmtFree").checked=fam==="free";
+  const pr=TagFormat.preset;
+  $("fmtPresetEx").textContent=fam==="preset"?TX(pr.ex):"";
+  $("fmtPresets").innerHTML=TagFormat.PRESETS.map(x=>`<button aria-pressed="${fam==="preset"&&x.id===pr.id}" data-preset="${x.id}" type="button">${escapeHtml(TX(x.name))}</button>`).join("");
+  $("presetLine").textContent=TX(pr.desc);
   $("unitSeg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.u===isaMode)));
   $("fmtIsaEx").textContent=TagFormat.FORMATS[isaMode].ex;
   const c=TagFormat.custom;
@@ -4246,7 +4328,7 @@ function renderFmtMenu(full){
 }
 function renderRuleLine(){
   const el=$("ruleLine"),st=TagFormat.state,c=TagFormat.custom;
-  if(!String(st.example||"").trim()){el.className="ruleLine";el.textContent=TX("Например, 21-PT-1001 или 100-FT-0012A. Можно 2–3 через запятую.");return;}
+  if(!String(st.example||"").trim()){el.className="ruleLine";el.textContent=TX("Любая строка из вашего списка: 21-PT-1001, 4512, INV-2024/015, «Кабинет 305» или просто слово. Цифры — столько же цифр, буквы — буквы, знаки — как в образце. Можно до 5 образцов через запятую.");return;}
   if(!c.ok){el.className="ruleLine err";el.textContent=c.error;return;}
   el.className="ruleLine";
   el.innerHTML=escapeHtml(TagFormat.describe(c)).replace(/(\d+ цифр[аы]? — установка|\d+ digits? — unit)/g,"<b>$1</b>");
@@ -4257,6 +4339,10 @@ $("fmtOverlay").addEventListener("click",e=>{if(e.target===$("fmtOverlay"))close
 $("fmtIsa").addEventListener("change",()=>TagFormat.setMode(TagFormat.state.isaLast||"auto"));
 $("fmtKks").addEventListener("change",()=>TagFormat.setMode("kks"));
 $("fmtCustom").addEventListener("change",()=>{TagFormat.setMode("custom");if(!String(TagFormat.state.example||"").trim())setTimeout(()=>$("fmtExample").focus(),30);});
+// v125: готовые наборы и любой текст.
+$("fmtPreset").addEventListener("change",()=>TagFormat.setPreset(TagFormat.state.preset));
+$("fmtFree").addEventListener("change",()=>TagFormat.setMode("free"));
+$("fmtPresets").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();TagFormat.setPreset(b.dataset.preset);});
 $("unitSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();TagFormat.setMode(b.dataset.u);});
 $("fmtExample").addEventListener("focus",()=>{if(TagFormat.mode!=="custom")TagFormat.setMode("custom");});
 $("fmtExample").addEventListener("input",()=>TagFormat.setExample($("fmtExample").value));
@@ -4276,7 +4362,7 @@ function fmtHighlight(text,res){
   for(const m of marks){
     if(m.start<p)continue;out+=escapeHtml(text.slice(p,m.start));const seg=escapeHtml(text.slice(m.start,m.end));
     out+=m.t==="ok"
-      ?`<mark${m.fixes.length?' class="fix"':""} data-say="${escapeHtml(`${m.tag} → ${m.unit?TX("вкладка «{0}»",m.unit):TX("без установки")}${m.fixes.length?" · "+m.fixes.join(", "):""}`)}">${seg}</mark>`
+      ?`<mark${m.fixes.length?' class="fix"':""} data-say="${escapeHtml(`${m.tag}${TagFormat.generic?"":" → "+(m.unit?TX("вкладка «{0}»",m.unit):TX("без установки"))}${m.fixes.length?" · "+m.fixes.join(", "):""}`)}">${seg}</mark>`
       :`<s data-say="${escapeHtml(`${m.text.replace(/\s+/g," ")}: ${TX(m.reason)}`)}">${seg}</s>`;
     p=m.end;
   }
@@ -4299,7 +4385,7 @@ function renderFmtCheck(){
   if(!text.trim()){out.innerHTML='<span class="muted">'+TX('Найденные теги подсветятся зелёным.')+'</span>';return;}
   const noUnit=TX("без установки"),units=new Map();res.found.forEach(t=>units.set(t.unit||noUnit,(units.get(t.unit||noUnit)||0)+1));
   const h=TagFormat.hint(res,TagFormat.mode);
-  out.innerHTML=`<b class="${res.found.length?"":"zero"}">${TX("Найдено тегов: {0}",res.found.length)}</b>${units.size?` → ${[...units].map(([u,n])=>`${escapeHtml(u)} (${n})`).join(" · ")}`:""}`
+  out.innerHTML=`<b class="${res.found.length?"":"zero"}">${TagFormat.generic?TX("Найдено пунктов: {0}",res.found.length):TX("Найдено тегов: {0}",res.found.length)}</b>${units.size&&!TagFormat.generic?` → ${[...units].map(([u,n])=>`${escapeHtml(u)} (${n})`).join(" · ")}`:""}`
     +(res.skipped.length?`<br><span class="muted">${TX("Не взято: {0}. Коснитесь зачёркнутого — будет видна причина.",res.skipped.length)}</span>`:"")
     +(h?`<br>${escapeHtml(h.text)} — <button class="fmtLink" data-fmt-set="${h.to}" type="button">${escapeHtml(h.btn)}</button>`:"");
 }
@@ -4633,6 +4719,8 @@ $("ocrCropReset").onclick=()=>{if(!ocrPhoto||!ocrCropMode)return;ocrCropEdit=ocr
 $("ocrZoomIn").onclick=()=>zoomOcrBy(1.5,null,true);
 $("ocrZoomOut").onclick=()=>zoomOcrBy(1/1.5,null,true);
 $("ocrZoom").addEventListener("input",e=>{const cur=normView(ocrView);zoomOcrBy(Number(e.target.value)/cur.z,null,false);});
+$("ocrToolLevel").onclick=()=>setCropTool("level");
+$("ocrToolZoom").onclick=()=>setCropTool("zoom");
 $("ocrZoomAuto").onclick=()=>{ocrAutoZoom=!ocrAutoZoom;try{localStorage.setItem("kip-crop-autozoom",ocrAutoZoom?"1":"0");}catch(_){}syncZoomUi();if(ocrAutoZoom)ocrAutoFit();};
 // v120: ручное выравнивание в окне обрезки.
 $("ocrLevel").addEventListener("pointerdown",()=>rememberLevelBase());
@@ -4859,6 +4947,9 @@ applyDocumentTitle();
 refreshAfterViewportChange();
 if($("search")) $("search").value=query;
 render();
+// v125: свёрнутая шапка восстанавливается при запуске.
+applyNavFold(safeGetStorage(NAV_FOLD_KEY,"0")==="1",false);
+$("navFold").addEventListener("click",()=>applyNavFold(!navFolded,true));
 
 // v96: разделы «Теги · Газ · 4–20» (v106: + «Электроэнергетика»). Переключатель в шапке,
 // у конверторов — свои модули, они загружаются по требованию (и заранее, когда устройство свободно).
@@ -5321,6 +5412,7 @@ function relocalizeApp(){
     applyFontFamily(currentFontId,false);
     applyTheme(document.documentElement.dataset.theme||"light");
     updateOcrConfigStatus();updateFmtButton();checkTagLine();applyReviewSnap();
+    applyNavFold(navFolded,false);syncCropTools();if($("fmtOverlay").classList.contains("show"))renderFmtMenu(true);
   }catch(e){console.warn("Tag list: relocalize",e);}
 }
 window.addEventListener("tl-langchange",relocalizeApp);
