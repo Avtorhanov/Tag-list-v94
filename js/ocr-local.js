@@ -561,5 +561,11 @@
     const tags=consensus(reads),conf=reads.reduce((p,r)=>p+r.conf,0)/reads.length;
     return {text:tags.join('\n'),tags,strict:tags,conf,score:tags.length*100+conf/20,angle:norm180(side.angle),reads:reads.length};
   }
-  window.LocalOCR={recognize,warmUp:()=>ensure(),levelCanvas,estimateSkew,recognizeLeveled,autoLevel,consensus,score:scoreRead,textBlocks,focusRead,similar,cfg};
+  // v128: выбран другой локальный движок (OCRv5) — поток Tesseract с моделями закрывается, память освобождается.
+  function dispose(){
+    const err=new Error(TX('Распознавание остановлено.'));for(const p of pending.values())p.reject(err);pending.clear();
+    try{worker&&worker.terminate();}catch(_){}
+    worker=null;ready=null;onProgress=null;
+  }
+  window.LocalOCR={recognize,warmUp:()=>ensure(),levelCanvas,estimateSkew,recognizeLeveled,autoLevel,consensus,score:scoreRead,textBlocks,focusRead,similar,cfg,dispose};
 })();

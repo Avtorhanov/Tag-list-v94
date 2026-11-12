@@ -336,6 +336,19 @@ I.add({
 "OCR.space не ответил":"OCR.space did not respond",
 "Ошибка распознавания: {0}. Проверь интернет и VPN — нужен доступ к OCR.space.":"Recognition error: {0}. Check internet and VPN — access to OCR.space is needed.",
 "Не найден модуль распознавания js/ocr-local.js":"Recognition module js/ocr-local.js not found",
+// v128: второй локальный движок (OCRv5) и сверка с тэг-листом
+"Распознавание на телефоне":"On-phone recognition",
+"Tesseract — перечни, распечатки, скриншоты":"Tesseract — lists, printouts, screenshots",
+"OCRv5 — бирки и шильдики: под углом, вверх ногами, гравировка":"OCRv5 — plates and nameplates: at an angle, upside down, engraving",
+"Не найден модуль распознавания js/ocr-pp.js":"Recognition module js/ocr-pp.js not found",
+"Запускаю OCRv5…":"Starting OCRv5…",
+"Распознаю на телефоне (OCRv5)…":"Recognizing on the phone (OCRv5)…",
+"OCRv5 не поддерживается на этом устройстве":"OCRv5 is not supported on this device",
+"OCRv5 не запустился ({0}) — читаю Tesseract":"OCRv5 did not start ({0}) — reading with Tesseract",
+"Словарь не подходит к модели распознавания":"The dictionary does not match the recognition model",
+"В списке есть похожий тег: {0}.":"A similar tag is already in the list: {0}.",
+"В списке есть похожие теги: {0}.":"Similar tags are already in the list: {0}.",
+"Если на фото он — нажмите на тег, строка исправится.":"If that is the one in the photo, tap the tag to correct the row.",
 "При необходимости выделите участок, затем нажмите «Распознать».":"If needed select an area, then tap “Recognize”."
 });
 

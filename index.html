@@ -264,10 +264,11 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 </div>
 </div>
 <div id="photoForm" style="display:none">
-<label class="ocrEngineRow" for="ocrOnlineToggle">
-<span class="ocrEngineText"><strong hidden id="ocrEngineTitle"></strong><span class="mini" id="ocrConfigStatus">Фото не покидает устройство</span></span>
-<span class="ocrEngineSwitch"><span class="ocrEngineName">OCR.space</span><input id="ocrOnlineToggle" role="switch" type="checkbox"/><span aria-hidden="true" class="switchTrack"></span></span>
-</label>
+<!-- v128: слева — локальный движок (Tesseract / OCRv5, оба без интернета), справа — тумблер онлайн-распознавания OCR.space. -->
+<div class="ocrEngineRow">
+<span class="ocrEngineText"><span aria-label="Распознавание на телефоне" class="seg3 seg2 ocrLocalSeg" id="ocrLocalSeg" role="group"><button aria-pressed="true" data-ocr-model="tess" title="Tesseract — перечни, распечатки, скриншоты" type="button">Tesseract</button><button aria-pressed="false" data-ocr-model="pp" title="OCRv5 — бирки и шильдики: под углом, вверх ногами, гравировка" type="button">OCRv5</button></span><strong hidden id="ocrEngineTitle"></strong><span class="mini" id="ocrConfigStatus">Фото не покидает устройство</span></span>
+<label class="ocrEngineSwitch" for="ocrOnlineToggle"><span class="ocrEngineName">OCR.space</span><input id="ocrOnlineToggle" role="switch" type="checkbox"/><span aria-hidden="true" class="switchTrack"></span></label>
+</div>
 <input accept="image/*" capture="environment" id="cameraInput" style="display:none" type="file"/>
 <input accept="image/*" id="photoInput" multiple="" style="display:none" type="file"/>
 <div class="mini ocrBatchCount" hidden="" id="ocrBatchCount"></div>
