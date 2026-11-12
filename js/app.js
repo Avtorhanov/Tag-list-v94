@@ -202,9 +202,18 @@ function renderLastSaved(){
 // размеры остальных кнопок не меняются. Выбор хранится на устройстве. Открытый поиск остаётся виден.
 const NAV_FOLD_KEY="kip-nav-folded-v1";
 let navFolded=false;
+let navFoldTimer=0;
 function applyNavFold(on,persist){
+  const top=document.querySelector(".top"),was=navFolded;
   navFolded=!!on;
-  document.querySelector(".top")?.classList.toggle("navFolded",navFolded);
+  // v126: по нажатию панель выпадает и убирается плавно (CSS, класс navAnim на время движения);
+  // при запуске и смене языка состояние ставится сразу, без движения.
+  if(top&&persist&&was!==navFolded){
+    clearTimeout(navFoldTimer);
+    top.classList.add("navAnim");void top.offsetHeight;
+    navFoldTimer=setTimeout(()=>{top.classList.remove("navAnim");if(!navFolded)updateTabsFade();},240);
+  }
+  top?.classList.toggle("navFolded",navFolded);
   document.body.classList.toggle("nav-folded",navFolded);
   const btn=$("navFold");
   if(btn){
@@ -213,11 +222,7 @@ function applyNavFold(on,persist){
   }
   if(navFolded&&pageManageMode)exitPageManage();
   if(navFolded)closePageContextMenu();
-  if(persist){
-    safeSetStorage(NAV_FOLD_KEY,navFolded?"1":"0");
-    const top=document.querySelector(".top");
-    if(top&&!navFolded){top.classList.add("navUnfold");setTimeout(()=>top.classList.remove("navUnfold"),260);}
-  }
+  if(persist)safeSetStorage(NAV_FOLD_KEY,navFolded?"1":"0");
   renderLastSaved();
   if(!navFolded)requestAnimationFrame(updateTabsFade);
 }
@@ -2887,6 +2892,22 @@ function updateOcrPhotoUi(){
   const hint=$("ocrCropHint");
   if(ocrCropMode){hint.hidden=true;hint.textContent="";}  // v122: подсказка убрана
   else hint.hidden=true;
+  fitCropCanvas();
+}
+// v126: размер фото в окне обрезки задаётся явно — по свободному месту над рядом кнопок. Раньше он зависел от
+// процентной высоты в CSS: высокое или повёрнутое фото (и любое фото на низком экране) вылезало за экран и
+// закрывало кнопки — из окна нельзя было выйти. Теперь фото всегда вписано, кнопки всегда видны.
+function fitCropCanvas(){
+  const c=$("ocrCanvas"),box=$("ocrPreview");if(!c||!box)return;
+  if(!ocrCropMode||!ocrPhoto){if(c.style.width||c.style.height){c.style.width="";c.style.height="";}return;}
+  const cs=getComputedStyle(box);
+  const bw=box.clientWidth-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0);
+  const bh=box.clientHeight-(parseFloat(cs.paddingTop)||0)-(parseFloat(cs.paddingBottom)||0);
+  if(bw<8||bh<8)return;
+  const src=ocrPhoto.source,k=Math.min(bw/src.width,bh/src.height);
+  const w=Math.max(1,Math.floor(src.width*k))+"px",h=Math.max(1,Math.floor(src.height*k))+"px";
+  if(c.style.width!==w)c.style.width=w;
+  if(c.style.height!==h)c.style.height=h;
 }
 function drawOcrPhoto(){
   if(!ocrPhoto)return;
@@ -2964,6 +2985,7 @@ function setCropTool(t){
   ocrCropTool=ocrCropTool===t?"":t;
   syncCropTools();
   if(ocrCropTool==="level")showLevelGuides();else levelGuidesUntil=0;
+  fitCropCanvas();                       // ряд с ползунком появился или убран — места для фото стало меньше или больше
   requestAnimationFrame(drawOcrPhoto);   // высота фото изменилась — толщина линий рамки считается заново
 }
 // Окно просмотра по рамке: рамка + 12 % запаса; полная рамка — всё фото.
@@ -3073,7 +3095,10 @@ function wireOcrCrop(){
   };
   box.addEventListener("pointerup",end);box.addEventListener("pointercancel",end);
   box.addEventListener("wheel",e=>{if(!ocrCropMode||!ocrPhoto)return;e.preventDefault();zoomOcrBy(e.deltaY<0?1.25:.8,{x:e.clientX,y:e.clientY},false);},{passive:false});
-  window.addEventListener("resize",()=>{if(ocrCropMode)drawOcrPhoto();},{passive:true});
+  const refit=()=>{if(ocrCropMode){fitCropCanvas();drawOcrPhoto();}};
+  window.addEventListener("resize",refit,{passive:true});
+  window.addEventListener("orientationchange",()=>setTimeout(refit,250),{passive:true});
+  if(window.visualViewport)window.visualViewport.addEventListener("resize",refit,{passive:true});
 }
 
 function runSelectedOcr(){
@@ -3226,7 +3251,7 @@ function setCropRot(rot,q){
   }
   p.rot=rot;p.geo=g1;p.source=g1;ocrCropEdit=r;
   if(q0!==p.q)ocrView=fullView();   // v123: четверть оборота меняет размеры фото
-  syncLevelUi();drawOcrPhoto();
+  syncLevelUi();fitCropCanvas();drawOcrPhoto();
 }
 function cropRegionFull(r){return !r||(r.x<=1&&r.y<=1&&r.w>=ocrPhoto.source.width-2&&r.h>=ocrPhoto.source.height-2);}
 function rememberLevelBase(){const p=ocrPhoto;if(!p||!p.geo||!ocrCropEdit)return;p.levelBase={rot:p.rot,crop:cropRegionFull(ocrCropEdit)?null:{...ocrCropEdit}};}
@@ -3329,12 +3354,18 @@ async function runBatchOcr(engine){
           // с несколькими чтениями и голосованием. Его тег надёжнее одиночного чтения. Список из нескольких тегов
           // (распечатка, экран) остаётся как прочитан — с заданиями и отметками.
           const first=window.LocalOCR.score(res);
-          if(runToken===ocrRunToken&&first.tags.length<=1){
+          // v126: до двух тегов — бирка прибора или кабельная бирка «откуда / куда».
+          if(runToken===ocrRunToken&&first.tags.length<=2){
             const lv=await window.LocalOCR.autoLevel(src,region,{
               stage:t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,TX.msg(t))),
-              progress:v=>slice(.4+.6*v),abort:()=>runToken!==ocrRunToken,...(manual?{angle:0}:{})});
+              progress:v=>slice(.4+.6*v),abort:()=>runToken!==ocrRunToken,prior:{...first,conf:res.conf},...(manual?{angle:0}:{})});
             // Берём только теги с номером установки (2104-PG-447B1): слова бирки («ИЗМЕРЕНИЯ 0…400 кПа») иначе попадают в список как «теги».
-            if(lv&&lv.strict.length){it.text=lv.strict.join("\n");it.level=Math.round(norm180((it.rot||0)+lv.angle));}
+            // v126: к подтверждённым тегам добавляются надёжные теги первого чтения, если это не тот же тег с ошибкой.
+            if(lv&&lv.strict.length){
+              const core=t=>String(t).replace(/^\d?/,"").slice(0,9);   // «613-PIT-44926» при «2613-PIT-449» — тот же тег с мусором по краям
+              const more=first.strict.filter(t=>!lv.strict.some(u=>window.LocalOCR.similar(u,t)||u.includes(core(t))||t.includes(u)));
+              it.text=lv.strict.concat(more).join("\n");it.level=Math.round(norm180((it.rot||0)+lv.angle));
+            }
           }
         }else{
           const s=Math.min(1,3200/Math.max(region.w,region.h)),c=document.createElement("canvas");
@@ -3981,7 +4012,7 @@ ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, за
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
   add:{title:"Добавление — справка",html:`
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото не больше одного тега (бирка), приложение само находит надпись на снимке, выравнивает и увеличивает её (светлая гравировка на тёмном пластике тоже читается), читает несколько раз и сверяет результат; если надпись не нашлась — подбирает наклон и сторону по всему снимку (до ~30 с на фото). Выделяйте только строки текста, без QR-кода и рамки. Окно обрезки открывается на весь экран; внизу один ряд кнопок: ✕ — отмена, ⟲ ⟳ — поворот на 90°, наклон («0°») и масштаб («1×») — касание значения выдвигает ползунок («Авто» у наклона выравнивает строки само, у масштаба — подгоняет фото под рамку), рамка из уголков — всё фото, «Готово». Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
+${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото не больше двух тегов (бирка прибора, кабельная бирка «откуда / куда»), приложение само находит надпись на снимке — в том числе повёрнутую и мелкую, в ячейке таблицы на шильдике, — выравнивает и увеличивает её (светлая гравировка на тёмном пластике тоже читается), читает несколько раз и сверяет результат; если надпись не нашлась — подбирает наклон и сторону по всему снимку (до ~30 с на фото). Мелкая малоконтрастная гравировка на стали читается хуже всего — снимайте её ближе и без блика. Выделяйте только строки текста, без QR-кода и рамки. Окно обрезки открывается на весь экран; внизу один ряд кнопок: ✕ — отмена, ⟲ ⟳ — поворот на 90°, наклон («0°») и масштаб («1×») — касание значения выдвигает ползунок («Авто» у наклона выравнивает строки само, у масштаба — подгоняет фото под рамку), рамка из уголков — всё фото, «Готово». Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
 ${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
 ${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS, готовые наборы для других списков (номера, документы, телефоны, госномера…), «любой текст» и свой вариант. Выбор хранится на телефоне; подробности — в справке меню формата.")}
@@ -4122,7 +4153,7 @@ ${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
 <p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
   add:{title:"Adding — help",html:`
 <ul>
-${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If a photo has at most one tag (a plate), the app finds the text in the shot itself, levels and enlarges it (light engraving on dark plastic is read too), reads it several times and cross-checks the result; if no text is found it searches for the tilt and the side over the whole shot (up to ~30 s per photo). Select only the lines of text, without the QR code and the frame. The crop window opens full screen with one row of buttons at the bottom: ✕ — cancel, ⟲ ⟳ — turn by 90°, tilt (“0°”) and zoom (“1×”) — tap the value to slide out its slider (“Auto” levels the lines for tilt and fits the photo to the frame for zoom), the corner-frame button — whole photo, “Done”. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
+${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If a photo has at most two tags (an instrument plate, a “from / to” cable tag), the app finds the text in the shot itself — rotated or small text in a nameplate table cell too — levels and enlarges it (light engraving on dark plastic is read as well), reads it several times and cross-checks the result; if no text is found it searches for the tilt and the side over the whole shot (up to ~30 s per photo). Small low-contrast engraving on steel is the hardest — shoot it closer and without glare. Select only the lines of text, without the QR code and the frame. The crop window opens full screen with one row of buttons at the bottom: ✕ — cancel, ⟲ ⟳ — turn by 90°, tilt (“0°”) and zoom (“1×”) — tap the value to slide out its slider (“Auto” levels the lines for tilt and fits the photo to the frame for zoom), the corner-frame button — whole photo, “Done”. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
 ${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
 ${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
 ${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; there are also KKS, ready-made sets for other lists (numbers, documents, phones, car plates…), “any text” and an own pattern. The choice is stored on the phone; details — in the format menu help.")}

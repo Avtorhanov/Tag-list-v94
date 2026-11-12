@@ -169,6 +169,8 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <input class="search" id="search" placeholder="Поиск по тегу или установке" type="search"/>
 <button aria-label="Закрыть поиск" class="searchClose" id="searchClose" type="button">×</button>
 </div>
+<!-- v126: сворачиваемая часть шапки — одна обёртка, чтобы панель выпадала и убиралась плавно, одним движением. -->
+<div class="navFoldBody" id="navFoldBody"><div class="navFoldIn">
 <div aria-label="Основные действия" class="utilityRow">
 <button aria-label="Просмотр сухого списка" class="utilityBtn" id="dryListBtn" title="Просмотр сухого списка" type="button"><svg aria-hidden="true" class="uiIcon eyeIcon" viewbox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>
 <button aria-label="Выбрать шрифт" class="utilityBtn fontFamilyBtn" id="fontBtn" title="Шрифт" type="button"><span aria-hidden="true" id="fontIcon">Aa</span></button>
@@ -190,6 +192,7 @@ html.tl-reveal .fab{animation:tlFabIn .55s cubic-bezier(.2,1.25,.3,1) .34s both}
 <button aria-label="Назад" class="pageManageClose" id="pageManageClose" title="Назад" type="button"><svg aria-hidden="true" class="closeIcon" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg></button>
 </div>
 <div class="tabs" id="tabs"></div>
+</div></div>
 </div>
 <section aria-label="Конвертор газоанализа" class="gasView convView" hidden id="gasView"></section>
 <section aria-label="Конвертор 4–20 мА" class="gasView convView loopView" hidden id="loopView"></section>

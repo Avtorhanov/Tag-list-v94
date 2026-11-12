@@ -2477,18 +2477,35 @@ body.camera-open{overflow:hidden}
 .navFold:focus-visible{outline:2px solid var(--accent);outline-offset:1px;opacity:1}
 @media (hover:hover){.navFold:hover{opacity:1;color:var(--accent-text)}}
 .top.navFolded .navFold svg{transform:rotate(180deg)}
-.top.navFolded .utilityRow,.top.navFolded .pageBar,.top.navFolded .pageManageBar,.top.navFolded .tabs{display:none}
 .top.navFolded #lastSavedText{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.top.navUnfold .utilityRow,.top.navUnfold .pageBar,.top.navUnfold .tabs{animation:quickIn .18s cubic-bezier(.2,.8,.2,1) both;transform-origin:top center}
-@media (prefers-reduced-motion:reduce){.navFold svg{transition:none}.top.navUnfold .utilityRow,.top.navUnfold .pageBar,.top.navUnfold .tabs{animation:none}}
+/* v126: панель выпадает и убирается плавно и быстро (0,2 с). Высота обёртки идёт от 0 до полной через
+   grid-template-rows 0fr ↔ 1fr — без замера высоты в коде; содержимое при этом чуть проявляется и съезжает
+   на место. Анимация включается только на время нажатия (класс navAnim): при запуске приложения со свёрнутой
+   панелью ничего не дёргается. Обрезка содержимого (overflow) — только пока панель движется или свёрнута,
+   иначе срезались бы тени кнопок. Старые браузеры без анимации строк сетки просто переключают состояние. */
+.navFoldBody{display:grid;grid-template-rows:1fr}
+.navFoldIn{min-height:0;min-width:0}
+.top.navFolded .navFoldBody{grid-template-rows:0fr;visibility:hidden}
+.top.navFolded .navFoldIn,.top.navAnim .navFoldIn{overflow:hidden}
+.top.navFolded .navFoldIn{opacity:0;transform:translateY(-8px)}
+.top.navAnim .navFoldBody{transition:grid-template-rows .2s cubic-bezier(.2,.8,.2,1),visibility 0s linear 0s}
+.top.navAnim.navFolded .navFoldBody{transition:grid-template-rows .2s cubic-bezier(.2,.8,.2,1),visibility 0s linear .2s}
+.top.navAnim .navFoldIn{transition:opacity .16s ease,transform .2s cubic-bezier(.2,.8,.2,1);will-change:transform,opacity}
+@media (prefers-reduced-motion:reduce){.navFold svg{transition:none}.top.navAnim .navFoldBody,.top.navAnim .navFoldIn{transition:none}}
 
 /* 2. Окно обрезки — на весь экран: тёмный фон, фото от края до края, внизу один ряд кнопок.
       Ползунки наклона и масштаба выдвигаются над рядом только по касанию значения («0°», «1×»). */
 #overlay.import-mode.cropMode{background:#0b0d11;align-items:stretch}
-#overlay.import-mode.cropMode .sheet{width:100%;max-width:none;height:100dvh;max-height:none;border-radius:0;box-shadow:none;background:#0b0d11;color:#fff;padding:env(safe-area-inset-top,0px) 0 0;overflow:hidden}
-#overlay.cropMode .ocrPreview.cropping{border:0;border-radius:0;background:transparent;padding:10px 8px;min-height:0}
-#overlay.cropMode .ocrPreview.cropping canvas{border-radius:0}
-#overlay.cropMode .ocrDock{position:static;margin:0;padding:0 8px calc(8px + env(safe-area-inset-bottom,0px));background:transparent}
+/* v126: окно занимает экран по краям (top/bottom), а не по высоте в dvh: на старых iPhone единицы dvh нет, окно
+   становилось выше экрана. Фото получает всё место над кнопками и не может их вытеснить или закрыть:
+   блок с фото сжимается (flex-shrink), обрезает лишнее (overflow), а ряд кнопок лежит поверх него. */
+#overlay.import-mode.cropMode .sheet{position:fixed;left:0;right:0;top:0;bottom:0;width:auto;max-width:none;height:auto;max-height:none;min-height:0;transform:none;
+  border-radius:0;box-shadow:none;background:#0b0d11;color:#fff;padding:env(safe-area-inset-top,0px) 0 0;overflow:hidden;display:flex;flex-direction:column}
+#overlay.import-mode.cropMode #photoForm{display:flex!important;flex-direction:column;flex:1 1 0;min-height:0;flex-shrink:1;overflow:hidden}
+#overlay.cropMode .ocrPreview.cropping{flex:1 1 0;min-height:0;max-height:none;overflow:hidden;display:flex;align-items:center;justify-content:center;
+  position:relative;z-index:0;border:0;border-radius:0;background:transparent;padding:10px 8px}
+#overlay.cropMode .ocrPreview.cropping canvas{flex:0 0 auto;max-width:100%;max-height:100%;min-height:0;border-radius:0}
+#overlay.cropMode .ocrDock{flex:0 0 auto;position:relative;z-index:6;margin:0;padding:0 8px calc(8px + env(safe-area-inset-bottom,0px));background:#0b0d11}
 .cropBar{display:flex;align-items:center;gap:5px;margin-top:6px}
 .cropBar[hidden],.cropTool[hidden]{display:none!important}
 .cropBar button{display:grid;place-items:center;height:44px;min-width:0;padding:0;border:0;border-radius:12px;background:rgba(255,255,255,.11);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
