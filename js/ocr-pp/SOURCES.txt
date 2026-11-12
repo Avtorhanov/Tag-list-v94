@@ -1,0 +1,28 @@
+Tag list — движок OCRv5 (v128): откуда взяты файлы и как проверить, что они не изменены.
+
+Модели распознавания — PaddleOCR, PP-OCRv5 (Apache License 2.0, текст — LICENSE-PaddleOCR.txt)
+  https://github.com/PaddlePaddle/PaddleOCR
+  Файлы в формате ONNX взяты из выпуска v0.3.0 проекта oar-ocr (перевод официальных моделей в ONNX):
+  https://github.com/GreatV/oar-ocr/releases/tag/v0.3.0
+
+  PP-OCRv5_mobile_det.onnx          детектор строк текста            4 826 518 байт
+    sha256 1eb7b4f7ab657ebd1c66d5f79bca7497f29768a2e3c15e52daecbba1a8e4a039
+    (в выпуске: pp-ocrv5_mobile_det.onnx)
+  eslav_PP-OCRv5_mobile_rec.onnx    распознаватель: русский, украинский, белорусский + латиница и цифры   7 915 218 байт
+    sha256 36a66a68097e88b103e0f60f489e88c7239d3ea79d96fbac2d80ac9d134944cd
+    (в выпуске: eslav_pp-ocrv5_mobile_rec.onnx)
+  ppocrv5_eslav_dict.txt            словарь распознавателя (517 знаков)   1 663 байта
+    sha256 3e95f1581557162870cacdba5af91a4c6be2890710d395b0c3c7578e7ee5e6eb
+    Совпадает байт в байт с ppocr/utils/dict/ppocrv5_eslav_dict.txt в репозитории PaddleOCR.
+
+Движок — ONNX Runtime Web 1.18.0 (MIT License, текст — ../vendor/LICENSE-onnxruntime.txt)
+  https://github.com/microsoft/onnxruntime — пакет npm onnxruntime-web@1.18.0, папка dist/
+  Лежит в js/vendor/:
+  ort.wasm.min.js       142 930 байт      sha256 90533a3fd7006df7f897c0d63c468996da5c8e430e39964d92ebe586c4996614
+  ort-wasm-simd.wasm    10 595 041 байт   sha256 f533b5f21790563d7556c611c3835ac65848ee326da2689aac54ed7d9cc8c6a4
+  Оба файла совпадают с опубликованными в npm (сверено по контрольным суммам jsDelivr).
+  Версия 1.18.0 выбрана намеренно: это последняя, где код запуска WebAssembly встроен в ort.wasm.min.js
+  и есть сборка без потоков, — движок запускается из blob в фоновом потоке, без отдельных .mjs-файлов.
+
+Что в приложении своё: worker.js (детектор → рамки строк → вырезка → распознаватель → сборка текста)
+и ../ocr-pp.js (запуск потока, передача снимка).

@@ -1948,6 +1948,14 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
 .ocrEngineSwitch input:checked+.switchTrack::after{transform:translateX(18px)}
 .ocrEngineSwitch input:focus-visible+.switchTrack{outline:3px solid rgba(23,105,224,.35);outline-offset:2px}
 .ocrEngineRow.online .ocrEngineName{color:var(--accent)}
+/* v128: локальный движок — Tesseract / OCRv5. Строка больше не подпись тумблера целиком: слева сегмент, справа тумблер OCR.space. */
+.ocrEngineRow{cursor:default}
+.ocrEngineSwitch{cursor:pointer}
+.seg3.seg2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.ocrLocalSeg{width:100%;max-width:214px}
+.ocrLocalSeg button{min-height:30px;padding:0 8px;white-space:nowrap;touch-action:manipulation}
+.ocrEngineRow.online .ocrLocalSeg{display:none}
+.ocrEngineRow:not(.online) #ocrConfigStatus{display:none}
 .ocrPreview{position:relative;flex:0 0 auto;display:grid;place-items:center;min-height:118px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--control)}
 .ocrPreview canvas{display:block;max-width:100%;max-height:34vh;border-radius:7px;-webkit-user-select:none;user-select:none}
 .ocrPreview.compact canvas{max-height:19vh}
@@ -2319,6 +2327,7 @@ html.tl-i18n-pending .app,html.tl-i18n-pending .fab{visibility:hidden}
 .importDup.dup{color:var(--fmt-fix)}
 .importDup.bad{color:var(--fmt-no)}
 .importDup.ok{color:var(--fmt-ok)}
+.importDup.near{color:var(--fmt-fix)}   /* v128: похожий тег уже есть в списке */
 .importDupNote{grid-column:1/-1;margin:0 0 4px;padding:8px 10px;border-radius:9px;background:var(--fmt-fix-bg);color:var(--fmt-fix);font-size:calc(13px * var(--fontScale));line-height:1.4}
 .importDupNote b{font-family:var(--f-mono)}
 .dupFix{display:inline-block;border:1px solid currentColor;border-radius:7px;background:none;color:var(--accent-text,var(--accent));font:700 1em var(--f-mono);padding:1px 6px;margin:1px 0;cursor:pointer;touch-action:manipulation;vertical-align:baseline}
