@@ -381,7 +381,6 @@ I.add({
 "Выбраны все теги текущей вкладки: {0}":"All tags in the current tab selected: {0}",
 "Снят статус «Выполнено»: {0}":"“Done” cleared: {0}",
 "Отмечено выполненными: {0}":"Marked as done: {0}",
-"Не удалось загрузить OCR-модуль. Проверьте, что файл js/ocr.js опубликован на GitHub Pages.":"Could not load the OCR module. Check that js/ocr.js is published on GitHub Pages.",
 "Не удалось запустить {0}":"Could not start the {0}",
 "Не удалось загрузить {0} ({1}). Проверь, что файл опубликован вместе с приложением.":"Could not load the {0} ({1}). Check that the file is published with the app.",
 "Не удалось загрузить {0}: нет ответа. Попробуй ещё раз.":"Could not load the {0}: no response. Try again.",
@@ -870,7 +869,7 @@ I.add({
 "США · скид":"USA · skid"
 });
 
-// ---------------------------------------------------------------- ocr.js / ocr-local.js / worker.js
+// ---------------------------------------------------------------- ocr-local.js / worker.js (v127: ocr.js удалён)
 I.add({
 "Ошибка распознавания: {0}. Проверь интернет и доступ к OCR.space.":"Recognition error: {0}. Check internet and access to OCR.space.",
 "Подходящих КИП-тегов не найдено. Попробуй сфотографировать ближе, ровнее или использовать «Загрузка фото» с оригиналом.":"No matching I&C tags found. Shoot closer and straighter or use “Photo upload” with the original.",

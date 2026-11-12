@@ -4810,7 +4810,7 @@ if("launchQueue" in window && typeof window.launchQueue.setConsumer==="function"
     }catch(e){showToast(TX.msg(e?.message)||TX("Не удалось открыть переданный JSON"));}
   });
 }
-// v118: распознавание и добавление целиком в app.js; старый js/ocr.js не подгружается (он перезаписал бы список найденного).
+// v118: распознавание и добавление целиком в app.js; старый js/ocr.js не подгружается (он перезаписал бы список найденного). v127: файл удалён.
 $("importBtn").onclick=()=>importCandidates();
 $("cancelImportBtn").onclick=()=>setAddMode("manual");
 $("fileImportBtn").onclick=importFileCandidates;
