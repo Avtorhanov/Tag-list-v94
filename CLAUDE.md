@@ -22,7 +22,7 @@
 - `js/tag-format.js` — форматы тегов (ISA-5.1, KKS, свой образец).
 - `js/tag-photos.js` — фото к заданию (IndexedDB). `js/tag-camera.js` — серийная съёмка.
 - `js/ocr-local.js` + `js/ocr-local/` — Tesseract WASM, модели rus + eng; подгружается из `app.js` при первом распознавании.
-- `js/ocr-pp.js` + `js/ocr-pp/` — второй локальный движок, нейросеть PP-OCRv5 (детектор строк + распознаватель eslav, `worker.js`); считает ONNX Runtime Web 1.18.0 из `js/vendor/` (`ort.wasm.min.js`, `ort-wasm-simd.wasm`). Выбирается переключателем «Tesseract / OCRv5» в окне фото (`kipLocalOcrModel`), подгружается из `app.js`. Происхождение и контрольные суммы файлов — `js/ocr-pp/SOURCES.txt`; версию ONNX Runtime без проверки в APK и на iPhone не менять (с 1.19 запуск устроен иначе).
+- `js/ocr-pp.js` + `js/ocr-pp/` — второй локальный движок, нейросеть PP-OCRv5 (детектор строк + распознаватель eslav, `worker.js`); считает ONNX Runtime Web 1.18.0 из `js/vendor/` (`ort.wasm.min.js`, `ort-wasm-simd.wasm`). Выбирается переключателем «Tesseract / OCRv5» в меню «Добавить» и в окне фото (`kipLocalOcrModel`), подгружается из `app.js`. Происхождение и контрольные суммы файлов — `js/ocr-pp/SOURCES.txt`; версию ONNX Runtime без проверки в APK и на iPhone не менять (с 1.19 запуск устроен иначе).
 - `js/gas.js`, `js/loop.js`, `js/elec.js` — конверторы; подгружаются из `app.js` при открытии раздела.
 - `js/vendor/xlsx.full.min.js` — разбор Excel, подгружается при импорте файла; там же ONNX Runtime Web для OCRv5.
 - `css/app.css` — стили и 4 темы.

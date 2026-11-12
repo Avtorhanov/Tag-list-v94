@@ -1956,6 +1956,11 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
 .ocrLocalSeg button{min-height:30px;padding:0 8px;white-space:nowrap;touch-action:manipulation}
 .ocrEngineRow.online .ocrLocalSeg{display:none}
 .ocrEngineRow:not(.online) #ocrConfigStatus{display:none}
+/* v129: переключатель движка в меню «Добавить» — строка под заголовком, над кнопками «Камера / Фото / Файл / Вставить». */
+.engineStrip{display:none;margin:2px 0 12px}
+#overlay.addMenu .engineStrip{display:block}
+#overlay.addMenu .engineStrip.off{display:none}
+.engineStrip .ocrLocalSeg{max-width:none}
 .ocrPreview{position:relative;flex:0 0 auto;display:grid;place-items:center;min-height:118px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--control)}
 .ocrPreview canvas{display:block;max-width:100%;max-height:34vh;border-radius:7px;-webkit-user-select:none;user-select:none}
 .ocrPreview.compact canvas{max-height:19vh}
