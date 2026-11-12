@@ -202,9 +202,18 @@ function renderLastSaved(){
 // размеры остальных кнопок не меняются. Выбор хранится на устройстве. Открытый поиск остаётся виден.
 const NAV_FOLD_KEY="kip-nav-folded-v1";
 let navFolded=false;
+let navFoldTimer=0;
 function applyNavFold(on,persist){
+  const top=document.querySelector(".top"),was=navFolded;
   navFolded=!!on;
-  document.querySelector(".top")?.classList.toggle("navFolded",navFolded);
+  // v126: по нажатию панель выпадает и убирается плавно (CSS, класс navAnim на время движения);
+  // при запуске и смене языка состояние ставится сразу, без движения.
+  if(top&&persist&&was!==navFolded){
+    clearTimeout(navFoldTimer);
+    top.classList.add("navAnim");void top.offsetHeight;
+    navFoldTimer=setTimeout(()=>{top.classList.remove("navAnim");if(!navFolded)updateTabsFade();},240);
+  }
+  top?.classList.toggle("navFolded",navFolded);
   document.body.classList.toggle("nav-folded",navFolded);
   const btn=$("navFold");
   if(btn){
@@ -213,11 +222,7 @@ function applyNavFold(on,persist){
   }
   if(navFolded&&pageManageMode)exitPageManage();
   if(navFolded)closePageContextMenu();
-  if(persist){
-    safeSetStorage(NAV_FOLD_KEY,navFolded?"1":"0");
-    const top=document.querySelector(".top");
-    if(top&&!navFolded){top.classList.add("navUnfold");setTimeout(()=>top.classList.remove("navUnfold"),260);}
-  }
+  if(persist)safeSetStorage(NAV_FOLD_KEY,navFolded?"1":"0");
   renderLastSaved();
   if(!navFolded)requestAnimationFrame(updateTabsFade);
 }
@@ -2889,7 +2894,7 @@ function updateOcrPhotoUi(){
   else hint.hidden=true;
   fitCropCanvas();
 }
-// v125: размер фото в окне обрезки задаётся явно — по свободному месту над рядом кнопок. Раньше он зависел от
+// v126: размер фото в окне обрезки задаётся явно — по свободному месту над рядом кнопок. Раньше он зависел от
 // процентной высоты в CSS: высокое или повёрнутое фото (и любое фото на низком экране) вылезало за экран и
 // закрывало кнопки — из окна нельзя было выйти. Теперь фото всегда вписано, кнопки всегда видны.
 function fitCropCanvas(){
@@ -3349,13 +3354,13 @@ async function runBatchOcr(engine){
           // с несколькими чтениями и голосованием. Его тег надёжнее одиночного чтения. Список из нескольких тегов
           // (распечатка, экран) остаётся как прочитан — с заданиями и отметками.
           const first=window.LocalOCR.score(res);
-          // v125: до двух тегов — бирка прибора или кабельная бирка «откуда / куда».
+          // v126: до двух тегов — бирка прибора или кабельная бирка «откуда / куда».
           if(runToken===ocrRunToken&&first.tags.length<=2){
             const lv=await window.LocalOCR.autoLevel(src,region,{
               stage:t=>status(TX("Фото {0} из {1}: {2}",k+1,list.length,TX.msg(t))),
               progress:v=>slice(.4+.6*v),abort:()=>runToken!==ocrRunToken,prior:{...first,conf:res.conf},...(manual?{angle:0}:{})});
             // Берём только теги с номером установки (2104-PG-447B1): слова бирки («ИЗМЕРЕНИЯ 0…400 кПа») иначе попадают в список как «теги».
-            // v125: к подтверждённым тегам добавляются надёжные теги первого чтения, если это не тот же тег с ошибкой.
+            // v126: к подтверждённым тегам добавляются надёжные теги первого чтения, если это не тот же тег с ошибкой.
             if(lv&&lv.strict.length){
               const core=t=>String(t).replace(/^\d?/,"").slice(0,9);   // «613-PIT-44926» при «2613-PIT-449» — тот же тег с мусором по краям
               const more=first.strict.filter(t=>!lv.strict.some(u=>window.LocalOCR.similar(u,t)||u.includes(core(t))||t.includes(u)));
