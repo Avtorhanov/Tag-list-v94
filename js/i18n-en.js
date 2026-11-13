@@ -1091,7 +1091,12 @@ I.add({
 "в стене":"in wall",
 "впишите тариф — посчитается сумма":"enter the tariff to get the cost",
 "открыто":"open",
-"любое одно — второе считается":"any one — the other is calculated"
+"любое одно — второе считается":"any one — the other is calculated",
+// v131: «Вставить» — фото и файлы; «Что это?» в «4–20»
+"Вставлено фото из буфера":"Photo pasted from the clipboard",
+"Вставлено фото из буфера: {0}":"Photos pasted from the clipboard: {0}",
+"Из буфера взят первый файл: {0}":"The first file from the clipboard was taken: {0}",
+"Что это? Простое объяснение":"What is this? A plain explanation"
 });
 
 I._init();

@@ -2708,10 +2708,95 @@ async function processTextImport(text,label=TX("Текст"),startProgress=35){
   setFileProgress(100);setTimeout(()=>{$("fileProgressWrap").style.display="none"},450);
 }
 
+// v131: «Вставить» принимает всё, что лежит в буфере обмена: фото (одно или несколько) уходят в пакет
+// фото и распознаются, как из галереи; файл (XLSX, XLS, CSV, TSV, TXT, JSON) — разбирается, как через
+// «Файл»; текст и таблица (в т. ч. HTML из Excel или почты) — как раньше. iPhone и браузер — через
+// navigator.clipboard.read(); APK — через приложение (AndroidApp.readClipboardFiles: фото и файлы
+// из буфера Android). Буфер, в котором нет ни фото, ни файла, читается как текст.
+const PASTE_MIME_EXT={
+  "image/png":"png","image/jpeg":"jpg","image/jpg":"jpg","image/webp":"webp","image/heic":"heic","image/heif":"heif","image/gif":"gif","image/bmp":"bmp","image/tiff":"tif",
+  "text/csv":"csv","text/tab-separated-values":"tsv","application/json":"json",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"xlsx","application/vnd.ms-excel":"xls"
+};
+const PASTE_FILE_RE=/\.(xlsx|xls|csv|tsv|txt|json)$/i;
+// HTML из буфера (ячейки Excel, таблица из письма) → строки с табуляцией, как у текстового буфера.
+function clipboardHtmlToText(html){
+  try{
+    const doc=new DOMParser().parseFromString(String(html||""),"text/html");
+    const rows=[...doc.querySelectorAll("tr")];
+    if(rows.length)return rows.map(tr=>[...tr.querySelectorAll("th,td")].map(c=>String(c.textContent||"").replace(/\s+/g," ").trim()).join("\t")).join("\n");
+    return String(doc.body?.innerText||doc.body?.textContent||"");
+  }catch(_){return "";}
+}
+function base64ToFile(b64,name,type){
+  const bin=atob(String(b64||""));const u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+  return new File([u],name,{type:type||"application/octet-stream"});
+}
+function sortPastedFiles(list,out){
+  for(const f of list){
+    if(!f)continue;
+    const type=String(f.type||"").toLowerCase(),name=String(f.name||"");
+    if(/^image\//.test(type)||/\.(png|jpe?g|webp|heic|heif|gif|bmp|tiff?)$/i.test(name))out.images.push(f);
+    else if(PASTE_FILE_RE.test(name)||PASTE_MIME_EXT[type])out.files.push(f);
+  }
+  return out;
+}
+// Всё из буфера: {images:[File], files:[File], text:""}. null — буфер не прочитать этим способом.
+async function readClipboardAll(){
+  const out={images:[],files:[],text:""};
+  const bridge=window.AndroidApp;
+  if(bridge&&typeof bridge.readClipboardFiles==="function"){
+    try{
+      const arr=JSON.parse(String(bridge.readClipboardFiles()||"[]"));
+      if(Array.isArray(arr)&&arr.length){
+        sortPastedFiles(arr.map((x,i)=>base64ToFile(x.b64,String(x.name||`clipboard-${i+1}`),String(x.type||""))),out);
+        if(out.images.length||out.files.length)return out;
+      }
+    }catch(_){}
+  }
+  // В APK буфер читает приложение (текст — readClipboard через readText); clipboard.read() WebView не разрешает.
+  if(bridge&&(typeof bridge.readClipboardFiles==="function"||typeof bridge.readClipboard==="function"))return null;
+  if(!navigator.clipboard?.read)return null;
+  const items=await navigator.clipboard.read();
+  let n=0,html="";
+  for(const it of items||[]){
+    const types=[...(it.types||[])];
+    const img=types.find(t=>/^image\//i.test(t));
+    if(img){const b=await it.getType(img);out.images.push(new File([b],`clipboard-${++n}.${PASTE_MIME_EXT[img]||"png"}`,{type:b.type||img}));continue;}
+    const ft=types.find(t=>PASTE_MIME_EXT[t]);
+    if(ft){const b=await it.getType(ft);out.files.push(new File([b],`clipboard.${PASTE_MIME_EXT[ft]}`,{type:ft}));continue;}
+    if(!out.text&&types.includes("text/plain"))out.text=await (await it.getType("text/plain")).text();
+    if(!html&&types.includes("text/html"))html=await (await it.getType("text/html")).text();
+  }
+  if(!String(out.text||"").trim()&&html)out.text=clipboardHtmlToText(html);
+  return out;
+}
+// Фото → пакет фото (как «Фото»), файл → разбор файла (как «Файл»). true — что-то принято.
+async function importPastedFiles(got){
+  if(got.images.length){
+    clearOcrBatch();setAddMode("photo");
+    const n=await addBatchFiles(got.images);
+    if(n)showToast(n===1?TX("Вставлено фото из буфера"):TX("Вставлено фото из буфера: {0}",n));
+    return true;
+  }
+  if(got.files.length){
+    const f=got.files[0];
+    openFileReview();runFileImport(f);
+    if(got.files.length>1)showToast(TX("Из буфера взят первый файл: {0}",f.name));
+    return true;
+  }
+  return false;
+}
 // v101: «Вставить» в меню сразу читает буфер обмена (в APK — через приложение) и показывает найденные теги.
 async function pasteTextImport(){
-  let text="",label=TX("Буфер обмена"),unreadable=false;
-  try{
+  let text="",label=TX("Буфер обмена"),unreadable=false,got=null;
+  let denied=false;
+  try{got=await readClipboardAll();}catch(e){got=null;denied=e?.name==="NotAllowedError";}
+  if(got&&await importPastedFiles(got))return;
+  if(got&&String(got.text||"").trim())text=got.text;
+  else if(denied)unreadable=true; // iPhone: «Вставить» во всплывающей кнопке не нажато — второй раз не спрашиваем
+  else try{
     if(!navigator.clipboard?.readText)throw new Error("clipboard");
     text=await navigator.clipboard.readText();
   }catch(e){unreadable=true;}
@@ -4139,6 +4224,27 @@ const hK=inner=>`<span class="hK" aria-hidden="true">${inner}</span>`;
 const hS=name=>hK(`<svg class="hIco" viewBox="0 0 24 24">${HELP_SVG[name]}</svg>`);
 const hT=text=>hK(`<span class="hKT">${text}</span>`);
 const hLi=(key,body)=>`<li>${key}<span>${body}</span></li>`;
+// v131: NAMUR NE 43 — коротко и «Подробнее» (справка «4–20» и «Газ»).
+const NAMUR_HELP_RU=`<h3>NAMUR NE 43 — что это</h3>
+<p>Рекомендация NAMUR — объединения пользователей автоматизации химической промышленности (Германия): каким током датчик 4–20 мА сообщает об отказе. Так РСУ отличает неисправность датчика от настоящего значения.</p>
+<table class="hpTbl hpNamur"><tr><th>≤ 3,6 мА</th><td class="bad">отказ датчика</td></tr><tr><th>3,6–3,8</th><td class="warn">вне диапазона</td></tr><tr><th>3,8–20,5</th><td class="ok">измерение (4–20 — шкала, немного за ней допускается)</td></tr><tr><th>20,5–21</th><td class="warn">вне диапазона</td></tr><tr><th>≥ 21 мА</th><td class="bad">отказ датчика</td></tr></table>
+<details class="hpMore"><summary>Подробнее: что значит каждая зона</summary>
+<p><b>3,8–20,5 мА — измерение.</b> Значение может немного выйти за шкалу — давление чуть ниже нуля после сброса, перегрузка на несколько процентов, — и датчик всё ещё показывает правду.</p>
+<p><b>3,6–3,8 и 20,5–21 мА — серая зона.</b> Это уже не измерение, но датчик и не заявлял отказ. Частые причины: шкала мала для процесса, сбита калибровка, утечка тока в линии или во влажной коробке.</p>
+<p><b>≤ 3,6 или ≥ 21 мА — отказ.</b> Датчик сам нашёл неисправность (обрыв чувствительного элемента, ошибка электроники) и выставил аварийный ток. Вниз или вверх — задаётся настройкой датчика (переключатель или HART); выбирают так, чтобы отказ вёл к безопасной реакции системы.</p>
+<p><b>0 мА</b> — не сигнал датчика, а отсутствие тока: обрыв линии, нет питания, сгорел предохранитель барьера.</p>
+<p><b>Что делает РСУ.</b> Помечает сигнал как недостоверный (BAD) и выдаёт сообщение — значение отказа не принимается за реальное давление, уровень или концентрацию.</p>
+</details>`;
+const NAMUR_HELP_EN=`<h3>NAMUR NE 43 — what it is</h3>
+<p>A recommendation of NAMUR — the user association of automation in the chemical industry (Germany): which current a 4–20 mA transmitter uses to report a failure. This lets the DCS tell a transmitter fault from a real value.</p>
+<table class="hpTbl hpNamur"><tr><th>≤ 3.6 mA</th><td class="bad">transmitter failure</td></tr><tr><th>3.6–3.8</th><td class="warn">out of range</td></tr><tr><th>3.8–20.5</th><td class="ok">measurement (4–20 is the span, slightly beyond is allowed)</td></tr><tr><th>20.5–21</th><td class="warn">out of range</td></tr><tr><th>≥ 21 mA</th><td class="bad">transmitter failure</td></tr></table>
+<details class="hpMore"><summary>More: what each zone means</summary>
+<p><b>3.8–20.5 mA — measurement.</b> The value may go slightly beyond the span — pressure just below zero after venting, an overload of a few percent — and the transmitter still tells the truth.</p>
+<p><b>3.6–3.8 and 20.5–21 mA — grey zone.</b> No longer a measurement, but the transmitter has not declared a failure either. Common causes: the range is too small for the process, calibration drift, current leakage in the line or a wet junction box.</p>
+<p><b>≤ 3.6 or ≥ 21 mA — failure.</b> The transmitter found a fault itself (broken sensing element, electronics error) and set the alarm current. Down or up is a transmitter setting (switch or HART), chosen so that a failure leads to a safe system reaction.</p>
+<p><b>0 mA</b> is not a transmitter signal but no current at all: broken line, no power, a blown barrier fuse.</p>
+<p><b>What the DCS does.</b> Marks the signal as bad (BAD) and raises a message — a failure value is not taken as a real pressure, level or concentration.</p>
+</details>`;
 // v130: справка по вкладкам-категориям: pages — [[название вкладки, html страницы], …].
 // Вкладки сверху, страницы листаются свайпом в сторону (initHelpPager), точки внизу.
 function hpBook(pages,en=false){
@@ -4242,7 +4348,8 @@ ${hpBook([["Единицы",`
 <h3>4. Результат</h3>
 <p>Все единицы сразу; нажмите строку — значение скопируется. Ниже — доля ПДК и ток по шкале из блока «Сигнал». «Тэг для задания» и «В задание» — дописать результат в задание тега (нет тега — он создаётся). Копировать и «Отправить» — текст результата.</p>
 <h3>5. Сигнал 4–20 мА</h3>
-<p>Шкала прибора: начало (4 мА), конец (20 мА) и единица. Ток и значение пересчитываются в обе стороны. Состояние — по NAMUR NE 43: 3,8–20,5 мА — измерение, ≤ 3,6 и ≥ 21 мА — отказ. «Из расчёта» и «В расчёт» — обмен с блоком «Концентрация».</p>
+<p>Шкала прибора: начало (4 мА), конец (20 мА) и единица. Ток и значение пересчитываются в обе стороны. «Из расчёта» и «В расчёт» — обмен с блоком «Концентрация». Состояние сигнала — по NAMUR NE 43:</p>
+${NAMUR_HELP_RU.replace(/<h3>[^<]*<\/h3>/,"")}
 <p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>`],
 ["Примеры",`
 <div class="hpEx"><span class="k">Метан: сколько это — 10 % НКПР</span>НКПР метана 4,4 % об. → 10 % НКПР = <b>0,44 % об.</b> = <b>4 400 ppm</b> ≈ 2 934 мг/м³ (20 °C). Это уже утечка, хотя до взрывоопасной смеси ещё в 10 раз.</div>
@@ -4251,39 +4358,67 @@ ${hpBook([["Единицы",`
 <div class="hpEx"><span class="k">Почему важно выбрать газ</span>1 % об. метана — <b>22,7 % НКПР</b>, а 1 % об. пропана — <b>58,8 % НКПР</b>: пропан взрывается при меньшей доле. Прибор, настроенный на метан, другой газ покажет неточно — смотрите паспорт.</div>
 <div class="hpEx"><span class="k">Кислород</span>В воздухе <b>20,9 % об.</b> Меньше — воздух вытесняется (азот, продувка, ёмкость) — проверьте перед входом. Кислород не горит и не токсичен, поэтому для него только % об.</div>
 <div class="hpEx"><span class="k">Угарный газ: ПДК в ppm</span>ПДК CO 20 мг/м³ = <b>17,2 ppm</b> при 20 °C — так сверяют с прибором, который показывает ppm.</div>`]])}`},
+  // v131: справка «4–20» — отдельная вкладка «FT · LT» (расход по перепаду, гидростатика) и NAMUR NE 43
+  // с раскрывающимся «Подробнее»; кнопка «Что это?» в конверторе открывает нужную вкладку.
   loop:{title:"4–20 мА — справка",html:`
 <p class="helpLead">Пересчёт «величина ⇄ ток ⇄ % шкалы» для датчиков температуры, давления, расхода и уровня и точки поверки. Считается на телефоне, без интернета.</p>
 ${hpBook([["Основы",`
 <h3>Что такое 4–20 мА</h3>
-<p>Датчик передаёт значение током в петле: начало шкалы — <b>4 мА</b>, конец — <b>20 мА</b>, середина — 12 мА. Ток не теряется на длинном кабеле, и один провод одновременно питает датчик.</p>
+<p>Датчик передаёт значение током в петле: начало шкалы — <b>4 мА</b>, конец — <b>20 мА</b>, середина — 12 мА. Ток не теряется на длинном кабеле, и та же пара проводов питает датчик.</p>
 <div class="hF">I = 4 + 16 · (x − НПИ) / (ВПИ − НПИ)</div>
 <dl class="hpGloss">
 <dt>НПИ</dt><dd>нижний предел измерения — значение при 4 мА (LRV).</dd>
 <dt>ВПИ</dt><dd>верхний предел — значение при 20 мА (URV).</dd>
 <dt>% шкалы</dt><dd>где значение внутри диапазона: 0 % = 4 мА, 50 % = 12 мА, 100 % = 20 мА.</dd>
-<dt>NAMUR NE 43</dt><dd>3,8–20,5 мА — измерение (немного за шкалой допускается), ≤ 3,6 и ≥ 21 мА — датчик сообщает об отказе.</dd>
 </dl>
 <h3>Почему 4, а не 0</h3>
 <p>«Живой ноль»: 0 мА — значит обрыв или нет питания, а 4 мА — нормальный ноль шкалы. Так РСУ отличает «давление ноль» от «провод оборван».</p>
+${NAMUR_HELP_RU}
 <h3>Типы</h3>
-<p><b>TT</b> — температура (термосопротивление Pt100, 50М…), <b>PT</b> — давление, <b>FT</b> — расход, <b>LT</b> — уровень. Буквы — из тега по ISA-5.1: <span class="nw">2131-TT-434</span> → TT.</p>`],
-["Как считать",`
+<p><b>TT</b> — температура (термосопротивление Pt100, 50М…), <b>PT</b> — давление, <b>FT</b> — расход, <b>LT</b> — уровень. Буквы — из тега по ISA-5.1: <span class="nw">2131-TT-434</span> → TT. Как устроены расход по перепаду и уровень гидростатикой — вкладка «FT · LT».</p>`],
+["FT · LT",`
+<h3><span class="hpKind">FT</span>Расход по перепаду — что это</h3>
+<p>Расход часто меряют не напрямую. В трубу ставят сужение — <b>диафрагму</b> (шайбу с отверстием), сопло или трубку Вентури. В сужении поток разгоняется, и давление за ним падает. Чем больше расход, тем больше разница давлений до и после сужения — <b>перепад ΔP</b>. Датчик меряет этот перепад, а расход из него вычисляется.</p>
+<p>Связь не прямая: перепад растёт как <b>квадрат</b> расхода. Расход вдвое больше — перепад вчетверо. Поэтому расход — это <b>корень</b> из перепада:</p>
+<div class="hF">Q = Qmax · √(ΔP / ΔPmax)</div>
+<table class="hpTbl"><tr><th>Перепад, % ΔPmax</th><td>100</td><td>50</td><td>25</td><td>4</td><td>1</td></tr><tr><th>Расход, % Qmax</th><td>100</td><td>70,7</td><td>50</td><td>20</td><td>10</td></tr></table>
+<h3>«Где извлекается корень»</h3>
+<p>Корень считает либо <b>датчик</b> — тогда его 4–20 мА уже пропорционален расходу, — либо <b>РСУ</b> (блок SQRT) — тогда ток пропорционален перепаду. В шкале прибора укажите, где именно. Перепутать — значит ошибиться сильно: 12 мА — это 50 % расхода, если корень в датчике, и 70,7 %, если в РСУ. Корень, взятый дважды, — частая ошибка наладки.</p>
+<details class="hpMore"><summary>Подробнее: зачем так меряют и где подвох</summary>
+<p><b>Зачем.</b> Диафрагма проста, без движущихся частей, работает на газе, паре и жидкости, при высоких давлениях и температурах — поэтому её так много на нефтегазохимии. Шкала задаётся расчётом сужающего устройства (ГОСТ 8.586): ΔPmax ↔ Qmax из листа расчёта.</p>
+<p><b>Малые расходы.</b> 10 % расхода — это всего 1 % перепада: такой сигнал тонет в шуме, и корень его ещё усиливает. Поэтому внизу шкалы расходомер по перепаду неточен, а в РСУ обычно ставят отсечку малых расходов.</p>
+<p><b>Плотность.</b> Перепад зависит и от плотности среды. Для газа и пара расход пересчитывают с учётом давления и температуры (коррекция в РСУ или вычислителе) — иначе при других условиях показания уйдут.</p>
+<p><b>Нули.</b> Перед поверкой — уравнительный вентиль открыт, плюсовая и минусовая камеры под одним давлением: датчик должен показать 4 мА (0 % перепада).</p>
+</details>
+<h3><span class="hpKind">LT</span>Уровень гидростатикой — что это</h3>
+<p>Столб жидкости давит на дно — чем выше уровень, тем больше давление внизу. Датчик давления (или перепада) у нижнего отбора меряет это давление, а уровень вычисляется: h = ΔP / (ρ · g). Поэтому в шкале нужна <b>плотность ρ</b> продукта.</p>
+<div class="hF">ΔP = ρ · g · h + смещение</div>
+<div class="hpEx"><span class="k">Один метр — сколько это</span>Вода (ρ 1000): 1 м → <b>9,81 кПа</b> (≈ 0,1 бар, 1000 мм вод. ст.). Бензин (ρ 750): тот же 1 м → 7,36 кПа. Неверная плотность в настройке — неверный уровень.</div>
+<details class="hpMore"><summary>Подробнее: смещение, закрытая ёмкость, прямой уровень</summary>
+<p><b>Нулевая точка.</b> В конверторе уровень считается от оси нижнего отбора, в мм.</p>
+<p><b>Открытая ёмкость</b> — датчик видит только столб жидкости, смещение 0.</p>
+<p><b>Закрытая ёмкость под давлением</b> — меряют перепад «низ − верх», чтобы давление газа над жидкостью не влияло. Если верхняя (минусовая) линия заполнена жидкостью («мокрая» опорная ветвь) или стоят капилляры с маслом, она давит постоянно — это <b>смещение со знаком минус</b>: при пустой ёмкости перепад отрицательный.</p>
+<p><b>Прямой уровень</b> (радар, буйковый, поплавок) — датчик сам выдаёт уровень, пересчёт только по шкале: тип «прямой».</p>
+</details>
+<div class="hpEx"><span class="k">Ёмкость с мокрой опорной ветвью</span>Отборы через <b>3 м</b>, вода, минусовая линия залита: смещение = −ρ·g·3 = <b>−29,4 кПа</b>. Пусто — ΔP −29,4 кПа (4 мА), полно — 0 кПа (20 мА).</div>`],
+["Расчёт",`
 <h3>1. Прибор</h3>
 <p>Выберите тип или введите тег — тип определится по буквам. «Сохранить» запоминает шкалу для тега; сохранённые теги — кнопками ниже, × — удалить.</p>
 <h3>2. Шкала</h3>
 <p>НПИ (4 мА), ВПИ (20 мА) и настройки типа: НСХ и R₀ термосопротивления, °C или °F, единицы давления, расход по перепаду (где извлекается корень — в датчике или в РСУ), уровень прямой или гидростатикой (плотность и смещение). Кнопки — типовые шкалы.</p>
 <h3>3. Значение</h3>
-<p>Введите любое поле — величину, сопротивление или перепад, ток или % шкалы — остальные пересчитаются. Полоса показывает ток в петле, состояние — по NAMUR NE 43.</p>
+<p>Введите любое поле — величину, сопротивление или перепад, ток или % шкалы — остальные пересчитаются. Полоса показывает ток в петле, состояние — по NAMUR NE 43 (см. «Основы»).</p>
 <h3>4. Точки поверки</h3>
 <p>0, 25, 50, 75 и 100 % шкалы с ожидаемым током. Нажмите строку — значения перейдут в «Значение».</p>
 <h3>5. Результат</h3>
 <p>Копировать, «В задание» (дописать в задание тега) и «Отправить» — как в «Газе».</p>
 <p class="helpNote">Формулы и нормативы — кнопка «Источники и формулы» внизу страницы.</p>`],
 ["Примеры",`
-<div class="hpEx"><span class="k">Давление: ток → бар</span>PT, шкала 0–1,6 МПа, на калибраторе <b>12 мА</b> → 50 % → <b>0,8 МПа</b>. Ток 7,2 мА → 20 % → 0,32 МПа.</div>
+<div class="hpEx"><span class="k">Давление: ток → МПа</span>PT, шкала 0–1,6 МПа, на калибраторе <b>12 мА</b> → 50 % → <b>0,8 МПа</b>. Ток 7,2 мА → 20 % → 0,32 МПа.</div>
 <div class="hpEx"><span class="k">Температура: проверить Pt100</span>TT, Pt100 (α 0,00385), шкала 0–150 °C. 75 °C → <b>12 мА</b>, сопротивление <b>128,99 Ом</b>: подайте магазином сопротивлений — ток должен быть 12 мА.</div>
-<div class="hpEx"><span class="k">Расход по перепаду: где корень</span>Перепад 25 % шкалы (8 мА). Корень в РСУ → расход √0,25 = <b>50 %</b> Qmax. Если корень уже в датчике, 8 мА = 25 % расхода. Перепутать — ошибка в 2 раза.</div>
-<div class="hpEx"><span class="k">Уровень гидростатикой</span>Вода (ρ 1000 кг/м³), столб <b>2 м</b> → ΔP = ρ·g·h ≈ <b>19,6 кПа</b>. Шкала 0–2000 мм: 1 м → 12 мА.</div>
+<div class="hpEx"><span class="k">Расход по перепаду</span>Шкала 0–25 кПа ↔ 0–100 м³/ч, корень в РСУ. Датчик даёт <b>8 мА</b> = 25 % перепада = 6,25 кПа → расход √0,25 = 50 % = <b>50 м³/ч</b>. Если бы корень был в датчике, 8 мА = 25 м³/ч.</div>
+<div class="hpEx"><span class="k">Уровень гидростатикой</span>Вода, открытая ёмкость, шкала 0–2000 мм. Столб <b>1 м</b> → ΔP 9,81 кПа → 50 % → <b>12 мА</b>; полная (2 м) → 19,6 кПа → 20 мА.</div>
+<div class="hpEx"><span class="k">Отказ, а не значение</span>На входе РСУ <b>3,5 мА</b> — это не «давление ниже нуля», а сигнал отказа по NAMUR NE 43: смотрите диагностику датчика и линию. <b>22 мА</b> — тоже отказ, не перегрузка.</div>
 <div class="hpEx"><span class="k">Поверка петли</span>Подайте 0, 25, 50, 75, 100 % — в РСУ должно быть 4, 8, 12, 16, 20 мА. Нажмите строку таблицы — значения перейдут наверх.</div>`]])}`},
   elec:{title:"Электроэнергетика — справка",html:`
 <p class="helpLead">Электрические расчёты — от квартиры до подстанции. В каждой вкладке введите известные значения, недостающее посчитается (поле с меткой «расчёт» — то, которое вы трогали давнее всех). Без интернета.</p>
@@ -4374,7 +4509,7 @@ ${hLi(hT("v5"),"<b>Tesseract / OCRv5</b> — какой движок читае�
 ${hLi(hS("camera"),"<b>Камера</b> — серия снимков: камера не закрывается после кадра.")}
 ${hLi(hS("photo"),"<b>Фото</b> — несколько фото из галереи сразу. Снимки и фото из галереи собираются в один пакет — до 20 фото за раз.")}
 ${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT.")}
-${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
+${hLi(hS("paste"),"<b>Вставить</b> — сразу берёт всё, что скопировано: <b>текст</b> или ячейки таблицы (письмо, Excel, мессенджер), <b>фото</b> — одно или несколько, уходят в пакет фото и распознаются, <b>файл</b> XLSX, CSV, TXT или JSON. На iPhone подтвердите всплывающей кнопкой «Вставить». Скопировать фото: в «Фото» или мессенджере — удержать снимок → «Скопировать».")}
 </ul>
 <h3>Пакет фото</h3>
 <p>Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото.</p>
@@ -4510,7 +4645,8 @@ ${hpBook([["Units",`
 <h3>4. Result</h3>
 <p>All units at once; tap a row to copy the value. Below — the OEL fraction and the current from the “Signal” scale. “Tag for task” and “To task” append the result to the tag’s task (a missing tag is created). Copy and “Send” — the result as text.</p>
 <h3>5. 4–20 mA signal</h3>
-<p>Instrument scale: start (4 mA), end (20 mA) and unit. Current and value are converted both ways. Status per NAMUR NE 43: 3.8–20.5 mA — measurement, ≤ 3.6 and ≥ 21 mA — failure. “From result” and “To input” exchange values with the “Concentration” block.</p>
+<p>Instrument scale: start (4 mA), end (20 mA) and unit. Current and value are converted both ways. “From result” and “To input” exchange values with the “Concentration” block. Signal status per NAMUR NE 43:</p>
+${NAMUR_HELP_EN.replace(/<h3>[^<]*<\/h3>/,"")}
 <p class="helpNote">Formulas and standards — the “Sources and formulas” button at the bottom of the page.</p>`],
 ["Examples",`
 <div class="hpEx"><span class="k">Methane: what 10 % LEL means</span>Methane LEL 4.4 % vol → 10 % LEL = <b>0.44 % vol</b> = <b>4 400 ppm</b> ≈ 2 934 mg/m³ (20 °C). That is already a leak, though still 10 times below an explosive mixture.</div>
@@ -4519,6 +4655,7 @@ ${hpBook([["Units",`
 <div class="hpEx"><span class="k">Why the gas choice matters</span>1 % vol of methane is <b>22.7 % LEL</b>, 1 % vol of propane is <b>58.8 % LEL</b>: propane ignites at a smaller fraction. A detector calibrated for methane reads another gas inaccurately — check the datasheet.</div>
 <div class="hpEx"><span class="k">Oxygen</span>Air holds <b>20.9 % vol</b>. Less means air is displaced (nitrogen, purging, a vessel) — check before entry. Oxygen neither burns nor is toxic, so only % vol is used.</div>
 <div class="hpEx"><span class="k">Carbon monoxide: OEL in ppm</span>CO OEL 20 mg/m³ = <b>17.2 ppm</b> at 20 °C — compare with a detector that shows ppm.</div>`]],true)}`},
+  // v131: separate “FT · LT” tab and NAMUR NE 43 with expandable details.
   loop:{title:"4–20 mA — help",html:`
 <p class="helpLead">“Value ⇄ current ⇄ % of span” conversion for temperature, pressure, flow and level transmitters, plus calibration points. Calculated on the phone, offline.</p>
 ${hpBook([["Basics",`
@@ -4529,29 +4666,55 @@ ${hpBook([["Basics",`
 <dt>LRV</dt><dd>lower range value — the value at 4 mA.</dd>
 <dt>URV</dt><dd>upper range value — the value at 20 mA.</dd>
 <dt>% of span</dt><dd>where the value is inside the range: 0 % = 4 mA, 50 % = 12 mA, 100 % = 20 mA.</dd>
-<dt>NAMUR NE 43</dt><dd>3.8–20.5 mA — measurement (slightly beyond the span is allowed), ≤ 3.6 and ≥ 21 mA — the transmitter reports a failure.</dd>
 </dl>
 <h3>Why 4 and not 0</h3>
 <p>“Live zero”: 0 mA means a broken wire or no power, while 4 mA is a normal zero of the scale. This is how the DCS tells “zero pressure” from “wire cut”.</p>
+${NAMUR_HELP_EN}
 <h3>Types</h3>
-<p><b>TT</b> — temperature (RTD Pt100, Cu50…), <b>PT</b> — pressure, <b>FT</b> — flow, <b>LT</b> — level. The letters come from the tag per ISA-5.1: <span class="nw">2131-TT-434</span> → TT.</p>`],
-["How to use",`
+<p><b>TT</b> — temperature (RTD Pt100, Cu50…), <b>PT</b> — pressure, <b>FT</b> — flow, <b>LT</b> — level. The letters come from the tag per ISA-5.1: <span class="nw">2131-TT-434</span> → TT. How DP flow and hydrostatic level work — the “FT · LT” tab.</p>`],
+["FT · LT",`
+<h3><span class="hpKind">FT</span>DP flow — what it is</h3>
+<p>Flow is often measured indirectly. A restriction is put in the pipe — an <b>orifice plate</b> (a disc with a hole), a nozzle or a Venturi tube. The flow speeds up in the restriction and the pressure behind it drops. The higher the flow, the bigger the pressure difference before and after — the <b>differential pressure ΔP</b>. The transmitter measures this DP, and the flow is calculated from it.</p>
+<p>The relation is not linear: DP grows as the <b>square</b> of flow. Twice the flow — four times the DP. So flow is the <b>square root</b> of DP:</p>
+<div class="hF">Q = Qmax · √(ΔP / ΔPmax)</div>
+<table class="hpTbl"><tr><th>DP, % of ΔPmax</th><td>100</td><td>50</td><td>25</td><td>4</td><td>1</td></tr><tr><th>Flow, % of Qmax</th><td>100</td><td>70.7</td><td>50</td><td>20</td><td>10</td></tr></table>
+<h3>“Where the root is taken”</h3>
+<p>The root is taken either by the <b>transmitter</b> — then its 4–20 mA is already proportional to flow — or by the <b>DCS</b> (a SQRT block) — then the current is proportional to DP. Set which one in the scale. Getting it wrong is a big error: 12 mA is 50 % flow with the root in the transmitter and 70.7 % with the root in the DCS. A root taken twice is a common commissioning mistake.</p>
+<details class="hpMore"><summary>More: why measure this way and the pitfalls</summary>
+<p><b>Why.</b> An orifice is simple, has no moving parts, works on gas, steam and liquid, at high pressures and temperatures — that is why there are so many in petrochemicals. The range comes from the orifice sizing calculation (ISO 5167 / GOST 8.586): ΔPmax ↔ Qmax from the data sheet.</p>
+<p><b>Low flow.</b> 10 % flow is only 1 % DP: the signal drowns in noise and the root amplifies it. So a DP flowmeter is inaccurate at the bottom of the range, and the DCS usually has a low-flow cut-off.</p>
+<p><b>Density.</b> DP also depends on density. Gas and steam flow is corrected for pressure and temperature (in the DCS or a flow computer) — otherwise readings drift under other conditions.</p>
+<p><b>Zero.</b> Before calibration — equalising valve open, both chambers at the same pressure: the transmitter must show 4 mA (0 % DP).</p>
+</details>
+<h3><span class="hpKind">LT</span>Hydrostatic level — what it is</h3>
+<p>A liquid column presses on the bottom — the higher the level, the higher the pressure below. A pressure (or DP) transmitter at the lower tap measures this pressure, and the level is calculated: h = ΔP / (ρ · g). So the scale needs the product <b>density ρ</b>.</p>
+<div class="hF">ΔP = ρ · g · h + offset</div>
+<div class="hpEx"><span class="k">How much is one metre</span>Water (ρ 1000): 1 m → <b>9.81 kPa</b> (≈ 0.1 bar, 1000 mmH₂O). Petrol (ρ 750): the same 1 m → 7.36 kPa. A wrong density in the settings gives a wrong level.</div>
+<details class="hpMore"><summary>More: offset, closed vessel, direct level</summary>
+<p><b>Zero point.</b> In the converter the level is counted from the lower tap axis, in mm.</p>
+<p><b>Open vessel</b> — the transmitter sees only the liquid column, offset 0.</p>
+<p><b>Closed vessel under pressure</b> — DP “bottom − top” is measured so the gas pressure above the liquid does not matter. If the upper (low-side) line is filled with liquid (a “wet leg”) or capillaries with fill fluid are used, it presses constantly — a <b>negative offset</b>: with an empty vessel the DP is negative.</p>
+<p><b>Direct level</b> (radar, displacer, float) — the transmitter outputs level itself, conversion by the scale only: type “direct”.</p>
+</details>
+<div class="hpEx"><span class="k">Vessel with a wet leg</span>Taps <b>3 m</b> apart, water, low-side line filled: offset = −ρ·g·3 = <b>−29.4 kPa</b>. Empty — DP −29.4 kPa (4 mA), full — 0 kPa (20 mA).</div>`],
+["Usage",`
 <h3>1. Instrument</h3>
 <p>Choose the type or enter a tag — the type is detected from the letters. “Save” stores the scale for the tag; saved tags are the buttons below, × deletes.</p>
 <h3>2. Scale</h3>
 <p>LRV (4 mA), URV (20 mA) and the type settings: RTD curve and R₀, °C or °F, pressure units, DP flow (where the square root is taken — in the transmitter or the DCS), level direct or hydrostatic (density and offset). Buttons — typical ranges.</p>
 <h3>3. Value</h3>
-<p>Enter any field — process value, resistance or differential pressure, current or % of span — the rest is recalculated. The bar shows the loop current, the status follows NAMUR NE 43.</p>
+<p>Enter any field — process value, resistance or differential pressure, current or % of span — the rest is recalculated. The bar shows the loop current, the status follows NAMUR NE 43 (see “Basics”).</p>
 <h3>4. Calibration points</h3>
 <p>0, 25, 50, 75 and 100 % of span with the expected current. Tap a row to move the values to “Value”.</p>
 <h3>5. Result</h3>
 <p>Copy, “To task” (append to the tag’s task) and “Send” — as in “Gas”.</p>
 <p class="helpNote">Formulas and standards — the “Sources and formulas” button at the bottom of the page.</p>`],
 ["Examples",`
-<div class="hpEx"><span class="k">Pressure: current → value</span>PT, range 0–1.6 MPa, calibrator shows <b>12 mA</b> → 50 % → <b>0.8 MPa</b>. 7.2 mA → 20 % → 0.32 MPa.</div>
+<div class="hpEx"><span class="k">Pressure: current → MPa</span>PT, range 0–1.6 MPa, calibrator shows <b>12 mA</b> → 50 % → <b>0.8 MPa</b>. 7.2 mA → 20 % → 0.32 MPa.</div>
 <div class="hpEx"><span class="k">Temperature: check a Pt100</span>TT, Pt100 (α 0.00385), range 0–150 °C. 75 °C → <b>12 mA</b>, resistance <b>128.99 Ω</b>: apply it from a resistance box — the current must be 12 mA.</div>
-<div class="hpEx"><span class="k">DP flow: where the root is</span>DP at 25 % of span (8 mA). Root in the DCS → flow √0.25 = <b>50 %</b> of Qmax. If the transmitter already takes the root, 8 mA = 25 % flow. Mixing them up is a factor-of-2 error.</div>
-<div class="hpEx"><span class="k">Hydrostatic level</span>Water (ρ 1000 kg/m³), a <b>2 m</b> column → ΔP = ρ·g·h ≈ <b>19.6 kPa</b>. Range 0–2000 mm: 1 m → 12 mA.</div>
+<div class="hpEx"><span class="k">DP flow</span>Range 0–25 kPa ↔ 0–100 m³/h, root in the DCS. The transmitter gives <b>8 mA</b> = 25 % DP = 6.25 kPa → flow √0.25 = 50 % = <b>50 m³/h</b>. With the root in the transmitter, 8 mA = 25 m³/h.</div>
+<div class="hpEx"><span class="k">Hydrostatic level</span>Water, open vessel, range 0–2000 mm. A <b>1 m</b> column → DP 9.81 kPa → 50 % → <b>12 mA</b>; full (2 m) → 19.6 kPa → 20 mA.</div>
+<div class="hpEx"><span class="k">A failure, not a value</span><b>3.5 mA</b> at the DCS input is not “pressure below zero” but a NAMUR NE 43 failure signal: check the transmitter diagnostics and the line. <b>22 mA</b> is also a failure, not an overload.</div>
 <div class="hpEx"><span class="k">Loop check</span>Apply 0, 25, 50, 75, 100 % — the DCS should see 4, 8, 12, 16, 20 mA. Tap a table row to move the values up.</div>`]],true)}`},
   elec:{title:"Electrical — help",html:`
 <p class="helpLead">Electrical calculations — from a flat to a substation. In each tab enter what you know, the missing value is calculated (the field marked “calc” is the one you touched least recently). Offline.</p>
@@ -4640,7 +4803,7 @@ ${hLi(hT("v5"),"<b>Tesseract / OCRv5</b> — which engine reads photos on the ph
 ${hLi(hS("camera"),"<b>Camera</b> — a series of shots: the camera stays open after each one.")}
 ${hLi(hS("photo"),"<b>Photo</b> — several gallery photos at once. Shots and gallery photos go into one batch — up to 20 photos at a time.")}
 ${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT.")}
-${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
+${hLi(hS("paste"),"<b>Paste</b> — takes whatever is copied right away: <b>text</b> or spreadsheet cells (email, Excel, messenger), <b>photos</b> — one or several, they go to the photo batch and are recognised, a <b>file</b> XLSX, CSV, TXT or JSON. On iPhone confirm with the pop-up “Paste” button. To copy a photo: in Photos or a messenger — hold the picture → “Copy”.")}
 </ul>
 <h3>Photo batch</h3>
 <p>Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag.</p>
@@ -4707,21 +4870,66 @@ function initHelpPager(body){
     dots.forEach((d,k)=>d.classList.toggle("on",k===i));
     fit();
   };
+  // v131: на iPhone плавная прокрутка scrollTo({behavior:"smooth"}) вбок вместе с прокруткой окна вверх
+  // обрывалась на полпути — листалка застревала между страницами (половина одной, половина другой).
+  // Теперь переход по вкладке анимируется вручную с выключенной привязкой (scroll-snap), окно справки
+  // поднимается мгновенно, а после любой остановки прокрутки листалка доводится до ближайшей страницы.
+  let anim=0,settleTimer=0;
+  const W=()=>Math.max(1,pager.clientWidth);
+  const goTo=(i,smooth)=>{
+    cancelAnimationFrame(anim);
+    const from=pager.scrollLeft,to=i*W(),d=to-from;
+    setPage(i);
+    if(!smooth||Math.abs(d)<2){pager.scrollLeft=to;return;}
+    pager.style.scrollSnapType="none";
+    const t0=performance.now(),dur=280;
+    const step=now=>{
+      const k=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-k,3);
+      pager.scrollLeft=from+d*e;
+      if(k<1)anim=requestAnimationFrame(step);
+      else{anim=0;pager.scrollLeft=to;pager.style.scrollSnapType="";}
+    };
+    anim=requestAnimationFrame(step);
+  };
+  let touching=false;
+  pager.addEventListener("touchstart",()=>{touching=true;cancelAnimationFrame(anim);if(anim){anim=0;pager.style.scrollSnapType="";}},{passive:true});
+  const release=()=>{touching=false;clearTimeout(settleTimer);settleTimer=setTimeout(settle,160);};
+  pager.addEventListener("touchend",release,{passive:true});
+  pager.addEventListener("touchcancel",release,{passive:true});
+  const settle=()=>{
+    if(anim||touching)return;
+    const i=Math.min(pages.length-1,Math.max(0,Math.round(pager.scrollLeft/W())));
+    if(Math.abs(pager.scrollLeft-i*W())>1)goTo(i,true);else setPage(i);
+  };
   pager.addEventListener("scroll",()=>{
-    const x=pager.scrollLeft/Math.max(1,pager.clientWidth);
+    const x=pager.scrollLeft/W();
     tabsBox?.style.setProperty("--hp",String(Math.min(pages.length-1,Math.max(0,x))));
-    setPage(Math.round(x));
+    if(!anim)setPage(Math.round(x));
+    clearTimeout(settleTimer);settleTimer=setTimeout(settle,140);
   },{passive:true});
+  pager.addEventListener("scrollend",()=>{clearTimeout(settleTimer);settle();});
   tabs.forEach(t=>t.addEventListener("click",()=>{
     const smooth=!matchMedia("(prefers-reduced-motion: reduce)").matches;
-    pager.scrollTo({left:Number(t.dataset.page)*pager.clientWidth,behavior:smooth?"smooth":"auto"});
-    body.scrollTo({top:0,behavior:smooth?"smooth":"auto"});
+    body.scrollTop=0;
+    goTo(Number(t.dataset.page),smooth);
   }));
+  // Раскрывающиеся блоки «Подробнее» меняют высоту страницы — листалка подстраивается.
+  pager.addEventListener("toggle",()=>requestAnimationFrame(fit),true);
   setPage(0);
   requestAnimationFrame(fit);
 }
 function closeInfo(){$("helpOverlay")?.classList.remove("show");}
-function openHelp(key){const h=(window.I18N?.en&&HELP_EN[key])||HELP[key];if(h)openInfo(h.title,h.html);}
+function openHelp(key,page){
+  const h=(window.I18N?.en&&HELP_EN[key])||HELP[key];if(!h)return;
+  openInfo(h.title,h.html);
+  // v131: сразу на нужной вкладке справки (кнопка «Что это?» в конверторе).
+  if(page>0)requestAnimationFrame(()=>$("helpBody")?.querySelector(`.hpTab[data-page="${page}"]`)?.click());
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest?.("[data-help-open]");if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const [key,page]=String(b.dataset.helpOpen).split(":");openHelp(key,Number(page)||0);
+});
 document.addEventListener("click",e=>{
   const b=e.target.closest?.(".helpBtn[data-help]");
   if(!b)return;
@@ -5228,6 +5436,17 @@ $("photoChoice").onclick=()=>{clearOcrBatch();openPhotoPicker("photo");};
 // v101: «Файл» сразу открывает выбор файла, «Вставить» сразу вставляет из буфера обмена.
 $("fileChoice").onclick=()=>$("importFileInput").click();
 $("pasteChoice").onclick=pasteTextImport;
+// v131: вставка из системного меню или ⌘V, пока открыто окно «Добавить тэг» и фокус не в поле ввода:
+// фото и файлы из буфера принимаются так же, как кнопкой «Вставить».
+document.addEventListener("paste",e=>{
+  if(!overlay.classList.contains("show"))return;
+  const t=e.target;if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||"")))return;
+  const files=[...(e.clipboardData?.files||[])];
+  const got=sortPastedFiles(files,{images:[],files:[],text:""});
+  if(got.images.length||got.files.length){e.preventDefault();importPastedFiles(got);return;}
+  const text=e.clipboardData?.getData("text/plain")||clipboardHtmlToText(e.clipboardData?.getData("text/html")||"");
+  if(String(text||"").trim()){e.preventDefault();openFileReview();processTextImport(text,TX("Буфер обмена"));}
+});
 $("headOcrToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
 $("ocrPickBtn").onclick=()=>{if(addMode==="camera")startBatchCamera();else openPhotoPicker("photo");};
 wireOcrBatch();
