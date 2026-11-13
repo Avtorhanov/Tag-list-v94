@@ -9,6 +9,9 @@
      M    P₂ = √3·U·I·cosφ·η (1ф — без √3)
      ΔU   3ф: ΔU = √3·I·L·(r·cosφ + x·sinφ);  1ф: 2·I·L·(…);  r = ρ/S
      ТТ   W = (Wкон − Wнач)·Kтт·Kтн
+     Дом  v130: I = P / (U·cosφ) (3ф — √3·U·cosφ) → автомат (ближайший больший номинал) →
+          сечение, у которого допустимый ток по нагреву (ПУЭ табл. 1.3.4–1.3.7) не меньше
+          номинала автомата; энергия W = P·часы, стоимость = W·тариф
 */
 (function(){
 "use strict";
@@ -69,6 +72,27 @@ const awgMm2=n=>{const d=0.127*Math.pow(92,(36-n)/39);return Math.PI/4*d*d;};
 const P_STD=[0.75,1.1,1.5,2.2,3,4,5.5,7.5,11,15,18.5,22,30,37,45,55,75,90,110,132,160,200,250,315];
 const U3=[[400,"400 В"],[690,"690 В"],[6000,"6 кВ"],[10000,"10 кВ"],[380,"380 В"]];
 const U1=[[230,"230 В"],[220,"220 В"],[24,"24 В"]];
+// v130: «Дом» — допустимый длительный ток по нагреву, А (ПУЭ, 7-е изд., гл. 1.3), +25 °C.
+// hid — «в стене или трубе»: табл. 1.3.4 (медь) и 1.3.5 (алюминий), «в одной трубе», один двухжильный
+// (1 фаза) или один трёхжильный (3 фазы); open — кабель открыто (в воздухе): табл. 1.3.6 и 1.3.7,
+// двухжильный / трёхжильный. Нулевой рабочий и защитный (PE) проводники не считаются (ПУЭ 1.3.10).
+const AMP={
+  cu:{hid:{1:{1.5:18,2.5:25,4:32,6:40,10:55,16:80,25:100,35:125,50:160,70:195,95:245,120:295},
+           3:{1.5:15,2.5:21,4:27,6:34,10:50,16:70,25:85,35:100,50:135,70:175,95:215,120:250}},
+      open:{1:{1.5:19,2.5:27,4:38,6:50,10:70,16:90,25:115,35:140,50:175,70:215,95:260,120:300},
+            3:{1.5:19,2.5:25,4:35,6:42,10:55,16:75,25:95,35:120,50:145,70:180,95:220,120:260}}},
+  al:{hid:{1:{2.5:19,4:25,6:31,10:42,16:60,25:75,35:95,50:125,70:150,95:190,120:230},
+           3:{2.5:16,4:21,6:26,10:38,16:55,25:65,35:75,50:105,70:135,95:165,120:190}},
+      open:{1:{2.5:21,4:29,6:38,10:55,16:70,25:90,35:105,50:135,70:165,95:200,120:230},
+            3:{2.5:19,4:27,6:32,10:42,16:60,25:75,35:90,50:110,70:140,95:170,120:200}}}
+};
+// Номиналы автоматических выключателей, А (ГОСТ IEC 60898-1).
+const BRK=[6,10,13,16,20,25,32,40,50,63,80,100,125,160,200,250];
+const SOCKET_A=16; // бытовая розетка — 16 А (ГОСТ 32396)
+// Наименьшее сечение групповых линий в квартире, мм² (СП 256.1325800.2016, п. 15.46): розетки — медь 2,5,
+// алюминий 4; освещение — 1,5 и 2,5. «Прибор» — отдельная линия к одному прибору, только расчёт.
+const USE_MIN={sock:{cu:2.5,al:4},light:{cu:1.5,al:2.5},dev:{cu:0,al:0}};
+const H_DAY=[[1,"1 ч"],[3,"3 ч"],[8,"8 ч"],[24,"сутки"]];
 const HOURS=[[24,"сутки"],[168,"неделя"],[720,"30 дней"],[744,"31 день"],[8760,"год"]];
 
 // ---------------------------------------------------------------- вкладки: поля и решатели
@@ -131,7 +155,33 @@ const KINDS={
       if(t==="a")return v.z-v.W/K;}
   }
 };
-const ORDER=["pi","mot","cab","met"];
+// v130: «Дом» — у вкладки своя сеть (по умолчанию 1 фаза 230 В), чтобы не сбивать сеть объекта в других вкладках.
+KINDS.home={b:"Дом",s:"квартира",net:true,
+  fields:[
+    {k:"P",l:()=>"Мощность приборов",u:"W"},
+    {k:"I",l:()=>"Ток",u:"A"}
+  ],
+  solve(t,v){const h=S.home,k=(h.ph===3?SQ3:1)*h.U*Math.min(1,Math.max(0.05,h.cos));
+    if(t==="I")return v.P/k;
+    if(t==="P")return v.I*k;}
+};
+const ORDER=["pi","mot","cab","met","home"];
+// Сеть, которую показывает и меняет блок «Сеть»: у «Дома» — своя.
+const NET=()=>S.kind==="home"?S.home:S;
+// Дом: допустимый ток сечения, автомат для тока нагрузки, подходящее сечение.
+const ampOf=(sec,h=S.home)=>AMP[h.mat][h.lay][h.ph===3?3:1][sec];
+const homeSecs=(h=S.home)=>Object.keys(AMP[h.mat][h.lay][h.ph===3?3:1]).map(Number).sort((a,b)=>a-b);
+const brkFor=I=>Number.isFinite(I)&&I>0?BRK.find(b=>b>=I-1e-9):NaN;
+const brkMax=Ia=>{let r=NaN;for(const b of BRK)if(b<=Ia+1e-9)r=b;return r;};
+function homeCalc(){
+  const h=S.home,I=h.v.I,min=USE_MIN[h.use][h.mat];
+  // Линия розеток защищается автоматом не меньше 16 А — под номинал розетки.
+  let brk=brkFor(I);if(h.use==="sock"&&brk<SOCKET_A)brk=SOCKET_A;
+  const sec=Number.isFinite(brk)?homeSecs().find(x=>x>=min-1e-9&&ampOf(x)>=brk):NaN;
+  const kWh=h.v.P/1e3*h.h,month=kWh*30;
+  return {I,brk,sec,min,byMin:Number.isFinite(sec)&&sec===min&&homeSecs().find(x=>ampOf(x)>=brk)<min,amp:Number.isFinite(sec)?ampOf(sec):NaN,kWh,month,cost:Number.isFinite(S.tar)&&S.tar>0?month*S.tar:NaN};
+}
+const money=x=>Number.isFinite(x)?(isEn()?fmt(x,0):fmt(x,0)+" ₽"):"";
 
 // ---------------------------------------------------------------- состояние
 // При первом открытии — пример (двигатель 75 кВт на 400 В), чтобы раздел не был пустым.
@@ -140,7 +190,10 @@ const DEF={
   pi:{v:{U:400,I:null,P:75e3,c:0.86},rec:["I","U","P","c"],unit:{}},
   mot:{v:{P:75e3,I:null,c:0.86,e:0.94},rec:["I","P","c","e"],unit:{},kp:7,n:1480},
   cab:{v:{S:35,L:120,I:136,d:null},rec:["d","S","L","I"],unit:{},mat:"cu",cos:0.86,awg:10},
-  met:{v:{a:12345.6,z:12512.3,W:null},rec:["W","a","z"],unit:{},tt1:600,tt2:5,tn:"1",sec:1,h:720}
+  met:{v:{a:12345.6,z:12512.3,W:null},rec:["W","a","z"],unit:{},tt1:600,tt2:5,tn:"1",sec:1,h:720},
+  // v130: пример — электрочайник 2 000 Вт на 230 В.
+  home:{v:{P:2000,I:null},rec:["I","P"],unit:{P:"Вт"},ph:1,U:230,cos:1,mat:"cu",lay:"hid",use:"sock",h:1},
+  tar:null
 };
 const clone=o=>JSON.parse(JSON.stringify(o));
 function loadState(){
@@ -152,6 +205,7 @@ function loadState(){
       if(raw.ph===1||raw.ph===3)s.ph=raw.ph;
       if(Number.isFinite(raw.U)&&raw.U>0)s.U=raw.U;
       if(typeof raw.tag==="string")s.tag=raw.tag;
+      if(Number.isFinite(raw.tar)&&raw.tar>0)s.tar=raw.tar;
       for(const k of ORDER){
         const r=raw[k];if(!r||typeof r!=="object")continue;
         const d=s[k];
@@ -162,6 +216,15 @@ function loadState(){
     }
   }catch(_){}
   for(const k of ORDER)for(const f in s[k].v)if(s[k].v[f]==null)s[k].v[f]=NaN;
+  const h=s.home;
+  if(h.ph!==1&&h.ph!==3)h.ph=1;
+  if(!(Number.isFinite(h.U)&&h.U>0))h.U=230;
+  if(!(h.cos>0&&h.cos<=1))h.cos=1;
+  if(!AMP[h.mat])h.mat="cu";
+  if(h.lay!=="hid"&&h.lay!=="open")h.lay="hid";
+  if(!USE_MIN[h.use])h.use="sock";
+  if(!(h.h>0))h.h=1;
+  if(s.tar==null)s.tar=NaN;
   return s;
 }
 S=loadState();
@@ -228,7 +291,7 @@ function template(){
           <button type="button" class="tab" data-sec="1">${TX("вторичку (×K)")}</button>
           <button type="button" class="tab" data-sec="0">${TX("первичку (×1)")}</button>
         </div>
-        <div class="mini">${TX("Если в счётчик при наладке занесли Kтт и Kтн, он уже показывает первичную энергию — множитель не нужен.")}</div>
+        <div class="mini">${TX("Если в счётчик при наладке занесли Kтт и Kтн, он уже показывает первичную энергию — множитель не нужен.")} ${TX("Домашний счётчик включён без ТТ — выберите «первичку (×1)».")}</div>
       </div>
       <div class="field loopTagField elTagField">
         <label for="elTag">${TX("Тэг")}</label>
@@ -273,6 +336,30 @@ function template(){
       <div class="elBlock" data-for="met">
         ${field("elHours",TX("Период, ч — для средней мощности"))}
         <div class="gasChips" role="group" aria-label="${TX("Типовые периоды")}" id="elHChips"></div>
+        ${field("elTarMet",TX("Тариф за 1 кВт·ч — из квитанции"),' data-tar="1" placeholder="6,5"')}
+      </div>
+      <div class="elBlock" data-for="home">
+        <div class="loopLabel">${TX("Линия")}</div>
+        <div class="loopSeg elSeg3" role="group" aria-label="${TX("Линия")}">
+          <button type="button" class="tab" data-use="sock">${TX("Розетки")}</button>
+          <button type="button" class="tab" data-use="light">${TX("Свет")}</button>
+          <button type="button" class="tab" data-use="dev">${TX("Один прибор")}</button>
+        </div>
+        <div class="loopSeg" role="group" aria-label="${TX("Материал жил")}">
+          <button type="button" class="tab" data-hmat="cu">${TX("Медь")}</button>
+          <button type="button" class="tab" data-hmat="al">${TX("Алюминий")}</button>
+        </div>
+        <div class="loopSeg" role="group" aria-label="${TX("Как проложен кабель")}">
+          <button type="button" class="tab" data-lay="hid">${TX("В стене, в трубе")}</button>
+          <button type="button" class="tab" data-lay="open">${TX("Открыто")}</button>
+        </div>
+        <div class="gasScaleRow">
+          ${field("elHomeCos",TX("cosφ прибора"))}
+          ${field("elHomeH",TX("Работает, ч в сутки"))}
+        </div>
+        <div class="gasChips" role="group" aria-label="${TX("Часов в сутки")}" id="elHomeHChips"></div>
+        ${field("elTarHome",TX("Тариф за 1 кВт·ч — из квитанции"),' data-tar="1" placeholder="6,5"')}
+        <div class="mini" id="elHomeOut"></div>
       </div>
     </section>
 
@@ -298,6 +385,9 @@ const SOURCES_HTML=`
 <p class="mini">ρ при 70 °C: медь 0,021, алюминий 0,034 Ом·мм²/м; x = 0,08 Ом/км. Потери мощности: 3 · I² · r · L (1ф — 2 · I² · r · L).</p>
 <h3>Учёт</h3>
 <div class="hF">W = (W<sub>кон</sub> − W<sub>нач</sub>) · K<sub>тт</sub> · K<sub>тн</sub></div>
+<h3>Дом</h3>
+<div class="hF">I = P / (U · cosφ) (3ф: √3 · U · cosφ)<br>автомат ≥ I · кабель: Iдоп ≥ автомат<br>W = P · ч в сутки · 30 · сумма = W · тариф</div>
+<p class="mini">Iдоп — ПУЭ, 7-е изд., табл. 1.3.4–1.3.5 (в стене, в трубе: один двух- или трёхжильный) и 1.3.6–1.3.7 (кабель открыто), +25 °C; нулевой и PE-проводник не считаются (п. 1.3.10). Наименьшее сечение линий в квартире — СП 256.1325800.2016, п. 15.46: розетки — медь 2,5 / алюминий 4 мм², освещение — 1,5 / 2,5 мм². Розетка — 16 А.</p>
 <h3>Откуда данные</h3>
 <ul class="hSrc">
 <li>Номинальные напряжения <span class="nw">230/400 В</span> — <span class="nw">ГОСТ 29322-2014</span> (<span class="nw">IEC 60038</span>).</li>
@@ -306,7 +396,7 @@ const SOURCES_HTML=`
 <li>Измерительные трансформаторы — <span class="nw">ГОСТ 7746-2015</span> (ТТ), <span class="nw">ГОСТ 1983-2015</span> (ТН).</li>
 </ul>
 <h3>Ограничения</h3>
-<p>Допустимый ток кабеля по нагреву (<span class="nw">ПУЭ, гл. 1.3</span>) не проверяется. Предел ΔU задаёт проект; частый ориентир — 5 %. cosφ и КПД берите с шильдика или из паспорта.</p>
+<p>Во вкладке ΔU допустимый ток кабеля по нагреву не проверяется — его считает вкладка «Дом» (<span class="nw">ПУЭ, гл. 1.3</span>). Поправки на пучки, утеплитель и жару не вводятся. Предел ΔU задаёт проект; частый ориентир — 5 %. cosφ и КПД берите с шильдика или из паспорта.</p>
 <p class="helpNote">Считается на телефоне, без интернета.</p>`;
 const SOURCES_HTML_EN=`
 <h3>Power and current</h3>
@@ -320,6 +410,9 @@ const SOURCES_HTML_EN=`
 <p class="mini">ρ at 70 °C: copper 0.021, aluminium 0.034 Ω·mm²/m; x = 0.08 Ω/km. Power loss: 3 · I² · r · L (1ph — 2 · I² · r · L).</p>
 <h3>Metering</h3>
 <div class="hF">W = (W<sub>end</sub> − W<sub>start</sub>) · K<sub>ct</sub> · K<sub>vt</sub></div>
+<h3>Home</h3>
+<div class="hF">I = P / (U · cosφ) (3ph: √3 · U · cosφ)<br>breaker ≥ I · cable: Iz ≥ breaker<br>W = P · h per day · 30 · cost = W · tariff</div>
+<p class="mini">Iz — PUE, 7th ed., tables 1.3.4–1.3.5 (in the wall, in conduit: one two- or three-core) and 1.3.6–1.3.7 (cable open), +25 °C; neutral and PE conductors are not counted (1.3.10). Minimum cross-sections in flats — SP 256.1325800.2016, 15.46: sockets — copper 2.5 / aluminium 4 mm², lighting — 1.5 / 2.5 mm². A socket is 16 A.</p>
 <h3>Data sources</h3>
 <ul class="hSrc">
 <li>Nominal voltages <span class="nw">230/400 V</span> — <span class="nw">GOST 29322-2014</span> (<span class="nw">IEC 60038</span>).</li>
@@ -328,14 +421,14 @@ const SOURCES_HTML_EN=`
 <li>Instrument transformers — <span class="nw">GOST 7746-2015</span> (CT), <span class="nw">GOST 1983-2015</span> (VT).</li>
 </ul>
 <h3>Limitations</h3>
-<p>Cable current-carrying capacity (<span class="nw">PUE ch. 1.3</span>, IEC 60364-5-52) is not checked. The ΔU limit comes from the design; a common guide is 5 %. Take cosφ and efficiency from the nameplate or the datasheet.</p>
+<p>The ΔU tab does not check current-carrying capacity — the “Home” tab does (<span class="nw">PUE ch. 1.3</span>). No corrections for grouping, insulation or heat. The ΔU limit comes from the design; a common guide is 5 %. Take cosφ and efficiency from the nameplate or the datasheet.</p>
 <p class="helpNote">Calculated on the phone, offline.</p>`;
 
 // ---------------------------------------------------------------- отрисовка
 let fieldSig="";
 function buildFields(){
   const kd=K();
-  const sig=S.kind+S.ph+kd.fields.map(f=>unitOf(f)[0]).join();
+  const sig=S.kind+NET().ph+kd.fields.map(f=>unitOf(f)[0]).join();
   if(sig===fieldSig)return;fieldSig=sig;
   $("elFields").innerHTML=kd.fields.map(f=>{
     const u=unitOf(f),many=UNITS[f.u].length>1;
@@ -352,15 +445,16 @@ function render(){
   if(!root)return;
   const kd=K(),s=st(),v=s.v,t=s.rec[0];
   root.querySelectorAll(".loopKind").forEach(b=>{const on=b.dataset.kind===S.kind;b.classList.toggle("active",on);b.setAttribute("aria-selected",String(on));});
-  root.querySelectorAll("[data-ph]").forEach(b=>{const on=+b.dataset.ph===S.ph;b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));});
+  const N=NET();
+  root.querySelectorAll("[data-ph]").forEach(b=>{const on=+b.dataset.ph===N.ph;b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));});
   root.querySelectorAll("[data-for]").forEach(b=>{b.hidden=b.dataset.for!==S.kind;});
   $("elNet").hidden=!kd.net;
   $("elNetU").hidden=!!kd.uField;
-  $("elNetULbl").textContent=S.ph===3?TX("Напряжение линейное, В"):TX("Напряжение фазное, В");
-  setIf($("elNetUIn"),fin(S.U));
-  $("elUChips").innerHTML=(S.ph===3?U3:U1).map(([x,l])=>{const on=Math.abs(S.U-x)<1e-6;return `<button type="button" class="tab${on?" active":""}" data-u="${x}" aria-pressed="${on}">${TX(l)}</button>`;}).join("");
-  $("elKindNote").textContent=kd.net?`${S.ph===3?TX("3ф"):TX("1ф")} · ${S.U>=1000?fmt(S.U/1000)+" "+UN("кВ"):fmt(S.U)+" "+UN("В")}`:`K = ${fmt(metK())}`;
-  $("elValNote").textContent=S.tag?S.tag:(kd.fields.length===3?TX("любые два — третье считается"):TX("любые три — четвёртое считается"));
+  $("elNetULbl").textContent=N.ph===3?TX("Напряжение линейное, В"):TX("Напряжение фазное, В");
+  setIf($("elNetUIn"),fin(N.U));
+  $("elUChips").innerHTML=(N.ph===3?U3.filter(x=>S.kind!=="home"||x[0]<1000):U1).map(([x,l])=>{const on=Math.abs(N.U-x)<1e-6;return `<button type="button" class="tab${on?" active":""}" data-u="${x}" aria-pressed="${on}">${TX(l)}</button>`;}).join("");
+  $("elKindNote").textContent=kd.net?`${N.ph===3?TX("3ф"):TX("1ф")} · ${N.U>=1000?fmt(N.U/1000)+" "+UN("кВ"):fmt(N.U)+" "+UN("В")}`:`K = ${fmt(metK())}`;
+  $("elValNote").textContent=S.tag?S.tag:valNote();
 
   buildFields();
   let bad="";
@@ -381,9 +475,15 @@ function render(){
   cfg();
 }
 
+// Подсказка «сколько полей заполнить» над значениями.
+function valNote(){const n=K().fields.length;return n===2?TX("любое одно — второе считается"):n===3?TX("любые два — третье считается"):TX("любые три — четвёртое считается");}
 function hint(k,x){
   const v=st().v;
   if(!Number.isFinite(x))return "";
+  if(S.kind==="home"){
+    if(k==="P")return x>=1000?TX("= {0} кВт",fmt(x/1e3)):"";
+    if(k==="I"&&S.home.ph===1)return x>SOCKET_A?TX("Больше {0} А — в обычную розетку не включать",SOCKET_A):TX("Обычная розетка — до {0} А",SOCKET_A);
+  }
   if(S.kind==="pi"&&k==="c"&&x>0&&x<=1)return `φ = ${fmt(Math.acos(x)*180/Math.PI,1)}° · tgφ = ${fmt(Math.tan(Math.acos(x)),3)}`;
   if(S.kind==="mot"){
     if(k==="P")return TX("= {0} л.с. · из сети P₁ = {1} кВт",fmt(x/735.499,3),dash(fmt(x/v.e/1e3)));
@@ -417,10 +517,19 @@ function derived(bad){
       else if(v.d<=10){cls="gasWarnText";text=TX("ΔU {0} % — больше 5 %: сверьтесь с проектом",fmt(v.d,2));}
       else{cls="gasBad";text=TX("ΔU {0} % — много: увеличьте сечение или проверьте длину",fmt(v.d,2));}
     }
+  }else if(S.kind==="home"){
+    const c=homeCalc(),h=S.home,mat=h.mat==="cu"?TX("медь"):TX("алюм.");
+    html=der(TX("Кабель")+", "+mat,Number.isFinite(c.sec)?fmt(c.sec):"","мм²","amp")+der("Автомат",Number.isFinite(c.brk)?fmt(c.brk):"","А")+der("За 30 дней",fmt(c.month,0),"кВт·ч");
+    if(Number.isFinite(c.sec)){
+      text=TX("Ток {0} А → автомат {1} А → кабель не тоньше {2} мм² ({3}, держит {4} А)",fmt(c.I),c.brk,fmt(c.sec),mat,c.amp);
+      if(c.byMin)text+=h.use==="sock"?TX(" · для розеток — не тоньше {0} мм²",fmt(c.min)):TX(" · для света — не тоньше {0} мм²",fmt(c.min));
+      if(h.use==="sock"&&c.I>SOCKET_A){cls="gasWarnText";text+=TX(" · больше 16 А — не для розетки: выберите «Один прибор» (отдельная линия, силовая розетка или клеммы)");}
+    }else if(Number.isFinite(c.I)&&c.I>0){cls="gasBad";text=TX("Ток {0} А — больше таблицы: нужен проект",fmt(c.I));}
   }else{
     const W=v.W,h=S.met.h;
     html=der("Множитель",fmt(metK()),"Kтт·Kтн")+der("Разность",fmt(v.z-v.a),"на табло")+der("P средняя",h>0?fmt(W/h):"","кВт","amp");
     text=`${TX("ТТ")} ${S.met.tt1}/${S.met.tt2}${S.met.tn!=="1"?` · ${TX("ТН")} ×`+S.met.tn:""} · ${CONS()} ${fmt(W)} ${UN("кВт·ч")}`;
+    if(Number.isFinite(W)&&W>=0&&S.tar>0)text+=` ≈ ${isEn()?TX("cost")+" ":""}${money(W*S.tar)}`;
     if(Number.isFinite(W)&&W<0){cls="gasBad";text=TX("Конечное показание меньше начального — счётчик переходил через ноль или перепутаны поля");}
   }
   $("elDerived").innerHTML=html;
@@ -447,6 +556,14 @@ function table(){
       const col=!Number.isFinite(d)||d<=5?"":d<=10?' class="loopWarn"':' class="loopBad"';
       return `<tr data-s="${s}"${on?' class="active"':""}><td>${fmt(s)}</td><td${col}>${dash(fmt(d,2))}</td><td>${dash(fmt(d/100*S.U,1))}</td></tr>`;}).join("");
     $("elTblHint").textContent=TX("Нажмите строку — сечение перейдёт в «Значения», ΔU посчитается. Допустимый ток по нагреву — по ПУЭ, здесь не проверяется.");
+  }else if(S.kind==="home"){
+    const h=S.home,c=homeCalc(),k=(h.ph===3?SQ3:1)*h.U*h.cos;
+    $("elTblTitle").textContent=TX("Сколько выдержит кабель");
+    $("elTblNote").textContent=`${h.mat==="cu"?TX("медь"):TX("алюм.")} · ${h.lay==="hid"?TX("в стене"):TX("открыто")} · ${fmt(h.U)} ${UN("В")}`;
+    head.innerHTML=`<tr><th>${UN("мм²")}</th><th>${TX("Держит, А")}</th><th>${TX("Автомат")}</th><th>${TX("До, кВт")}</th></tr>`;
+    body.innerHTML=homeSecs().map(x=>{const a=ampOf(x),b=brkMax(a),on=x===c.sec;
+      return `<tr data-hs="${x}"${on?' class="active"':""}><td>${fmt(x)}</td><td>${a}</td><td>${dash(Number.isFinite(b)?String(b):"")}</td><td class="loopCellI">${dash(Number.isFinite(b)?fmt(b*k/1e3,2):"")}</td></tr>`;}).join("");
+    $("elTblHint").textContent=TX("Нажмите строку — мощность, которую выдержит это сечение с автоматом, перейдёт в «Значения». Обычная розетка — до 16 А, даже на толстом кабеле.");
   }else{
     $("elTblTitle").textContent=TX("Множители ТТ");
     $("elTblNote").textContent=S.met.tn==="1"?TX("без ТН"):TX("с ТН ×{0}",S.met.tn);
@@ -459,7 +576,7 @@ function table(){
 
 function cfg(){
   const m=S.mot,c=S.cab,t=S.met;
-  const note={pi:"",mot:"пуск и обороты",cab:"материал и cosφ",met:"период"};
+  const note={pi:"",mot:"пуск и обороты",cab:"материал и cosφ",met:"период и тариф",home:"кабель и счёт"};
   $("elCfgNote").textContent=TX(note[S.kind]);
   setIf($("elKp"),fin(m.kp));setIf($("elN"),fin(m.n));
   const n0=[3000,1500,1000,750,600,500].find(x=>m.n<x&&m.n>x*0.8);
@@ -475,6 +592,16 @@ function cfg(){
   if($("elTN").value!==t.tn)$("elTN").value=t.tn;
   root.querySelectorAll("[data-sec]").forEach(b=>{const on=+b.dataset.sec===t.sec;b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));});
   setIf($("elHours"),fin(t.h));
+  // v130: «Дом» и тариф (общий для «Дома» и «Учёта»).
+  const h=S.home;
+  root.querySelectorAll("[data-hmat]").forEach(b=>{const on=b.dataset.hmat===h.mat;b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));});
+  root.querySelectorAll("[data-use]").forEach(b=>{const on=b.dataset.use===h.use;b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));});
+  root.querySelectorAll("[data-lay]").forEach(b=>{const on=b.dataset.lay===h.lay;b.classList.toggle("active",on);b.setAttribute("aria-pressed",String(on));});
+  setIf($("elHomeCos"),fin(h.cos));setIf($("elHomeH"),fin(h.h));
+  root.querySelectorAll("[data-tar]").forEach(el=>setIf(el,Number.isFinite(S.tar)&&S.tar>0?fin(S.tar):""));
+  $("elHomeHChips").innerHTML=H_DAY.map(([x,l])=>`<button type="button" class="tab${h.h===x?" active":""}" data-hh="${x}" aria-pressed="${h.h===x}">${TX(l)}</button>`).join("");
+  const hc=homeCalc(),kWh=TX("кВт·ч");
+  $("elHomeOut").innerHTML=Number.isFinite(hc.kWh)?TX("В сутки <b>{0} {1}</b> · за 30 дней <b>{2} {1}</b>",fmt(hc.kWh),kWh,fmt(hc.month,0))+(Number.isFinite(hc.cost)?TX(" ≈ <b>{0}</b> в месяц",money(hc.cost)):" · "+TX("впишите тариф — посчитается сумма")):"";
   $("elHChips").innerHTML=HOURS.map(([h,l])=>`<button type="button" class="tab${t.h===h?" active":""}" data-h="${h}" aria-pressed="${t.h===h}">${TX(l)}</button>`).join("");
 }
 
@@ -485,7 +612,10 @@ function summaryText(noHead=false){
   if(S.kind==="pi"){const Sa=kU()*v.U*v.I;return plain(`${head}${TX("Мощность и ток")}, ${ph}\nU ${fmt(v.U)} ${V} · I ${fmt(v.I)} ${A} · P ${fmt(v.P/1e3)} ${kW} · cosφ ${fmt(v.c)}\nS ${fmt(Sa/1e3)} ${UN("кВА")} · Q ${fmt(Math.sqrt(Math.max(0,Sa*Sa-v.P*v.P))/1e3)} ${UN("квар")}`);}
   if(S.kind==="mot")return plain(`${head}${TX("Двигатель")}, ${u}\nP₂ ${fmt(v.P/1e3)} ${kW} · ${TX("Iн")} ${fmt(v.I)} ${A} · cosφ ${fmt(v.c)} · η ${fmt(v.e)}\n${TX("Пуск ×{0}: {1} А, через звезду ≈ {2} А",fmt(S.mot.kp),fmt(v.I*S.mot.kp),fmt(v.I*S.mot.kp/3))}`);
   if(S.kind==="cab")return plain(`${head}${TX("Кабель")} ${S.cab.mat==="cu"?TX("медь"):TX("алюминий")} ${fmt(v.S)} ${UN("мм²")}, ${fmt(v.L)} ${UN("м")}, ${u}\nI ${fmt(v.I)} ${A} · cosφ ${fmt(S.cab.cos)} → ΔU ${fmt(v.d,2)} % (${fmt(v.d/100*S.U,1)} ${V})`);
-  return plain(`${head}${TX("Учёт")}: ${TX("ТТ")} ${S.met.tt1}/${S.met.tt2}${S.met.tn!=="1"?`, ${TX("Kтн")} `+S.met.tn:""}, K ${fmt(metK())}\n${fmt(v.a)} → ${fmt(v.z)} · ${CONS()} ${fmt(v.W)} ${UN("кВт·ч")}`);
+  if(S.kind==="home"){const h=S.home,c=homeCalc(),hp=`${h.ph===3?TX("3ф"):TX("1ф")} ${fmt(h.U)} ${V}`;
+    return plain(`${head}${TX("Дом")}: ${fmt(v.P)} ${UN("Вт")}, ${hp}, cosφ ${fmt(h.cos)} → I ${fmt(v.I)} ${A}\n${TX("Автомат")} ${dash(Number.isFinite(c.brk)?String(c.brk):"")} ${A} · ${TX("кабель")} ${h.mat==="cu"?TX("медь"):TX("алюминий")} ${dash(Number.isFinite(c.sec)?fmt(c.sec):"")} ${UN("мм²")}\n${TX("{0} ч в сутки → {1} кВт·ч за 30 дней",fmt(h.h),fmt(c.month,0))}${Number.isFinite(c.cost)?" ≈ "+money(c.cost):""}`);}
+  const W0=st().v.W;
+  return plain(`${head}${TX("Учёт")}: ${TX("ТТ")} ${S.met.tt1}/${S.met.tt2}${S.met.tn!=="1"?`, ${TX("Kтн")} `+S.met.tn:""}, K ${fmt(metK())}\n${fmt(v.a)} → ${fmt(v.z)} · ${CONS()} ${fmt(v.W)} ${UN("кВт·ч")}${S.tar>0&&W0>=0?" ≈ "+money(W0*S.tar):""}`);
 }
 const taskText=()=>TX("Эл.: ")+summaryText(true).replace(/\n/g," · ");
 
@@ -534,11 +664,12 @@ function changed(){recompute();persist();render();}
 
 function bind(){
   root.addEventListener("click",e=>{
-    const tr=e.target.closest("tr[data-p],tr[data-s],tr[data-tt]");
+    const tr=e.target.closest("tr[data-p],tr[data-s],tr[data-tt],tr[data-hs]");
     if(tr&&root.contains(tr)){
       const s=st();
       if(tr.dataset.p){s.v.P=+tr.dataset.p*1e3;s.rec=["I",...s.rec.filter(x=>x!=="I"&&x!=="P"),"P"];}
       else if(tr.dataset.s){s.v.S=+tr.dataset.s;s.rec=["d",...s.rec.filter(x=>x!=="d"&&x!=="S"),"S"];}
+      else if(tr.dataset.hs){const h=S.home,b=brkMax(ampOf(+tr.dataset.hs));if(!Number.isFinite(b))return;h.v.I=b;h.rec=["P","I"];}
       else S.met.tt1=+tr.dataset.tt;
       changed();flashValues();return;
     }
@@ -546,13 +677,18 @@ function bind(){
     if(!b||!root.contains(b)||b.disabled)return;
     if(b.dataset.kind){if(b.dataset.kind!==S.kind){S.kind=b.dataset.kind;changed();}return;}
     if(b.dataset.ph){
-      S.ph=+b.dataset.ph;
-      if(S.ph===1&&S.U>1000)S.U=230;
-      if(S.ph===3&&S.U<300)S.U=400;
+      const N=NET();
+      N.ph=+b.dataset.ph;
+      if(N.ph===1&&N.U>1000)N.U=230;
+      if(N.ph===3&&N.U<300)N.U=400;
       recomputeAll();persist();render();return;
     }
     // Кнопка напряжения в P·I — это ввод U: поле становится «свежим», считается другое.
-    if(b.dataset.u){S.U=+b.dataset.u;if(K().uField){S.pi.v.U=S.U;touch("U");}recomputeAll();persist();render();return;}
+    if(b.dataset.u){NET().U=+b.dataset.u;if(K().uField){S.pi.v.U=S.U;touch("U");}recomputeAll();persist();render();return;}
+    if(b.dataset.hmat){S.home.mat=b.dataset.hmat;changed();return;}
+    if(b.dataset.lay){S.home.lay=b.dataset.lay;changed();return;}
+    if(b.dataset.use){S.home.use=b.dataset.use;changed();return;}
+    if(b.dataset.hh){S.home.h=+b.dataset.hh;persist();render();return;}
     if(b.dataset.unit){
       const f=K().fields.find(x=>x.k===b.dataset.unit),list=UNITS[f.u],i=list.indexOf(unitOf(f));
       st().unit[f.k]=list[(i+1)%list.length][0];persist();render();return;
@@ -570,7 +706,7 @@ function bind(){
   });
   root.addEventListener("input",e=>{
     const el=e.target;
-    if(el.id==="elTag"){S.tag=String(el.value||"").trim();persist();$("elValNote").textContent=S.tag||(K().fields.length===3?TX("любые два — третье считается"):TX("любые три — четвёртое считается"));return;}
+    if(el.id==="elTag"){S.tag=String(el.value||"").trim();persist();$("elValNote").textContent=S.tag||valNote();return;}
     if(el.dataset.k){
       const f=K().fields.find(x=>x.k===el.dataset.k),x=num(el.value);
       st().v[f.k]=Number.isFinite(x)?x*unitOf(f)[1]:NaN;
@@ -580,7 +716,10 @@ function bind(){
       return;
     }
     const x=num(el.value);
-    if(el.id==="elNetUIn"&&x>0){S.U=x;recomputeAll();persist();render();}
+    if(el.dataset.tar){S.tar=x>0?x:NaN;persist();render();return;}
+    if(el.id==="elNetUIn"&&x>0){NET().U=x;recomputeAll();persist();render();}
+    else if(el.id==="elHomeCos"&&x>0&&x<=1){S.home.cos=x;changed();}
+    else if(el.id==="elHomeH"&&x>0&&x<=24){S.home.h=x;persist();render();}
     else if(el.id==="elKp"&&x>0){S.mot.kp=x;persist();render();}
     else if(el.id==="elN"&&x>0){S.mot.n=x;persist();render();}
     else if(el.id==="elCabCos"&&x>0&&x<=1){S.cab.cos=x;changed();}

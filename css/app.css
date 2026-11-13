@@ -2570,3 +2570,33 @@ body.camera-open{overflow:hidden}
 .importTask:focus,.importTask:focus-visible{min-height:112px;max-height:200px;font-size:max(16px,calc(16.5px * var(--fontScale)));line-height:1.35;border-color:var(--accent)}
 .field textarea{transition:min-height .18s ease}
 @media (prefers-reduced-motion:reduce){.importTask,.field textarea{transition:none}}
+
+/* v130: три кнопки шапки — разделы, язык, тема — одного размера 40×40 и с одним скруглением.
+   Раньше переключатель разделов был 36×34, язык 44×40, тема 40×40. Раскрытый переключатель
+   растёт только в ширину; высота та же. */
+.viewSwitch{box-sizing:border-box;height:40px;min-width:40px;border-radius:12px}
+.viewSwitchBtn{min-height:34px;min-width:34px;border-radius:9px}
+/* Свёрнутый — квадрат 40×40 в любом разделе: «Газ» и «4–20» ужимаются в 34 px. */
+.viewSwitch:not(.open) .viewSwitchBtn.active{width:34px;min-width:34px;max-width:34px;padding:0 1px;font-size:11.5px;letter-spacing:-.03em}
+.langBtn{box-sizing:border-box;width:40px;min-width:40px;height:40px;padding:0}
+.langCur{font-size:12.5px}
+.titleRow .iconBtn{box-sizing:border-box;width:40px;height:40px;flex:0 0 40px}
+@media (max-width:380px){.viewSwitch:not(.open) .viewSwitchBtn.active{font-size:11.5px;padding:0 1px}}
+/* v130: поле задания в списке найденного сворачивается без анимации, когда ушло из вида при прокрутке. */
+.importTaskWrap.foldNow{transition:none}
+/* v130: в «Электроэнергетике» пять вкладок расчёта (добавлена «Дом»). */
+.elGrid .loopKinds{grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.elGrid .loopKind{padding:5px 2px}
+.elGrid .loopKind small{font-size:calc(10px * var(--fontScale))}
+.elSeg3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.elSeg3 .tab{padding:6px 4px}
+/* v130: справка разделов — любое число вкладок (--n задаёт hpBook), шаги и словарь терминов. */
+.hpTabs{grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:4px}
+.hpThumb{width:calc((100% - 6px - (var(--n,2) - 1) * 4px) / var(--n,2));transform:translateX(calc(var(--hp,0) * (100% + 4px)))}
+.hpTab{padding:0 4px;font-size:12px}
+.helpBody ol.hpSteps{margin:4px 0 10px;padding-left:22px}
+.helpBody ol.hpSteps li{display:list-item;margin:0 0 5px;padding-left:2px;list-style:decimal}
+.helpBody ol.hpSteps li::marker{color:var(--accent-strong);font-weight:800}
+.helpBody dl.hpGloss{margin:4px 0 10px}
+.helpBody dl.hpGloss dt{display:inline-block;margin:6px 0 1px;padding:1px 8px;border-radius:7px;background:var(--soft);color:var(--accent-strong);font-family:var(--f-mono);font-weight:600;font-size:.92em}
+.helpBody dl.hpGloss dd{margin:2px 0 6px;line-height:1.45}
