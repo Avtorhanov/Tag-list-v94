@@ -183,8 +183,9 @@ var tagIndexVersion=0;
 
 function formatSaved(value){
   const date=new Date(value||0);
-  if(Number.isNaN(date.getTime()))return TX("Сохранено на устройстве: —");
-  return TX("Сохранено на устройстве: {0}",date.toLocaleString(LOC(),{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}));
+  // v132: короче («Сохранено 13.11, 12:05») — рядом встала кнопка «Как это работает».
+  if(Number.isNaN(date.getTime())||!value)return TX("Сохранено —");
+  return TX("Сохранено {0}",date.toLocaleString(LOC(),{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}));
 }
 
 function renderLastSaved(){
@@ -4919,9 +4920,17 @@ function initHelpPager(body){
   requestAnimationFrame(fit);
 }
 function closeInfo(){$("helpOverlay")?.classList.remove("show");}
+// v132: кнопка «Как это работает» на главной странице раздела залита цветом темы и мягко «дышит»,
+// пока справку этого раздела ни разу не открывали; после первого открытия — спокойная.
+const HELP_SEEN_KEY="kip-help-seen-v1";
+function helpSeen(){try{const o=JSON.parse(localStorage.getItem(HELP_SEEN_KEY)||"{}");return o&&typeof o==="object"?o:{};}catch(e){return {};}}
+function syncHowBtns(){const seen=helpSeen();document.querySelectorAll(".howBtn[data-help]").forEach(b=>b.classList.toggle("isNew",!seen[b.dataset.help]));}
+function markHelpSeen(key){const seen=helpSeen();if(seen[key])return;seen[key]=1;safeSetStorage(HELP_SEEN_KEY,JSON.stringify(seen));syncHowBtns();}
+syncHowBtns();
 function openHelp(key,page){
   const h=(window.I18N?.en&&HELP_EN[key])||HELP[key];if(!h)return;
   openInfo(h.title,h.html);
+  markHelpSeen(key);
   // v131: сразу на нужной вкладке справки (кнопка «Что это?» в конверторе).
   if(page>0)requestAnimationFrame(()=>$("helpBody")?.querySelector(`.hpTab[data-page="${page}"]`)?.click());
 }
