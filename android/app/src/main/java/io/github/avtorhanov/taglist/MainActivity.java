@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
     ValueCallback<Uri[]> fileCallback;
     // v121: выбор только картинок — результат готовится в фоне (уменьшение до ~8 Мп, поворот по EXIF).
     boolean fileImagesOnly;
-    static final int PICK_IMAGES_MAX = 9;           // как OCR_BATCH_MAX в js/app.js
+    static final int PICK_IMAGES_MAX = 20;          // как OCR_BATCH_MAX в js/app.js (v129: было 9)
     static final long PICK_STORE_PIXELS = 8_000_000L; // как OCR_STORE_PIXELS в js/app.js
     static final String PICK_DIR = "pick";
     Uri cameraUri;

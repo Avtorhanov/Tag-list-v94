@@ -1974,7 +1974,7 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
 /* v101: тумблер OCR.space рядом с заголовком «Добавить прибор» и строка «Включите сеть и VPN». */
 .headOcr{position:absolute;top:13px;right:91px;z-index:5;height:32px;display:none;align-items:center;gap:6px;cursor:pointer;-webkit-user-select:none;user-select:none}
 #overlay.addMenu .headOcr{display:flex}
-#overlay.addMenu .hasHelp>h2{padding-right:196px}
+
 .headOcrName{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap}
 .headOcrName .short{display:none}
 .headOcr input{position:absolute;right:0;top:4px;width:40px;height:24px;margin:0;opacity:0;cursor:pointer}
@@ -1984,7 +1984,7 @@ body.conv-mode .appTitle{font-size:clamp(17px,calc(19px * var(--fontScale)),24px
 .headOcr input:checked+.switchTrack.sm::after{transform:translateX(16px)}
 .headOcr input:focus-visible+.switchTrack{outline:3px solid rgba(23,105,224,.35);outline-offset:2px}
 .headOcr.on .headOcrName{color:var(--accent)}
-@media (max-width:379px){.headOcrName .long{display:none}.headOcrName .short{display:inline}#overlay.addMenu .hasHelp>h2{padding-right:166px}}
+
 .netStrip{display:flex;align-items:center;gap:8px;max-height:0;opacity:0;overflow:hidden;margin:-6px 0 0;padding:0 11px;border-radius:11px;background:var(--soft);color:var(--text);font-size:13px;line-height:1.3;transition:max-height .22s ease,opacity .18s ease,margin .22s ease,padding .22s ease}
 .netStrip.open{max-height:72px;opacity:1;margin:-4px 0 12px;padding:9px 11px}
 .netStrip .netText{min-width:0}
@@ -2179,6 +2179,27 @@ html.theme-switching *,html.theme-switching *::before,html.theme-switching *::af
 .headTools.compact .headOcrName .short,.headTools.compact .fmtBtn .short{display:inline}
 .headTools.tight .headOcrName{display:none}
 .headTools.stack{position:static;justify-content:flex-end;gap:14px;margin:-6px 0 10px}
+/* v129: в меню «Добавить тэг» инструменты — отдельной строкой под заголовком, на всю ширину:
+   формат · OCR.space · Tesseract / OCRv5. В заголовке остаются только справка и «Закрыть». */
+#overlay.addMenu .headTools{position:static;display:flex;justify-content:space-between;align-items:center;gap:6px;height:auto;min-height:40px;margin:-4px 0 12px;padding:5px 8px;border:1px solid var(--line);border-radius:12px;background:transparent}
+#overlay.addMenu .headTools.wrap{flex-wrap:wrap;justify-content:center;row-gap:10px;column-gap:16px}
+.headTools .fmtBtn{flex:0 0 auto}
+.headSep{display:none;flex:0 0 1px;align-self:stretch;margin:4px 0;background:var(--line)}
+#overlay.addMenu .headSep{display:block}
+#overlay.addMenu .headTools.wrap .headSep{display:none}
+.headEngine{position:relative;display:flex;align-items:center;gap:6px;height:32px;cursor:pointer;-webkit-user-select:none;user-select:none;flex:0 0 auto}
+.headEngine input{position:absolute;left:0;top:4px;width:100%;height:24px;margin:0;opacity:0;cursor:pointer}
+.headEngineName{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap;transition:color .18s}
+.headEngineName .short{display:none}
+.headEngine .switchTrack{background:var(--accent)}   /* оба положения — рабочий выбор, не «выкл» */
+.headEngine input:checked+.switchTrack.sm::after{transform:translateX(16px)}
+.headEngine input:focus-visible+.switchTrack{outline:3px solid rgba(23,105,224,.35);outline-offset:2px}
+.headEngine:not(.pp) .headEngineName[data-m="tess"],.headEngine.pp .headEngineName[data-m="pp"]{color:var(--text)}
+.headEngine:not(.pp) .headEngineName[data-m="pp"],.headEngine.pp .headEngineName[data-m="tess"]{opacity:.7}
+.headEngine.off{opacity:.45}
+.headTools.fmtShort .fmtBtn .long{display:none}.headTools.fmtShort .fmtBtn .short{display:inline}
+.headTools.compact .headEngineName .long{display:none}
+.headTools.compact .headEngineName .short{display:inline}
 .fmtBtn{position:relative;height:28px;padding:0 8px 0 9px;border:1px solid var(--line);border-radius:9px;background:var(--control,var(--card));color:var(--text);font:800 12px/1 var(--appFont);letter-spacing:.02em;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;touch-action:manipulation}
 .fmtBtn::before{content:"";position:absolute;inset:-8px -3px}
 .fmtBtn svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;opacity:.6}
@@ -2411,6 +2432,7 @@ body.camera-open{overflow:hidden}
 .ocrBatchCount[hidden]{display:none}
 .ocrGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%;align-self:start}
 .ocrPreview:has(.ocrGrid:not([hidden])){place-items:stretch;min-height:0;max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.ocrGrid.many{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}   /* v129: пакет больше 9 фото */
 .ocrPreview.compact .ocrGrid{grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
 .ocrPreview.compact .ocrAdd{display:none}
 .ocrTile{position:relative;aspect-ratio:1/1;border-radius:9px;overflow:hidden;background:var(--card);border:2px solid var(--accent);box-sizing:border-box}

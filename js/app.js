@@ -878,6 +878,46 @@ function refreshOpenTaskFields(){
   list.querySelectorAll(".taskEditorWrap.open .taskBox textarea").forEach(ta=>{delete ta.dataset.cap;autosizeTaskTextarea(ta);});
 }
 
+// v129: автосворачивание полей задания при прокрутке списка. Поле, чья карточка целиком ушла с экрана,
+// сворачивается, когда прокрутка остановилась (после инерции): во время инерции iPhone программная
+// подстройка прокрутки её обрывает. Поле, в котором идёт запись (клавиатура открыта), не трогается;
+// набранный, но не сохранённый текст сохраняется, как при обычном закрытии. Карточки над экраном
+// при сворачивании становятся ниже — прокрутка подправляется, видимая часть списка не прыгает.
+let taskFoldTimer=0;
+function foldOffscreenTaskEditors(){
+  if(document.body.classList.contains("selection-mode-active"))return;
+  const vh=window.innerHeight||document.documentElement.clientHeight;
+  const open=[...list.querySelectorAll(".row.taskOpen")];
+  if(!open.length)return;
+  const fold=open.filter(row=>{
+    const ta=row.querySelector(".taskBox textarea");
+    if(ta&&document.activeElement===ta)return false;
+    const r=row.getBoundingClientRect();
+    return r.height>0&&(r.bottom<=0||r.top>=vh);
+  });
+  if(!fold.length)return;
+  // Опора — первая карточка, видимая на экране: после сворачивания она должна остаться на месте.
+  const anchorRow=[...list.children].find(el=>{const r=el.getBoundingClientRect();return r.bottom>0&&r.top<vh;});
+  const before=anchorRow?anchorRow.getBoundingClientRect().top:0;
+  let changed=false;
+  for(const row of fold){
+    const item=data.find(x=>x.id===Number(row.dataset.id));
+    if(!item)continue;
+    const ta=row.querySelector(".taskBox textarea");
+    if(ta&&ta.closest(".taskEditorWrap.editing")&&ta.value!==item.task){item.task=ta.value;changed=true;const tg=row.querySelector(".taskToggle");if(tg)paintTaskToggle(tg,item);}
+    setTaskEditor(row,item,false,false,{instant:true});
+  }
+  if(anchorRow&&anchorRow.isConnected){
+    const d=anchorRow.getBoundingClientRect().top-before;
+    if(Math.abs(d)>.5)window.scrollBy(0,d);
+  }
+  if(changed){flushSave();renderTabs(false);}
+}
+window.addEventListener("scroll",()=>{
+  if(!list.querySelector(".row.taskOpen"))return;
+  clearTimeout(taskFoldTimer);taskFoldTimer=setTimeout(foldOffscreenTaskEditors,220);
+},{passive:true});
+
 // v97: «Задание» — первое касание открывает поле для чтения (без клавиатуры),
 // второе закрывает. Клавиатура — только при касании текста; «Сохранить» видна
 // только во время записи, сохраняет и прячет клавиатуру, поле остаётся открытым.
@@ -2111,7 +2151,11 @@ function updateOcrConfigStatus(){
   document.querySelector(".ocrEngineRow")?.classList.toggle("online",online);
   // v128: локальный движок — Tesseract или OCRv5 (сегмент в окне фото; при включённом OCR.space скрыт).
   const model=ocrLocalModel();
-  $("ocrLocalSeg")?.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ocrModel===model)));
+  // v129: переключателей два — тумблер в строке под заголовком меню «Добавить тэг» и сегмент в окне фото; оба показывают один выбор.
+  document.querySelectorAll(".ocrLocalSeg button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ocrModel===model)));
+  const he=$("headEngine"),ht=$("headEngineToggle");
+  if(ht)ht.checked=model==="pp";
+  if(he){he.classList.toggle("pp",model==="pp");he.classList.toggle("off",online);}   // при OCR.space локальный движок не нужен — тумблер бледнее, но выбор можно поменять
   $("headOcr")?.classList.toggle("on",online);
   $("ocrEngineTitle").textContent=online?"OCR.space, Engine 3 → 2":"";
   $("ocrEngineTitle").hidden=!online;   // v122: «На телефоне, без интернета» убрано
@@ -2375,9 +2419,11 @@ function setAddMode(mode){
   if(typeof layoutAddHead==="function")layoutAddHead();
 }
 
+// v129: заголовок меню добавления; для списков не из КИП («любой текст», наборы) — «Добавить пункт».
+function addTitle(){return window.TagFormat?.generic?TX("Добавить пункт"):TX("Добавить тэг");}
 function openAdd(){
   editId=null;
-  $("modalTitleText").textContent=TX("Добавить"); // v105: короче — заголовок, формат и OCR в одну строку
+  $("modalTitleText").textContent=addTitle(); // v129: «Добавить тэг»; формат, OCR.space и движок — строкой ниже
   setAddMode("manual");
   $("addChoice").style.display="grid";
   tagInput.value="";checkTagLine();lastImport=null;lastOcrText="";
@@ -2907,7 +2953,7 @@ const OCR_ENGINE_KEY="kipOcrEngine";
 function ocrEngine(){return safeGetStorage(OCR_ENGINE_KEY,"local")==="online"?"online":"local";}
 let ocrPhoto=null; // {name, source: ImageBitmap, crop: {x,y,w,h}|null, item?: элемент пакета}
 // v118: пакет фото
-const OCR_BATCH_MAX=9;
+const OCR_BATCH_MAX=20;   // v129: было 9
 const OCR_STORE_PIXELS=8e6; // хранится не больше ~8 Мп на фото: мелкий текст бирки читается, память iPhone не кончается
 let ocrBatch=[],ocrBatchSeq=0,ocrBatchRunning=false,ocrBatchLoading=0;
 // v121: Android готовит выбранные фото в фоне (уменьшает до ~8 Мп) — пока идёт подготовка, видны плитки «открываю…».
@@ -2933,9 +2979,10 @@ function loadLocalOcr(){
   return localOcrPromise;
 }
 // v128: второй локальный движок — нейросеть PP-OCRv5 (js/ocr-pp.js): детектор строк + распознаватель, без интернета.
-// Tesseract остаётся движком по умолчанию; выбор хранится на устройстве.
+// v129: по умолчанию — OCRv5 (раньше Tesseract); выбор, сделанный вручную, хранится на устройстве и не меняется.
+// Где OCRv5 не запускается (нет WebAssembly SIMD), фото читает Tesseract.
 const OCR_MODEL_KEY="kipLocalOcrModel";
-function ocrLocalModel(){return safeGetStorage(OCR_MODEL_KEY,"tess")==="pp"?"pp":"tess";}
+function ocrLocalModel(){return safeGetStorage(OCR_MODEL_KEY,"pp")==="tess"?"tess":"pp";}
 let ppOcrPromise=null;
 function loadPpOcr(){
   if(window.PPOCR)return Promise.resolve();
@@ -3202,7 +3249,7 @@ function runSelectedOcr(){
   $("netOverlay").classList.add("show");
   probeOcrNetwork(true);
 }
-// ---------------------------------------------------------------- v118: пакет до 9 фото — снимки и галерея вместе
+// ---------------------------------------------------------------- v118: пакет фото (v129: до 20, было 9) — снимки и галерея вместе
 // Снимки (камера внутри приложения, серией) и фото из галереи собираются в одну сетку квадратных миниатюр.
 // Касание миниатюры — обрезка этого фото, кружок — выбрать/снять, × — убрать.
 // «Распознать» читает выбранные фото по одному (весь текст каждого фото сохраняется), затем теги
@@ -3289,6 +3336,7 @@ function renderOcrBatch(){
     parts.push(`<button class="ocrAdd" type="button" data-ot-add="photo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect><circle cx="9" cy="10" r="1.8"></circle><path d="M20 16l-5-5-8 8"></path></svg><span>${TX("Фото")}</span></button>`);
   }
   grid.innerHTML=parts.join("");
+  grid.classList.toggle("many",n+waiting>9);   // v129: больше 9 фото — 4 в ряд, сетка короче
   const cnt=$("ocrBatchCount");
   if(cnt){cnt.hidden=!n;cnt.textContent=TX("Фото {0} из {1} · выбрано {2}",n,OCR_BATCH_MAX,sel);}
   updateOcrPhotoUi();
@@ -4130,13 +4178,31 @@ ${hLi(hS("todo"),"<b>Невыполненные</b> — только остав�
 ${hLi(hS("task"),"<b>Задания</b> — теги с заданиями, задание в одну строку.")}
 </ul>
 <p class="helpNote">Текст уходит через «Поделиться»; если его нет — копируется в буфер обмена.</p>`},
-  add:{title:"Добавление — справка",html:`
+  // v129: справка по разделам — строка под заголовком (каждый тумблер отдельно), способы добавления, пакет фото,
+  // обрезка, бирки, найденные теги, ручной ввод.
+  add:{title:"Добавление тэгов — справка",html:`
+<p class="helpLead">Теги добавляются с фото, из файла, из буфера обмена или вручную. Всё, кроме OCR.space, работает на телефоне без интернета.</p>
+<h3>Строка под заголовком</h3>
 <ul>
-${hLi(hS("camera"),"<b>Камера</b> и "+hS("photo")+" <b>Фото</b> — до 9 фото за раз: серия снимков (камера не закрывается после кадра) и фото из галереи вместе. Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному прямо на телефоне, без интернета; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото. Если на фото не больше двух тегов (бирка прибора, кабельная бирка «откуда / куда»), приложение само находит надпись на снимке — в том числе повёрнутую и мелкую, в ячейке таблицы на шильдике, — выравнивает и увеличивает её (светлая гравировка на тёмном пластике тоже читается), читает несколько раз и сверяет результат; если надпись не нашлась — подбирает наклон и сторону по всему снимку (до ~30 с на фото). Мелкая малоконтрастная гравировка на стали читается хуже всего — снимайте её ближе и без блика. Выделяйте только строки текста, без QR-кода и рамки. Окно обрезки открывается на весь экран; внизу один ряд кнопок: ✕ — отмена, ⟲ ⟳ — поворот на 90°, наклон («0°») и масштаб («1×») — касание значения выдвигает ползунок («Авто» у наклона выравнивает строки само, у масштаба — подгоняет фото под рамку), рамка из уголков — всё фото, «Готово». В окне фото — переключатель <b>Tesseract / OCRv5</b>: оба движка работают на телефоне, без интернета. Tesseract — для перечней, распечаток и скриншотов. OCRv5 (нейросеть) сам находит каждую строку и читает бирки и шильдики под углом, на боку, вверх ногами, в перспективе и гравировку на стали — без подбора наклона, за несколько секунд; на старых телефонах, где он не запускается, фото прочитает Tesseract. Если прочитанного тега в списке нет, а очень похожий есть (8 вместо B, 0 вместо O), под строкой появится подсказка «В списке есть похожий тег» — касание тега исправит строку. Для сложных снимков есть тумблер <b>OCR.space</b> — рядом с заголовком и в окне фото: онлайн-распознавание каждого фото (Engine 3, при сбое Engine 2), нужны интернет и VPN. Окно с найденными тегами тянется за ручку сверху — на весь экран или на половину. Найденные теги появятся списком: отметь «Добавить», при необходимости «Выполнено» и задание.")}
-${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT. Читается на телефоне, без интернета.")}
-${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
-${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка рядом с OCR. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS, готовые наборы для других списков (номера, документы, телефоны, госномера…), «любой текст» и свой вариант. Выбор хранится на телефоне; подробности — в справке меню формата.")}
+${hLi(hT("ISA"),"<b>Формат тегов</b> — кнопка слева. По нему приложение находит теги в тексте, файлах и на фото и проверяет ручной ввод. По умолчанию — ISA-5.1; есть KKS, готовые наборы для других списков (номера, документы, телефоны, госномера…), «любой текст» и свой вариант. Подробности — в справке меню формата.")}
+${hLi(hT("OCR"),"<b>OCR.space</b> — онлайн-распознавание для сложных снимков (Engine 3, при сбое Engine 2). Нужны интернет и VPN, фото уходит на сервер. Пока тумблер включён, под строкой видно, отвечает ли сервис, а тумблер Tesseract / OCRv5 бледнеет — локальный движок не используется. Выключен — фото читается на телефоне.")}
+${hLi(hT("v5"),"<b>Tesseract / OCRv5</b> — какой движок читает фото на телефоне, без интернета. Влево — <b>Tesseract</b>: перечни, распечатки, таблицы, скриншоты — ровный текст. Вправо — <b>OCRv5</b> (по умолчанию): нейросеть сама находит каждую строку и читает бирки и шильдики под углом, на боку, вверх ногами, в перспективе и гравировку на стали — без подбора наклона, за несколько секунд на фото. На старых телефонах, где OCRv5 не запускается, фото прочитает Tesseract. Тот же выбор — в окне фото; хранится на телефоне.")}
 </ul>
+<h3>Способы добавления</h3>
+<ul>
+${hLi(hS("camera"),"<b>Камера</b> — серия снимков: камера не закрывается после кадра.")}
+${hLi(hS("photo"),"<b>Фото</b> — несколько фото из галереи сразу. Снимки и фото из галереи собираются в один пакет — до 20 фото за раз.")}
+${hLi(hS("text"),"<b>Файл</b> — сразу открывает выбор файла: XLSX, XLS, CSV, TSV, TXT.")}
+${hLi(hS("paste"),"<b>Вставить</b> — сразу вставляет текст из буфера обмена: из письма, таблицы или мессенджера.")}
+</ul>
+<h3>Пакет фото</h3>
+<p>Фото собираются в сетку миниатюр: касание миниатюры — обрезать участок, кружок — выбрать или снять, × — убрать. «Распознать» читает выбранные фото по одному; теги со всех фото сводятся в один список по установке и типу, повторы объединяются, под тегом — номер фото.</p>
+<h3>Окно обрезки</h3>
+<p>Открывается на весь экран; внизу один ряд кнопок: ✕ — отмена, ⟲ ⟳ — поворот на 90°, наклон («0°») и масштаб («1×») — касание значения выдвигает ползунок («Авто» у наклона выравнивает строки само, у масштаба — подгоняет фото под рамку), рамка из уголков — всё фото, «Готово». Выделяйте только строки текста, без QR-кода и рамки.</p>
+<h3>Бирки и шильдики</h3>
+<p>Если на фото не больше двух тегов (бирка прибора, кабельная бирка «откуда / куда»), приложение само находит надпись — повёрнутую, мелкую, в ячейке таблицы шильдика, — выравнивает и увеличивает её, читает несколько раз и сверяет результат. С Tesseract, если надпись не нашлась, подбирается наклон и сторона по всему снимку (до ~30 с на фото). Мелкая малоконтрастная гравировка на стали читается хуже всего — снимайте ближе и без блика.</p>
+<h3>Найденные теги</h3>
+<p>Появляются списком: отметьте «Добавить», при необходимости «Выполнено» и задание. Если прочитанного тега в списке нет, а очень похожий есть (8 вместо B, 0 вместо O), под строкой — подсказка «В списке есть похожий тег»: касание тега исправит строку. Окно тянется за ручку сверху — на весь экран или на половину.</p>
 <h3>Вручную</h3>
 <p>Тег, задание и статус. Под полем сразу видно, подходит ли тег под формат и в какую вкладку он попадёт: вкладки строятся по номеру установки — <span class="nw">21-PT-1001</span> → «21».</p>
 <p class="helpNote">Тег, который уже есть на этой странице, не добавляется второй раз. Если это другой прибор с тем же номером (резерв, пара A/B), допишите букву вплотную к номеру — <span class="nw">2131-PT-414A</span>: это уже новый тег. Приложение подскажет свободную букву под полем, в окне повтора и в списке найденного — коснитесь её. На другой странице тот же тег можно добавлять без изменений.</p>`},
@@ -4271,13 +4337,29 @@ ${hLi(hS("todo"),"<b>Pending</b> — what is left only.")}
 ${hLi(hS("task"),"<b>Tasks</b> — tags with tasks, one line per task.")}
 </ul>
 <p class="helpNote">The text goes through “Share”; if it is unavailable, it is copied to the clipboard.</p>`},
-  add:{title:"Adding — help",html:`
+  add:{title:"Adding tags — help",html:`
+<p class="helpLead">Tags are added from photos, from a file, from the clipboard or manually. Everything except OCR.space works on the phone, offline.</p>
+<h3>Row under the title</h3>
 <ul>
-${hLi(hS("camera"),"<b>Camera</b> and "+hS("photo")+" <b>Photo</b> — up to 9 photos at a time: a series of shots (the camera stays open after each one) and gallery photos together. Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one right on the phone, offline; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag. If a photo has at most two tags (an instrument plate, a “from / to” cable tag), the app finds the text in the shot itself — rotated or small text in a nameplate table cell too — levels and enlarges it (light engraving on dark plastic is read as well), reads it several times and cross-checks the result; if no text is found it searches for the tilt and the side over the whole shot (up to ~30 s per photo). Small low-contrast engraving on steel is the hardest — shoot it closer and without glare. Select only the lines of text, without the QR code and the frame. The crop window opens full screen with one row of buttons at the bottom: ✕ — cancel, ⟲ ⟳ — turn by 90°, tilt (“0°”) and zoom (“1×”) — tap the value to slide out its slider (“Auto” levels the lines for tilt and fits the photo to the frame for zoom), the corner-frame button — whole photo, “Done”. The photo window has the <b>Tesseract / OCRv5</b> switch: both engines run on the phone, offline. Tesseract is for lists, printouts and screenshots. OCRv5 (a neural network) finds every line of text itself and reads plates and nameplates at an angle, sideways, upside down, in perspective and engraving on steel — with no tilt search, in a few seconds; on older phones where it cannot start, Tesseract reads the photo. If the tag read from a photo is not in the list but a very similar one is (8 instead of B, 0 instead of O), the hint “A similar tag is already in the list” appears under the row — tap the tag to correct the row. For difficult shots there is the <b>OCR.space</b> switch — next to the title and in the photo window: online recognition (Engine 3, Engine 2 as fallback), needs internet and VPN. The window with the found tags can be dragged by the handle at the top — full screen or half. Found tags appear as a list: tick “Add”, if needed “Done” and a task.")}
-${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT. Read on the phone, offline.")}
-${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
-${hLi(hT("ISA"),"<b>Tag format</b> — the button next to OCR. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; there are also KKS, ready-made sets for other lists (numbers, documents, phones, car plates…), “any text” and an own pattern. The choice is stored on the phone; details — in the format menu help.")}
+${hLi(hT("ISA"),"<b>Tag format</b> — the button on the left. The app uses it to find tags in text, files and photos and to check manual input. Default — ISA-5.1; there are also KKS, ready-made sets for other lists (numbers, documents, phones, car plates…), “any text” and an own pattern. Details — in the format menu help.")}
+${hLi(hT("OCR"),"<b>OCR.space</b> — online recognition for difficult shots (Engine 3, Engine 2 as fallback). Needs internet and VPN; the photo is sent to the server. While it is on, the line below shows whether the service responds, and the Tesseract / OCRv5 switch fades — the local engine is not used. Off — photos are read on the phone.")}
+${hLi(hT("v5"),"<b>Tesseract / OCRv5</b> — which engine reads photos on the phone, offline. Left — <b>Tesseract</b>: lists, printouts, tables, screenshots — straight text. Right — <b>OCRv5</b> (default): a neural network finds every line itself and reads plates and nameplates at an angle, sideways, upside down, in perspective and engraving on steel — with no tilt search, in a few seconds per photo. On older phones where OCRv5 cannot start, Tesseract reads the photo. The same choice is in the photo window; it is stored on the phone.")}
 </ul>
+<h3>Ways to add</h3>
+<ul>
+${hLi(hS("camera"),"<b>Camera</b> — a series of shots: the camera stays open after each one.")}
+${hLi(hS("photo"),"<b>Photo</b> — several gallery photos at once. Shots and gallery photos go into one batch — up to 20 photos at a time.")}
+${hLi(hS("text"),"<b>File</b> — opens the file picker right away: XLSX, XLS, CSV, TSV, TXT.")}
+${hLi(hS("paste"),"<b>Paste</b> — pastes text from the clipboard right away: from an email, a spreadsheet or a messenger.")}
+</ul>
+<h3>Photo batch</h3>
+<p>Photos go into a thumbnail grid: tap a thumbnail to crop an area, the circle selects or skips it, × removes it. “Recognize” reads the selected photos one by one; tags from all photos are merged into one list by unit and type, repeats are combined, and the photo number is shown under each tag.</p>
+<h3>Crop window</h3>
+<p>Opens full screen with one row of buttons at the bottom: ✕ — cancel, ⟲ ⟳ — turn by 90°, tilt (“0°”) and zoom (“1×”) — tap the value to slide out its slider (“Auto” levels the lines for tilt and fits the photo to the frame for zoom), the corner-frame button — whole photo, “Done”. Select only the lines of text, without the QR code and the frame.</p>
+<h3>Plates and nameplates</h3>
+<p>If a photo has at most two tags (an instrument plate, a “from / to” cable tag), the app finds the text itself — rotated, small, in a nameplate table cell — levels and enlarges it, reads it several times and cross-checks the result. With Tesseract, if no text is found, it searches for the tilt and the side over the whole shot (up to ~30 s per photo). Small low-contrast engraving on steel is the hardest — shoot it closer and without glare.</p>
+<h3>Found tags</h3>
+<p>They appear as a list: tick “Add”, if needed “Done” and a task. If the tag read from a photo is not in the list but a very similar one is (8 instead of B, 0 instead of O), the hint “A similar tag is already in the list” appears under the row — tap the tag to correct the row. The window can be dragged by the handle at the top — full screen or half.</p>
 <h3>Manually</h3>
 <p>Tag, task and status. Under the field you see at once whether the tag matches the format and which tab it goes to: tabs are built from the unit number — <span class="nw">21-PT-1001</span> → “21”.</p>
 <p class="helpNote">A tag that already exists on this page is not added twice. If it is another instrument with the same number (standby, A/B pair), add a letter right after the number — <span class="nw">2131-PT-414A</span>: that is a new tag. The app suggests a free letter under the field, in the duplicate window and in the found list — tap it. On another page the same tag can be added as is.</p>`},
@@ -4380,19 +4462,17 @@ function updateFmtButton(){
   const lab=$("tagInputLabel");if(lab)lab.textContent=TagFormat.generic?TX("Пункт списка"):TX("Тег");
   layoutAddHead();
 }
-// Шапка «Добавить»: заголовок, кнопка формата и OCR — в одну строку. Не помещается — короткие подписи,
-// затем без слова «OCR»; совсем не помещается (крупный шрифт) — кнопки строкой ниже.
+// v129: шапка «Добавить тэг»: в заголовке — только справка и «Закрыть»; формат, OCR.space и Tesseract / OCRv5 —
+// строкой ниже на всю ширину. Не помещается — сначала короткое имя формата («ISA»), затем короткие подписи
+// («OCR», «Tess», «v5»), затем перенос на две строки.
 function layoutAddHead(){
   const tools=$("headTools"),t=$("modalTitleText");
   if(!tools||!t||!overlay.classList.contains("show"))return;
-  if(!overlay.classList.contains("addMenu")){tools.classList.remove("compact","tight","stack");modalTitle.style.paddingRight="";return;}
-  const padL=parseFloat(getComputedStyle(modalTitle).paddingLeft)||0;
-  for(const step of [[],["compact"],["compact","tight"],["stack"]]){
-    tools.classList.remove("compact","tight","stack");tools.classList.add(...step);
-    if(step[0]==="stack"){modalTitle.style.paddingRight="84px";break;}
-    const pr=91+tools.offsetWidth+12;modalTitle.style.paddingRight=pr+"px";
-    if(t.offsetWidth<=modalTitle.clientWidth-pr-padL+.5)break;
-  }
+  tools.classList.remove("compact","tight","stack","wrap","fmtShort");modalTitle.style.paddingRight="";
+  if(!overlay.classList.contains("addMenu"))return;
+  if(editId===null)t.textContent=addTitle();
+  const over=()=>tools.scrollWidth>tools.clientWidth+.5||[...tools.children].some(c=>c.offsetTop>tools.children[0].offsetTop+4);
+  for(const step of ["fmtShort","compact","wrap"]){if(!over())return;tools.classList.add(step);}
 }
 window.addEventListener("resize",()=>layoutAddHead(),{passive:true});
 if(typeof ResizeObserver==="function"){try{new ResizeObserver(()=>layoutAddHead()).observe($("modalTitleText"));}catch(_){}}
@@ -4852,7 +4932,7 @@ document.addEventListener("keydown",e=>{
 },true);
 window.addEventListener("online",()=>{if(overlay.classList.contains("show"))probeOcrNetwork(true);});
 let pendingPhotoMode="photo";
-// v118: «Камера» — серия снимков внутри приложения (до 9), «Фото» — несколько фото из галереи сразу.
+// v118: «Камера» — серия снимков внутри приложения (v129: до 20), «Фото» — несколько фото из галереи сразу.
 $("cameraChoice").onclick=()=>{clearOcrBatch();startBatchCamera();};
 $("photoChoice").onclick=()=>{clearOcrBatch();openPhotoPicker("photo");};
 // v101: «Файл» сразу открывает выбор файла, «Вставить» сразу вставляет из буфера обмена.
@@ -4884,6 +4964,7 @@ wireOcrCrop();
 $("ocrOnlineToggle").addEventListener("change",e=>setOcrEngine(e.target.checked));
 // v128: Tesseract / OCRv5.
 $("ocrLocalSeg")?.addEventListener("click",e=>{const b=e.target.closest("button[data-ocr-model]");if(!b)return;e.preventDefault();setOcrLocalModel(b.dataset.ocrModel);});
+$("headEngineToggle")?.addEventListener("change",e=>setOcrLocalModel(e.target.checked?"pp":"tess"));   // v129: тумблер в меню «Добавить тэг»
 
 $("ocrBackBtn").onclick=()=>{
   if(stopBatchOcr())return; // v118: во время пакета кнопка — «Стоп»
