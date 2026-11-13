@@ -501,6 +501,34 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    // v131: имя файла из буфера обмена (OpenableColumns), иначе — запасное.
+    String clipName(Uri uri, String fallback) {
+        try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                String n = c.getString(0);
+                if (n != null && !n.trim().isEmpty()) return n.trim();
+            }
+        } catch (Exception ignored) { }
+        String last = uri.getLastPathSegment();
+        return last != null && last.contains(".") ? last : fallback;
+    }
+
+    // v131: прочитать поток целиком, не больше max байт (больше — null).
+    static byte[] readAll(InputStream in, long max) throws IOException {
+        if (in == null) return null;
+        try (InputStream is = in; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[64 * 1024];
+            long total = 0;
+            int r;
+            while ((r = is.read(buf)) > 0) {
+                total += r;
+                if (total > max) return null;
+                bos.write(buf, 0, r);
+            }
+            return bos.toByteArray();
+        }
+    }
+
     /**
      * v121: выбранные фото готовятся в фоне, по одному: уменьшение до ~8 Мп, поворот по EXIF, JPEG
      * в cache/pick. Страница получает уже лёгкие файлы — 9 снимков по 50 Мп больше не читаются и не
@@ -842,6 +870,55 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "";
             }
+        }
+
+        // v131: «Вставить» — фото и файлы из буфера обмена Android (скопированное фото, файл из
+        // «Файлов»). JSON-массив [{name, type, b64}]; фото уменьшаются до ~8 Мп и поворачиваются
+        // по EXIF, как при выборе из галереи (prepareImage). Только текст в буфере — пустой массив,
+        // его читает readClipboard().
+        @JavascriptInterface
+        public String readClipboardFiles() {
+            JSONArray out = new JSONArray();
+            try {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasPrimaryClip() || cm.getPrimaryClip() == null) return "[]";
+                ClipData clip = cm.getPrimaryClip();
+                File dir = new File(getCacheDir(), PICK_DIR);
+                //noinspection ResultOfMethodCallIgnored
+                dir.mkdirs();
+                long stamp = System.currentTimeMillis();
+                int n = Math.min(clip.getItemCount(), 20);
+                for (int i = 0; i < n; i++) {
+                    Uri uri = clip.getItemAt(i).getUri();
+                    if (uri == null) continue;
+                    try {
+                        String type = getContentResolver().getType(uri);
+                        if (type == null) type = "";
+                        String name = clipName(uri, "clipboard-" + (i + 1));
+                        byte[] bytes = null;
+                        if (type.startsWith("image/")) {
+                            String jpg = "paste-" + stamp + "-" + (i + 1) + ".jpg";
+                            Uri prepared = null;
+                            try { prepared = prepareImage(uri, dir, jpg); } catch (Throwable ignored) { prepared = null; }
+                            if (prepared != null) {
+                                bytes = readAll(new java.io.FileInputStream(new File(dir, jpg)), 30L << 20);
+                                type = "image/jpeg";
+                                name = name.replaceAll("\\.[A-Za-z0-9]+$", "") + ".jpg";
+                            }
+                        }
+                        if (bytes == null) bytes = readAll(getContentResolver().openInputStream(uri), 15L << 20);
+                        if (bytes == null || bytes.length == 0) continue;
+                        JSONObject o = new JSONObject();
+                        o.put("name", name);
+                        o.put("type", type);
+                        o.put("b64", Base64.encodeToString(bytes, Base64.NO_WRAP));
+                        out.put(o);
+                    } catch (Exception ignored) { }
+                }
+            } catch (Exception e) {
+                return "[]";
+            }
+            return out.toString();
         }
 
         // v102: системный выбор контакта (окно «Отчёт» → «+ Из контактов»).

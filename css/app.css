@@ -2600,3 +2600,21 @@ body.camera-open{overflow:hidden}
 .helpBody dl.hpGloss{margin:4px 0 10px}
 .helpBody dl.hpGloss dt{display:inline-block;margin:6px 0 1px;padding:1px 8px;border-radius:7px;background:var(--soft);color:var(--accent-strong);font-family:var(--f-mono);font-weight:600;font-size:.92em}
 .helpBody dl.hpGloss dd{margin:2px 0 6px;line-height:1.45}
+
+/* v131: справка — раскрывающиеся «Подробнее», маленькие таблицы, зоны NAMUR; кнопка «Что это?» в «4–20». */
+.helpBody details.hpMore{margin:6px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--control);overflow:hidden}
+.helpBody details.hpMore>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;min-height:40px;padding:8px 12px;font-weight:750;color:var(--accent-strong);-webkit-tap-highlight-color:transparent}
+.helpBody details.hpMore>summary::-webkit-details-marker{display:none}
+.helpBody details.hpMore>summary::before{content:"";flex:0 0 auto;width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .18s var(--ui-ease)}
+.helpBody details.hpMore[open]>summary::before{transform:rotate(45deg)}
+.helpBody details.hpMore>p{margin:0 12px 10px}
+.helpBody table.hpTbl{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:13px}
+.helpBody table.hpTbl th,.helpBody table.hpTbl td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:center;font-family:var(--f-mono);font-weight:500}
+.helpBody table.hpTbl th{text-align:left;font-family:inherit;font-weight:750;color:var(--muted);white-space:nowrap}
+.helpBody table.hpNamur td{text-align:left;font-family:inherit}
+.helpBody table.hpNamur th{font-family:var(--f-mono);color:var(--text)}
+.helpBody table.hpNamur td.ok{color:var(--accent-strong)}
+.helpBody table.hpNamur td.warn{color:#d29a2a}
+.helpBody table.hpNamur td.bad{color:#e0564b}
+.loopWhy{display:block;width:100%;margin:10px 0 0;min-height:38px;padding:8px 12px;border:1px dashed color-mix(in srgb,var(--accent) 55%,var(--line));border-radius:12px;background:transparent;color:var(--accent-strong);font-weight:750;font-size:13.5px;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.helpBody details.hpMore>summary::before{transition:none}}

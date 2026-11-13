@@ -310,6 +310,8 @@ function template(){
           <div class="mini">${TX("Если корень в преобразователе — ток линеен по расходу, в РСУ блок SQRT не нужен. Проверьте, что корень не извлекается дважды.")}</div>
         </div>
         <div class="mini" data-when="FT.kind=lin">${TX("Электромагнитные, вихревые, кориолисовы, ультразвуковые: ток линеен по расходу.")}</div>
+        <!-- v131: «Что это?» — справка «4–20» сразу на вкладке «FT · LT». -->
+        <button type="button" class="loopWhy" data-help-open="loop:1">${TX("Что это? Простое объяснение")}</button>
       </div>
 
       <div class="loopBlock" data-block="LT">
@@ -322,6 +324,7 @@ function template(){
           <div class="mini">${TX("Уровень — от оси нижнего отбора, мм. Смещение — ΔP при уровне на оси нижнего отбора: для открытой ёмкости 0, для мокрой опорной ветви или капилляров обычно отрицательное.")}</div>
         </div>
         <div class="mini" data-when="LT.kind=direct">${TX("Радарные, буйковые, магнитострикционные: ток линеен по уровню.")}</div>
+        <button type="button" class="loopWhy" data-help-open="loop:1">${TX("Что это? Простое объяснение")}</button>
       </div>
     </section>
 
